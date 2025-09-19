@@ -133,7 +133,7 @@ const getCollectionChangeReadable = (
     .watch(filterList, options);
 
   const collectionChangeReadable = new Readable({ objectMode: true });
-  collectionChangeReadable._read = () => { };
+  collectionChangeReadable._read = () => {};
 
   const handleStreamClose = () => {
     Log.info(`Change stream for ${collectionName} closed`);
