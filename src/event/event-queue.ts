@@ -15,6 +15,7 @@ import {
 import { JUser } from '../user-manager/user.type';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import { EventHandlerManager } from './event-handler-manager';
+import { executeEventForUsers } from "./event-executor";
 
 const dataManager = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();
@@ -28,8 +29,8 @@ let shouldProcessQueue = true;
  * Triggers an event by creating an instance in the `EVENTS_QUEUE`.
  */
 export const publishEvent = async (
-  eventType: string, 
-  generatedTimestamp: Date, 
+  eventType: string,
+  generatedTimestamp: Date,
   eventDetails?: Record<string, any>
 ): Promise<void> => {
   try {
@@ -83,23 +84,7 @@ export const processEventQueue = async (): Promise<void> => {
       for (const event of events) {
         Log.dev(`Processing event "${event.eventType}" with ID: ${event.id} for ${users.length} users.`);
 
-        for (const handlerName of eventHandlerManager.getHandlersForEventType(event.eventType)) {
-          await processExecutionLifecycle(handlerName, event, "beforeExecution")
-        }
-
-        for (const user of users) {
-          try {
-            await processHandlers(event, user);
-          } catch (error) {
-            Log.error(
-              `Error processing event "${event.eventType}" with ID: ${event.id} for user ${user.id}: ${error}`
-            );
-          }
-        }
-
-        for (const handler of eventHandlerManager.getHandlersForEventType(event.eventType)) {
-          await processExecutionLifecycle(handler, event, "afterExecution")
-        }
+        await executeEventForUsers(event, users, eventHandlerManager);
 
         try {
           await archiveEvent(event);
@@ -136,7 +121,7 @@ export const setupEventQueueListener = async (): Promise<void> => {
         await processEventQueue();
       }
     });
-    
+
     await processEventQueue();
 
     Log.dev('Event queue listener set up successfully.');

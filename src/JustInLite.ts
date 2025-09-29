@@ -1,98 +1,264 @@
-import { JustInWrapper } from './JustInWrapper';
-import DataManager from './data-manager/data-manager';
-import { ChangeListenerManager } from './data-manager/change-listener.manager';
-import { Log } from './logger/logger-manager';
-import { isRunning, queueIsEmpty } from './event/event-queue';
-import { EVENT_QUEUE, USERS } from './data-manager/data-manager.constants';
+import { EventHandlerManager } from './event/event-handler-manager';
+import { registerTask as coreRegisterTask } from './handlers/task.manager';
+import { registerDecisionRule as coreRegisterDecisionRule } from './handlers/decision-rule.manager';
+import { executeEventForUsers } from './event/event-executor';
+
+import {
+  setLogger,
+  setLogLevels,
+  Log,
+  logLevels,
+} from './logger/logger-manager';
+import type {
+  TaskRegistration,
+  DecisionRuleRegistration,
+  RecordResultFunction,
+} from './handlers/handler.type';
+import type { Logger } from './logger/logger.interface';
+import type { JEvent } from './event/event.type';
+import type { JUser, NewUserRecord } from './user-manager/user.type';
+
+import {
+  setDecisionRuleResultRecorder,
+  setTaskResultRecorder,
+  setResultRecorderPersistenceEnabled,
+} from './handlers/result-recorder';
 
 /**
- * JustinLite is a lightweight version of the core JustInWrapper singleton,
- * designed specifically for stateless environments like Google Cloud Functions or Cloud Run.
- *
- * It extends the core functionality with lifecycle controls such as singleton reset
- * and event engine queue waiting.
+ * JustInLiteWrapper provides a minimal, serverless-oriented interface for 3rd-party apps:
+ * - configure logger & result writers
+ * - register tasks, decision rules, and event handlers
+ * - keep users in-memory for the current warm instance
+ * - run registered events immediately (no DB/queue)
  */
-class JustinLiteWrapper extends JustInWrapper {
-  protected static instance: JustinLiteWrapper | null = null;
+export class JustInLiteWrapper {
+  protected static instance: JustInLiteWrapper | null = null;
 
-  private static EVENT_QUEUE_WAIT_TIME = 60 * 1000;
-  /**
-   * Private constructor ensures use through getInstance().
-   */
+  /** In-memory idempotency (per warm instance only). */
+  private processedKeys = new Set<string>();
+
+  private readonly eventHandlerManager: EventHandlerManager =
+    EventHandlerManager.getInstance();
+
+  /** In-memory users for this warm instance (keyed by uniqueIdentifier). */
+  private users: Map<string, JUser> = new Map();
+
+  /** Local cache of event definitions (eventType → ordered handler names). */
+  private readonly eventDefinitions = new Map<string, string[]>();
+
   protected constructor() {
-    super();
+    // Lite/serverless: never touch DataManager from the recorder module.
+    setResultRecorderPersistenceEnabled(false);
   }
 
-  /**
-   * Retrieves the singleton instance of JustinLite.
-   * @returns {JustinLite} The singleton instance.
-   */
-  public static getInstance(): JustinLiteWrapper {
-    if (!JustinLiteWrapper.instance) {
-      JustinLiteWrapper.instance = new JustinLiteWrapper();
+  /** Returns the singleton Lite instance. */
+  public static getInstance(): JustInLiteWrapper {
+    if (!JustInLiteWrapper.instance) {
+      JustInLiteWrapper.instance = new JustInLiteWrapper();
     }
-    return JustinLiteWrapper.instance;
+    return JustInLiteWrapper.instance;
   }
 
   /**
-   * Resets all singleton instances used by the framework.
-   *
-   * This should be called at the start of a stateless execution context,
-   * such as in Google Cloud Functions or tests.
+   * Reset the singleton (useful for tests).
+   * Includes a 1-tick drain to let any late recorder promises settle.
    */
-  public static reset(): void {
-    JustInWrapper['killInstance']?.();
-    DataManager['killInstance']?.();
-    ChangeListenerManager['killInstance']?.();
-    JustinLiteWrapper.instance = null;
+  public async killInstance(): Promise<void> {
+    try {
+      // allow any microtasks to flush
+      await new Promise<void>((r) => setImmediate(r));
+    } finally {
+      this.processedKeys.clear();
+      this.users.clear();
+      this.eventDefinitions.clear();
+      this.eventHandlerManager.clearEventHandlers();
+      JustInLiteWrapper.instance = null;
+    }
   }
 
   /**
-   * Cleanses the database by clearing the EVENTS_QUEUE, EVENTS, and USERS collections.
-   * This is useful for ensuring a clean state before starting a new execution.
-   * 
-   * @returns {Promise<void>} A promise that resolves when the database is cleansed.
+   * Static teardown helper for tests/tools.
+   * If an instance exists, delegate to it; otherwise do a best-effort drain+clear.
+   * Safe to call multiple times.
    */
-  
-  public async cleanseDB(): Promise<void> {
-    await DataManager.getInstance().clearCollection(EVENT_QUEUE);
-    await DataManager.getInstance().clearCollection(USERS);
-    Log.info('DB cleansed');
+  public static async killInstance(): Promise<void> {
+    if (JustInLiteWrapper.instance) {
+      await JustInLiteWrapper.instance.killInstance();
+      return;
+    }
+    // No instance — still clear any registered handlers to avoid leaks across tests.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    EventHandlerManager.getInstance().clearEventHandlers();
   }
 
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Users (in-memory)
+  // ────────────────────────────────────────────────────────────────────────────
+
   /**
-   * Waits until the event engine queue is empty before proceeding.
-   * Useful for ensuring all events are processed before shutdown in serverless environments.
-   *
-   * @param timeout - Maximum wait time in milliseconds (default: 10 seconds)
-   * @throws Error if the queue is not empty within the timeout period
+   * Adds users for the current invocation (serverless-safe).
+   * Accepts either `JUser[]` or `NewUserRecord[]`.
+   * Replaces the in-memory set each call (atomic), requires `uniqueIdentifier`,
+   * and throws on duplicates. Returns the normalized `JUser[]`.
    */
-  public async waitUntilQueueIsEmpty(timeout = JustinLiteWrapper.EVENT_QUEUE_WAIT_TIME): Promise<void> {
-    const start = Date.now();
-    Log.info('Waiting for event queue to empty, is it empty?', await queueIsEmpty(), 'isRunning', isRunning());
-    while (isRunning()) {
-      if (await queueIsEmpty()) return;
-      if (Date.now() - start > timeout) {
-        throw new Error('Timeout while waiting for event queue to empty ' + timeout);
+  public async addUsers(users: JUser[] | NewUserRecord[]): Promise<JUser[]> {
+    if (!Array.isArray(users)) {
+      throw new Error('addUsers expects an array.');
+    }
+
+    const next = new Map<string, JUser>();
+    const normalized: JUser[] = [];
+
+    users.forEach((item, i) => {
+      const anyItem = item as any;
+
+      const uniqueIdentifier =
+        typeof anyItem?.uniqueIdentifier === 'string' ? anyItem.uniqueIdentifier.trim() : '';
+      const idHint = typeof anyItem?.id === 'string' ? anyItem.id : undefined;
+
+      if (!uniqueIdentifier) {
+        const msg =
+          `addUsers: item at index ${i} is missing required 'uniqueIdentifier'` +
+          (idHint ? ` (id=${idHint})` : '');
+        Log.error(msg);
+        throw new Error(msg);
       }
-      await new Promise(resolve => setTimeout(resolve, 200));
+
+      if (next.has(uniqueIdentifier)) {
+        const msg = `addUsers: duplicate uniqueIdentifier "${uniqueIdentifier}" (again at index ${i}).`;
+        Log.error(msg);
+        throw new Error(msg);
+      }
+
+      const attrs =
+        'attributes' in anyItem ? (anyItem.attributes ?? {}) :
+          'initialAttributes' in anyItem ? (anyItem.initialAttributes ?? {}) :
+            {};
+
+      const ju: JUser = {
+        id: uniqueIdentifier,
+        uniqueIdentifier,
+        attributes: { ...attrs },
+      };
+
+      next.set(uniqueIdentifier, ju);
+      normalized.push(ju);
+    });
+
+    this.users = next;
+    Log.info(`JustInLite: added ${next.size} users (in-memory, replacing previous set).`);
+    return normalized;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Registration (match JustInWrapper vocabulary)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /** Register a Task. */
+  public registerTask(task: TaskRegistration): void {
+    coreRegisterTask(task);
+  }
+
+  /** Register a Decision Rule. */
+  public registerDecisionRule(decisionRule: DecisionRuleRegistration): void {
+    coreRegisterDecisionRule(decisionRule);
+  }
+
+  /**
+   * Registers a new event type with ordered handler names.
+   * Also caches the definition locally for introspection.
+   * @param eventType - The type of the event.
+   * @param handlers - Ordered task/decision-rule names for the event.
+   */
+  public async registerEventHandlers(
+    eventType: string,
+    handlers: string[],
+  ): Promise<void> {
+    if (this.eventDefinitions.has(eventType)) {
+      throw new Error(`Event "${eventType}" already registered; pass overwriteExisting=true to replace.`);
     }
+    this.eventDefinitions.set(eventType, handlers.slice());
+    await this.eventHandlerManager.registerEventHandlers(eventType, handlers, false);
+  }
+
+  /** Unregister handlers for an event type. */
+  public unregisterEventHandlers(eventType: string): void {
+    this.eventDefinitions.delete(eventType);
+    this.eventHandlerManager.unregisterEventHandlers(eventType);
+  }
+
+  /** Returns an object view of current event definitions. */
+  public getRegisteredEvents(): Record<string, string[]> {
+    return Object.fromEntries(this.eventDefinitions);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Execution
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Publish (execute) a registered event for the **currently loaded** users.
+   * Signature matches full JustIn; `idempotencyKey` is optional (in-memory only).
+   *
+   * @param eventType          Registered event type.
+   * @param generatedTimestamp Event timestamp.
+   * @param eventDetails       Optional event details payload.
+   * @param idempotencyKey     Optional in-memory dedupe key (skips if seen).
+   */
+  public async publishEvent(
+    eventType: string,
+    generatedTimestamp: Date,
+    eventDetails?: object,
+    idempotencyKey?: string
+  ): Promise<void> {
+    // Optional in-memory idempotency for cloud runs
+    if (idempotencyKey) {
+      if (this.processedKeys.has(idempotencyKey)) {
+        Log.warn(`[JustInLite] duplicate execution skipped for key: ${idempotencyKey}`);
+        return;
+      }
+      this.processedKeys.add(idempotencyKey);
+    }
+
+    if (!this.eventHandlerManager.hasHandlersForEventType(eventType)) {
+      throw new Error(`No handlers registered for event type "${eventType}".`);
+    }
+
+    // Ensure users are loaded
+    const users = Array.from(this.users.values());
+    if (users.length === 0) {
+      throw new Error('JustInLite.publishEvent called with no users loaded.');
+    }
+
+    const event: JEvent = {
+      eventType,
+      generatedTimestamp,
+      eventDetails: eventDetails ?? {},
+    };
+
+    await executeEventForUsers(event, users, this.eventHandlerManager);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Logger & Writers (same names as full JustIn)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  public configureLogger(logger: Logger): void {
+    setLogger(logger);
+  }
+
+  public configureTaskResultWriter(taskWriter: RecordResultFunction): void {
+    setTaskResultRecorder(taskWriter);
+  }
+
+  public configureDecisionRuleResultWriter(decisionRuleWriter: RecordResultFunction): void {
+    setDecisionRuleResultRecorder(decisionRuleWriter);
+  }
+
+  public setLoggingLevels(levels: Partial<typeof logLevels>): void {
+    setLogLevels(levels);
   }
 }
 
-// export const JustInLite = JustinLiteWrapper.getInstance();
-
-interface JustInLiteAPI {
-  (): JustinLiteWrapper;
-  reset(): void;
-}
-
-export const JustInLite: JustInLiteAPI = Object.assign(
-  () => JustinLiteWrapper.getInstance(),
-  {
-    reset: () => {
-      Log.info('Calling JustInLite.reset()');
-      JustinLiteWrapper.reset();
-    },
-  }
-);
+export const JustInLite = () => JustInLiteWrapper.getInstance();

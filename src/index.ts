@@ -2,6 +2,9 @@
 import { JustIn } from './JustInWrapper';
 export default JustIn;
 
+// Serverless
+export { JustInLite } from './JustInLite';
+
 // Utilities
 export { Log } from './logger/logger-manager';
 
