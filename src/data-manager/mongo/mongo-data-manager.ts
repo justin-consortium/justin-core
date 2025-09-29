@@ -220,12 +220,17 @@ const updateItemInCollection = async (
       .collection(collectionName)
       .updateOne({ _id: objectId }, { $set: updateObject });
 
-    if (matchedCount === 1 && modifiedCount === 1) {
+    if (matchedCount === 1) {
+      if (modifiedCount == 0) {
+        Log.warn(`No changes made for item with id ${id} in ${collectionName}`);
+      }
       const updatedItem = await _db!
         .collection(collectionName)
         .findOne({ _id: objectId });
+
       return transformId(updatedItem);
-    } else {
+    }
+    else {
       Log.warn(`Update failed for item with id ${id} in ${collectionName}`);
       return null;
     }
