@@ -115,36 +115,6 @@ describe('JustInLite', () => {
     });
   });
 
-  describe('registration', () => {
-    it('registerEventHandlers caches and forwards to manager', async () => {
-      registerEventHandlersStub.resolves();
-
-      await lite.registerEventHandlers('E1', ['A', 'B']);
-      expect(registerEventHandlersStub.calledWith('E1', ['A', 'B'], false)).toBe(true);
-
-      const defs = lite.getRegisteredEvents();
-      expect(defs['E1']).toEqual(['A', 'B']);
-    });
-
-    it('registerEventHandlers prevents duplicate registration', async () => {
-      registerEventHandlersStub.resolves();
-
-      await lite.registerEventHandlers('E1', ['A']);
-      await expect(lite.registerEventHandlers('E1', ['B'])).rejects.toThrow('already registered');
-    });
-
-    it('unregisterEventHandlers removes cache and manager mapping', async () => {
-      registerEventHandlersStub.resolves();
-
-      await lite.registerEventHandlers('E1', ['A']);
-      lite.unregisterEventHandlers('E1');
-
-      expect(unregisterEventHandlersStub.calledWith('E1')).toBe(true);
-      const defs = lite.getRegisteredEvents();
-      expect(defs['E1']).toBeUndefined();
-    });
-  });
-
   describe('publishEvent', () => {
     it('executes event for loaded users when handlers exist', async () => {
       await lite.loadUsers([

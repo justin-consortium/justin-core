@@ -36,15 +36,11 @@ export class JustInLiteWrapper {
 
   /** In-memory idempotency (per warm instance only). */
   private processedKeys = new Set<string>();
-
-  private readonly eventHandlerManager: EventHandlerManager =
+  private eventHandlerManager: EventHandlerManager =
     EventHandlerManager.getInstance();
 
   /** In-memory users for this warm instance (keyed by uniqueIdentifier). */
   private users: Map<string, JUser> = new Map();
-
-  /** Local cache of event definitions (eventType → ordered handler names). */
-  private readonly eventDefinitions = new Map<string, string[]>();
 
   protected constructor() {
     // Lite/serverless: never touch DataManager from the recorder module.
@@ -70,7 +66,6 @@ export class JustInLiteWrapper {
     } finally {
       this.processedKeys.clear();
       this.users.clear();
-      this.eventDefinitions.clear();
       this.eventHandlerManager.clearEventHandlers();
       JustInLiteWrapper.instance = null;
     }
@@ -176,23 +171,14 @@ export class JustInLiteWrapper {
     eventType: string,
     handlers: string[],
   ): Promise<void> {
-    if (this.eventDefinitions.has(eventType)) {
-      throw new Error(`Event "${eventType}" already registered.`);
-    }
-    this.eventDefinitions.set(eventType, handlers.slice());
-    await this.eventHandlerManager.registerEventHandlers(eventType, handlers, false);
+    await this.eventHandlerManager.registerEventHandlers(eventType, handlers);
   }
 
   /** Unregister handlers for an event type. */
   public unregisterEventHandlers(eventType: string): void {
-    this.eventDefinitions.delete(eventType);
     this.eventHandlerManager.unregisterEventHandlers(eventType);
   }
 
-  /** Returns an object view of current event definitions. */
-  public getRegisteredEvents(): Record<string, string[]> {
-    return Object.fromEntries(this.eventDefinitions);
-  }
 
   // ────────────────────────────────────────────────────────────────────────────
   // Execution

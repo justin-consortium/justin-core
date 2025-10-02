@@ -89,30 +89,6 @@ describe('JustInLite (Sinon)', () => {
     });
   });
 
-  describe('Registration & Introspection', () => {
-    it('caches definition and calls EventHandlerManager', async () => {
-      const spy = sandbox.spy(ehm, 'registerEventHandlers');
-
-      await justin.registerEventHandlers('EV', ['A', 'B', 'C']);
-      sinon.assert.calledOnce(spy);
-
-      const defs = justin.getRegisteredEvents();
-      expect(defs).toEqual({ EV: ['A', 'B', 'C'] });
-
-      // re-register without overwrite should throw (lite refuses duplicates)
-      await expect(justin.registerEventHandlers('EV', ['X'])).rejects.toThrow(/already registered/i);
-    });
-
-    it('unregister clears cache and manager', async () => {
-      await justin.registerEventHandlers('EV', ['H']);
-      expect(justin.getRegisteredEvents()).toEqual({ EV: ['H'] });
-
-      justin.unregisterEventHandlers('EV');
-      expect(justin.getRegisteredEvents()).toEqual({});
-      expect(ehm.hasHandlersForEventType('EV')).toBe(false);
-    });
-  });
-
   describe('Execution / publishEvent', () => {
     it('throws if no users loaded', async () => {
       await justin.registerEventHandlers('EV', ['H']);
