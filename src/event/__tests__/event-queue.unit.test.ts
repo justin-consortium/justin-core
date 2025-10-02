@@ -458,6 +458,7 @@ describe('Event Queue', () => {
       expect(executeEventForUsersStub.calledOnce).toBe(true);
     });
 
+    // TODO: what are we actually testing here?
     it('should handle lifecycle method execution errors', async () => {
       const mockEvent: JEvent = {
         id: 'event1',
@@ -479,7 +480,7 @@ describe('Event Queue', () => {
   });
 
   describe('archiveEvent integration', () => {
-    it('should archive event successfully', async () => {
+    it('should remove event and call archive event successfully', async () => {
       const mockEvent: JEvent = {
         id: 'event1',
         eventType: 'TEST_EVENT',
