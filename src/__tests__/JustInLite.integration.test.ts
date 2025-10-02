@@ -105,13 +105,19 @@ describe('JustInLite', () => {
       expect(logErrorStub.calledWithMatch('duplicate uniqueIdentifier "dup"')).toBe(true);
     });
     it('should not throw an error if loadUsers is called twice with same uniqueIdentifier', async () => {
-      // await expect(
-      //   lite.loadUsers([
-      //     { id: 'x', uniqueIdentifier: 'dup', attributes: {} } as JUser,
-      //     { id: 'y', uniqueIdentifier: 'dup', attributes: {} } as JUser,
-      //   ])
-      // ).rejects.toThrow('duplicate uniqueIdentifier "dup"');
-      // expect(logErrorStub.calledWithMatch('duplicate uniqueIdentifier "dup"')).toBe(true);
+        const loadedUsers = await lite.loadUsers([
+          { id: 'x', uniqueIdentifier: 'identifier-x', attributes: {} } as JUser,
+          { id: 'y', uniqueIdentifier: 'identifier-y', attributes: {} } as JUser,
+        ])
+      expect(loadedUsers.length).toBe(2);
+      expect(loadedUsers[0]?.uniqueIdentifier).toBe('identifier-x');
+      expect(loadedUsers[1]?.uniqueIdentifier).toBe('identifier-y');
+
+      const reLoadedUsers = await lite.loadUsers([
+        { id: 'x', uniqueIdentifier: 'identifier-x', attributes: {} } as JUser
+        ])
+      expect(reLoadedUsers.length).toBe(1);
+      expect(loadedUsers[0]?.uniqueIdentifier).toBe('identifier-x');
     });
   });
 
