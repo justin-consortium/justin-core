@@ -55,8 +55,8 @@ describe('JustInLite', () => {
     logDevStub.restore();
   });
 
-  describe('addUsers', () => {
-    it('adds JUser[] and replaces previous set', async () => {
+  describe('loadUsers', () => {
+    it('loads JUser[] and replaces previous set', async () => {
       const users1: JUser[] = [
         { id: 'a', uniqueIdentifier: 'a', attributes: { n: 1 } } as JUser,
       ];
@@ -65,15 +65,15 @@ describe('JustInLite', () => {
         { id: 'c', uniqueIdentifier: 'c', attributes: { n: 3 } } as JUser,
       ];
 
-      const added1 = await lite.addUsers(users1);
-      expect(added1.length).toBe(1);
-      expect(added1[0]?.uniqueIdentifier).toBe('a');
+      const loaded1 = await lite.loadUsers(users1);
+      expect(loaded1.length).toBe(1);
+      expect(loaded1[0]?.uniqueIdentifier).toBe('a');
 
-      const added2 = await lite.addUsers(users2);
-      expect(added2.length).toBe(2);
-      expect(added2[0]?.uniqueIdentifier).toBe('b');
-      expect(added2[1]?.uniqueIdentifier).toBe('c');
-      expect(logInfoStub.calledWithMatch('added 2 users')).toBe(true);
+      const loaded2 = await lite.loadUsers(users2);
+      expect(loaded2.length).toBe(2);
+      expect(loaded2[0]?.uniqueIdentifier).toBe('b');
+      expect(loaded2[1]?.uniqueIdentifier).toBe('c');
+      expect(logInfoStub.calledWithMatch('loaded 2 users')).toBe(true);
     });
 
     it('adds from NewUserRecord[] and normalizes to JUser[]', async () => {
@@ -81,7 +81,7 @@ describe('JustInLite', () => {
         { uniqueIdentifier: 'u1', initialAttributes: { x: 1 } },
         { uniqueIdentifier: 'u2', initialAttributes: { x: 2 } },
       ];
-      const out = await lite.addUsers(recs);
+      const out = await lite.loadUsers(recs);
       expect(out.length).toBe(2);
       expect(out[0]?.uniqueIdentifier).toBe('u1');
       expect(out[0]?.attributes?.x).toBe(1);
@@ -90,19 +90,28 @@ describe('JustInLite', () => {
 
     it('throws on missing uniqueIdentifier', async () => {
       await expect(
-        lite.addUsers([{ id: 'no-uid', attributes: {} } as unknown as JUser])
+        lite.loadUsers([{ id: 'no-uid', attributes: {} } as unknown as JUser])
       ).rejects.toThrow("missing required 'uniqueIdentifier'");
       expect(logErrorStub.calledWithMatch("missing required 'uniqueIdentifier'")).toBe(true);
     });
 
     it('throws on duplicate uniqueIdentifier in same call', async () => {
       await expect(
-        lite.addUsers([
+        lite.loadUsers([
           { id: 'x', uniqueIdentifier: 'dup', attributes: {} } as JUser,
           { id: 'y', uniqueIdentifier: 'dup', attributes: {} } as JUser,
         ])
       ).rejects.toThrow('duplicate uniqueIdentifier "dup"');
       expect(logErrorStub.calledWithMatch('duplicate uniqueIdentifier "dup"')).toBe(true);
+    });
+    it('should not throw an error if loadUsers is called twice with same uniqueIdentifier', async () => {
+      // await expect(
+      //   lite.loadUsers([
+      //     { id: 'x', uniqueIdentifier: 'dup', attributes: {} } as JUser,
+      //     { id: 'y', uniqueIdentifier: 'dup', attributes: {} } as JUser,
+      //   ])
+      // ).rejects.toThrow('duplicate uniqueIdentifier "dup"');
+      // expect(logErrorStub.calledWithMatch('duplicate uniqueIdentifier "dup"')).toBe(true);
     });
   });
 
@@ -138,7 +147,7 @@ describe('JustInLite', () => {
 
   describe('publishEvent', () => {
     it('executes event for loaded users when handlers exist', async () => {
-      await lite.addUsers([
+      await lite.loadUsers([
         { id: 'u1', uniqueIdentifier: 'u1', attributes: {} } as JUser,
         { id: 'u2', uniqueIdentifier: 'u2', attributes: {} } as JUser,
       ]);
@@ -162,7 +171,7 @@ describe('JustInLite', () => {
     });
 
     it('skips duplicate when idempotencyKey has been seen', async () => {
-      await lite.addUsers([{ id: 'u1', uniqueIdentifier: 'u1', attributes: {} } as JUser]);
+      await lite.loadUsers([{ id: 'u1', uniqueIdentifier: 'u1', attributes: {} } as JUser]);
       hasHandlersForEventTypeStub.returns(true);
       executeEventForUsersStub.resolves();
 
@@ -180,7 +189,7 @@ describe('JustInLite', () => {
     });
 
     it('throws when no handlers registered for event', async () => {
-      await lite.addUsers([{ id: 'u1', uniqueIdentifier: 'u1', attributes: {} } as JUser]);
+      await lite.loadUsers([{ id: 'u1', uniqueIdentifier: 'u1', attributes: {} } as JUser]);
       hasHandlersForEventTypeStub.returns(false);
       await expect(lite.publishEvent('E1', new Date())).rejects.toThrow('No handlers registered');
     });

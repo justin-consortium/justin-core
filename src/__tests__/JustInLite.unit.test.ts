@@ -34,7 +34,7 @@ describe('JustInLite (Sinon)', () => {
 
       const infoStub = sandbox.stub(LoggerManager.Log, 'info');
 
-      const result = await justin.addUsers(input);
+      const result = await justin.loadUsers(input);
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({
         id: 'u1',
@@ -58,8 +58,8 @@ describe('JustInLite (Sinon)', () => {
         { id: 'b', uniqueIdentifier: 'b', attributes: { bar: 2 } },
       ];
 
-      await justin.addUsers(first);
-      await justin.addUsers(second);
+      await justin.loadUsers(first);
+      await justin.loadUsers(second);
 
       const regSpy = sandbox.spy(ehm, 'registerEventHandlers');
       await justin.registerEventHandlers('EV', ['HandlerA']);
@@ -77,7 +77,7 @@ describe('JustInLite (Sinon)', () => {
 
     it('throws on missing uniqueIdentifier', async () => {
       const bad: any[] = [{ id: 'x' }];
-      await expect(justin.addUsers(bad as any)).rejects.toThrow(/missing required 'uniqueIdentifier'/i);
+      await expect(justin.loadUsers(bad as any)).rejects.toThrow(/missing required 'uniqueIdentifier'/i);
     });
 
     it('throws on duplicates within the same call', async () => {
@@ -85,7 +85,7 @@ describe('JustInLite (Sinon)', () => {
         { uniqueIdentifier: 'z', initialAttributes: { name: 'test' } },
         { uniqueIdentifier: 'z', initialAttributes: { name: 'test' } },
       ];
-      await expect(justin.addUsers(dup)).rejects.toThrow(/duplicate uniqueIdentifier "z"/i);
+      await expect(justin.loadUsers(dup)).rejects.toThrow(/duplicate uniqueIdentifier "z"/i);
     });
   });
 
@@ -120,13 +120,13 @@ describe('JustInLite (Sinon)', () => {
     });
 
     it('throws if event type not registered', async () => {
-      await justin.addUsers([{ id: 'u', uniqueIdentifier: 'u', attributes: {} }]);
+      await justin.loadUsers([{ id: 'u', uniqueIdentifier: 'u', attributes: {} }]);
       await expect(justin.publishEvent('MISSING', new Date())).rejects.toThrow(/No handlers registered/i);
     });
 
     it('builds event and calls shared executor once', async () => {
       await justin.registerEventHandlers('EV', ['H']);
-      await justin.addUsers([{ id: 'u', uniqueIdentifier: 'u', attributes: {} }]);
+      await justin.loadUsers([{ id: 'u', uniqueIdentifier: 'u', attributes: {} }]);
 
       const execStub = sandbox.stub(EventExecutor, 'executeEventForUsers').resolves();
       const ts = new Date('2025-01-01T00:00:00Z');
@@ -146,7 +146,7 @@ describe('JustInLite (Sinon)', () => {
 
     it('idempotencyKey skips duplicate within same warm instance', async () => {
       await justin.registerEventHandlers('EV', ['H']);
-      await justin.addUsers([{ id: 'u', uniqueIdentifier: 'u', attributes: {} }]);
+      await justin.loadUsers([{ id: 'u', uniqueIdentifier: 'u', attributes: {} }]);
 
       const warnStub = sandbox.stub(LoggerManager.Log, 'warn');
       const execStub = sandbox.stub(EventExecutor, 'executeEventForUsers').resolves();

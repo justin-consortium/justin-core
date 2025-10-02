@@ -97,14 +97,14 @@ export class JustInLiteWrapper {
   // ────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Adds users for the current invocation (serverless-safe).
+   * Loads users for the current invocation (serverless-safe).
    * Accepts either `JUser[]` or `NewUserRecord[]`.
    * Replaces the in-memory set each call (atomic), requires `uniqueIdentifier`,
    * and throws on duplicates. Returns the normalized `JUser[]`.
    */
-  public async addUsers(users: JUser[] | NewUserRecord[]): Promise<JUser[]> {
+  public async loadUsers(users: JUser[] | NewUserRecord[]): Promise<JUser[]> {
     if (!Array.isArray(users)) {
-      throw new Error('addUsers expects an array.');
+      throw new Error('loadUsers expects an array.');
     }
 
     const next = new Map<string, JUser>();
@@ -119,14 +119,14 @@ export class JustInLiteWrapper {
 
       if (!uniqueIdentifier) {
         const msg =
-          `addUsers: item at index ${i} is missing required 'uniqueIdentifier'` +
+          `loadUsers: item at index ${i} is missing required 'uniqueIdentifier'` +
           (idHint ? ` (id=${idHint})` : '');
         Log.error(msg);
         throw new Error(msg);
       }
 
       if (next.has(uniqueIdentifier)) {
-        const msg = `addUsers: duplicate uniqueIdentifier "${uniqueIdentifier}" (again at index ${i}).`;
+        const msg = `loadUsers: duplicate uniqueIdentifier "${uniqueIdentifier}" (again at index ${i}).`;
         Log.error(msg);
         throw new Error(msg);
       }
@@ -137,7 +137,7 @@ export class JustInLiteWrapper {
             {};
 
       const ju: JUser = {
-        id: uniqueIdentifier,
+        id: idHint ?? uniqueIdentifier,
         uniqueIdentifier,
         attributes: { ...attrs },
       };
@@ -147,7 +147,7 @@ export class JustInLiteWrapper {
     });
 
     this.users = next;
-    Log.info(`JustInLite: added ${next.size} users (in-memory, replacing previous set).`);
+    Log.info(`JustInLite: loaded ${next.size} users (in-memory, replacing previous set).`);
     return normalized;
   }
 
@@ -165,6 +165,7 @@ export class JustInLiteWrapper {
     coreRegisterDecisionRule(decisionRule);
   }
 
+  // TODO: Look at using EventHandlerManager instead and not from the Full Justin
   /**
    * Registers a new event type with ordered handler names.
    * Also caches the definition locally for introspection.
@@ -176,7 +177,7 @@ export class JustInLiteWrapper {
     handlers: string[],
   ): Promise<void> {
     if (this.eventDefinitions.has(eventType)) {
-      throw new Error(`Event "${eventType}" already registered; pass overwriteExisting=true to replace.`);
+      throw new Error(`Event "${eventType}" already registered.`);
     }
     this.eventDefinitions.set(eventType, handlers.slice());
     await this.eventHandlerManager.registerEventHandlers(eventType, handlers, false);
