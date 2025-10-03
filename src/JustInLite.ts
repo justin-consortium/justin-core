@@ -113,15 +113,13 @@ export class JustInLiteWrapper {
       const idHint = typeof anyItem?.id === 'string' ? anyItem.id : undefined;
 
       if (!uniqueIdentifier) {
-        const msg =
-          `loadUsers: item at index ${i} is missing required 'uniqueIdentifier'` +
-          (idHint ? ` (id=${idHint})` : '');
+        const msg = `UniqueIdentifier is missing`
         Log.error(msg);
         throw new Error(msg);
       }
 
       if (next.has(uniqueIdentifier)) {
-        const msg = `loadUsers: duplicate uniqueIdentifier "${uniqueIdentifier}" (again at index ${i}).`;
+        const msg = `loadUsers: duplicate uniqueIdentifier "${uniqueIdentifier}".`;
         Log.error(msg);
         throw new Error(msg);
       }

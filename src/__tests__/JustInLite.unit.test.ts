@@ -77,7 +77,7 @@ describe('JustInLite (Sinon)', () => {
 
     it('throws on missing uniqueIdentifier', async () => {
       const bad: any[] = [{ id: 'x' }];
-      await expect(justin.loadUsers(bad as any)).rejects.toThrow(/missing required 'uniqueIdentifier'/i);
+      await expect(justin.loadUsers(bad as any)).rejects.toThrow(/UniqueIdentifier is missing/i);
     });
 
     it('throws on duplicates within the same call', async () => {

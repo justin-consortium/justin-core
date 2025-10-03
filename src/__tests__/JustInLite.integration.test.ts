@@ -91,8 +91,8 @@ describe('JustInLite', () => {
     it('throws on missing uniqueIdentifier', async () => {
       await expect(
         lite.loadUsers([{ id: 'no-uid', attributes: {} } as unknown as JUser])
-      ).rejects.toThrow("missing required 'uniqueIdentifier'");
-      expect(logErrorStub.calledWithMatch("missing required 'uniqueIdentifier'")).toBe(true);
+      ).rejects.toThrow("UniqueIdentifier is missing");
+      expect(logErrorStub.calledWithMatch("UniqueIdentifier is missing")).toBe(true);
     });
 
     it('throws on duplicate uniqueIdentifier in same call', async () => {
