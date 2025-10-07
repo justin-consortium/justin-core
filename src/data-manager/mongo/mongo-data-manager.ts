@@ -1,411 +1,359 @@
 import * as mongoDB from "mongodb";
 import { Readable } from "stream";
 import { CollectionChangeType } from "../data-manager.type";
-import { NO_ID } from "../data-manager.constants";
-import {
-  DeletedDocRecord,
-  InsertedOrUpatedDocRecord,
-  WithId,
-} from "./mongo-data-manager.type";
+import { WithId } from "./mongo-data-manager.type";
 import { Log } from "../../logger/logger-manager";
 import { handleDbError } from "../data-manager.helpers";
-import { toObjectId } from "./mongo.helpers";
+import { toObjectId, asIndexKey, normalizeIndexKey } from "./mongo.helpers";
+import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from "./mongo.constants";
 
-const DEFAULT_MONGO_URI =
-  "mongodb://127.0.0.1:27017?retryWrites=true&w=majority";
-const DEFAULT_DB_NAME = "justin";
-
-let _db: mongoDB.Db | undefined;
-let _client: mongoDB.MongoClient | undefined;
+let _client: mongoDB.MongoClient | null = null;
+let _db: mongoDB.Db | null = null;
 let _isConnected = false;
 
-/**
- * Sets the MongoDB database instance.
- * @returns void
- */
-const _setDatabaseInstance = (db: mongoDB.Db): void => {
-  _db = db;
-};
+/** Internal setters for tests */
+const _setClient = (c: mongoDB.MongoClient | null) => (_client = c);
+const _setDatabaseInstance = (db: mongoDB.Db | null) => (_db = db);
+const _setIsConnected = (v: boolean) => (_isConnected = v);
 
 /**
- * Sets the MongoDB client instance.
- * @returns void
+ * Adapter for MongoDB used by the DataManager facade.
+ * Internal to core; not re-exported from the package entry.
  */
-const _setClient = (client: mongoDB.MongoClient): void => {
-  _client = client;
-};
-
-/**
- * Sets the MongoDB database connection status.
- * @returns void
- */
-const _setIsConnected = (isConnected: boolean): void => {
-  _isConnected = isConnected;
-};
-
-/**
- * Initializes the MongoDB connection.
- * Establishes a connection to MongoDB using environment variables or default values.
- * @returns A Promise that resolves when the connection is established.
- * @throws Will throw an error if the connection fails.
- */
-const init = async (): Promise<void> => {
-  if (_isConnected) return;
-
-  Log.dev(`In mongo-data-manager.ts, MONGO_URI: ${process.env.MONGO_URI}`);
-  const uri = process.env.MONGO_URI || DEFAULT_MONGO_URI;
-  const dbName = process.env.DB_NAME || DEFAULT_DB_NAME;
-  _client = new mongoDB.MongoClient(uri);
-
-  try {
-    await _client.connect();
-    Log.dev(`MongoDBManager connected to ${uri}`);
-    _isConnected = true;
-    _db = _client.db(dbName);
-    Log.dev(`MongoDBManager initialized with database ${dbName}`);
-  } catch (error) {
-    Log.error("Failed to connect to MongoDB", error);
-    throw error;
-  }
-};
-
-/**
- * Closes the MongoDB connection.
- * Ensures the MongoDB connection is initialized, then attempts to close it.
- * @returns A Promise that resolves when the connection is closed.
- * @throws Will throw an error if closing the connection fails.
- */
-const close = async (): Promise<void> => {
-  ensureInitialized();
-  try {
-    await _client!.close();
-    _isConnected = false;
-    Log.dev('MongoDBManager MongoDB client connection closed');
-  } catch (error) {
-    handleDbError("Error closing MongoDBManager connection", error);
-  }
-};
-
-/**
- * Ensures the MongoDB connection is initialized.
- * @throws Will throw an error if the MongoDB client is not initialized.
- */
-const ensureInitialized = (): void => {
-  // print all three variables
-  Log.dev(`MongoDBManager ensureInitialized: _client: ${_client}, _isConnected: ${_isConnected}, _db: ${_db}`);
-  if (!_client || !_isConnected || !_db) {
-    const errorMessage = "MongoDB client not initialized";
-    Log.error(errorMessage);
-    throw new Error(errorMessage);
-  }
-};
-
-/**
- * Transforms a MongoDB document by replacing `_id` with `id`.
- * @param {any} doc - The document to transform.
- * @returns {object | null} The transformed document with `id` instead of `_id` or null if .
- */
-const transformId = (doc: any): object | null => {
-  if (!doc) return null;
-  const { _id, ...rest } = doc;
-  return { ...rest, id: _id?.toString() || NO_ID };
-};
-
-/**
- * Creates a readable stream to monitor collection changes.
- * @param collectionName - The name of the collection to monitor.
- * @param changeType - The type of change to monitor (insert, update, or delete).
- * @returns A readable stream of collection changes.
- */
-const getCollectionChangeReadable = (
-  collectionName: string,
-  changeType: CollectionChangeType
-): Readable => {
-  ensureInitialized();
-
-  const filterList = [{ $match: { operationType: changeType } }];
-  const options =
-    changeType === CollectionChangeType.UPDATE
-      ? { fullDocument: "updateLookup" }
-      : {};
-  const changeStream = _db!
-    .collection(collectionName)
-    .watch(filterList, options);
-
-  const collectionChangeReadable = new Readable({ objectMode: true });
-  collectionChangeReadable._read = () => {};
-
-  const handleStreamClose = () => {
-    Log.info(`Change stream for ${collectionName} closed`);
-    collectionChangeReadable.destroy();
-  };
-
-  const handleStreamError = (error: unknown) => {
-    Log.error("Change stream error", error);
-    collectionChangeReadable.emit("error", error);
-    throw error;
-  };
-
-  const pushToStream = (
-    nextDoc: DeletedDocRecord | InsertedOrUpatedDocRecord
-  ) => {
-    let normalizedDoc;
-
-    if (changeType === CollectionChangeType.DELETE) {
-      normalizedDoc = {
-        id: (nextDoc as DeletedDocRecord).documentKey._id?.toString() || NO_ID,
-      };
-    } else {
-      normalizedDoc = transformId(
-        (nextDoc as InsertedOrUpatedDocRecord).fullDocument
-      );
-    }
-    Log.dev(`Pushing to stream: ${JSON.stringify(normalizedDoc)}`);
-    collectionChangeReadable.push(normalizedDoc);
-  };
-
-  changeStream.on("change", pushToStream);
-  changeStream.on("close", handleStreamClose);
-  changeStream.on("error", handleStreamError);
-
-  collectionChangeReadable.on("close", () => changeStream.close());
-
-  return collectionChangeReadable;
-};
-
-/**
- * Inserts an item into a specified collection.
- * @param collectionName - The name of the collection.
- * @param obj - The object to insert into the collection.
- * @returns A Promise resolving with the ID of the inserted item.
- */
-const addItemToCollection = async (
-  collectionName: string,
-  obj: object
-): Promise<string> => {
-  ensureInitialized();
-  const { id, _id, ...filteredObject } = obj as WithId;
-
-  try {
-    const result = await _db!
-      .collection(collectionName)
-      .insertOne(filteredObject);
-    Log.dev(`Item added to ${collectionName}`, {
-      id: result.insertedId.toString(),
-    });
-    return result.insertedId.toString();
-  } catch (error) {
-    return handleDbError(`Failed to add item to ${collectionName}`, error);
-  }
-};
-
-/**
- * Updates an item by ID in a specified collection and returns the updated item.
- * @param collectionName - The name of the collection.
- * @param id - The ID of the item to update.
- * @param updateObject - The fields to update in the item.
- * @returns A Promise resolving with the updated item object if the update succeeded, otherwise `null`.
- */
-const updateItemInCollection = async (
-  collectionName: string,
-  id: string,
-  updateObject: object
-): Promise<object | null> => {
-  ensureInitialized();
-  const objectId = toObjectId(id);
-  if (!objectId) return null;
-
-  try {
-    const { matchedCount, modifiedCount } = await _db!
-      .collection(collectionName)
-      .updateOne({ _id: objectId }, { $set: updateObject });
-
-    if (matchedCount === 1) {
-      if (modifiedCount == 0) {
-        Log.warn(`No changes made for item with id ${id} in ${collectionName}`);
-      }
-      const updatedItem = await _db!
-        .collection(collectionName)
-        .findOne({ _id: objectId });
-
-      return transformId(updatedItem);
-    }
-    else {
-      Log.warn(`Update failed for item with id ${id} in ${collectionName}`);
-      return null;
-    }
-  } catch (error) {
-    return handleDbError(
-      `Error updating item with id ${id} in ${collectionName}`,
-      error
-    );
-  }
-};
-
-/**
- * Finds an item by ID in a specified collection.
- * @param collectionName - The name of the collection.
- * @param id - The ID of the item to find.
- * @returns A `Promise` resolving with the item if found, or `null` if not found.
- */
-const findItemByIdInCollection = async (
-  collectionName: string,
-  id: string
-): Promise<object | null> => {
-  ensureInitialized();
-  const objectId = toObjectId(id);
-  if (!objectId) return null;
-
-  try {
-    const foundDoc = await _db!
-      .collection(collectionName)
-      .findOne({ _id: objectId });
-    return transformId(foundDoc);
-  } catch (error) {
-    return handleDbError(
-      `Error finding item with id ${id} in ${collectionName}`,
-      error
-    );
-  }
-};
-
-/**
- * Finds items by property-value pair in a specified collection.
- * @param collectionName - The name of the collection.
- * @param criteria - A collection of property-value pairs to match. All property-value pairs must be matched. An empty object will return all items.
- * @returns A `Promise` resolving with a item list if found, or an empty list if not found.
- */
-const findItemsInCollection = async (
-  collectionName: string,
-  criteria: Record<string, any> | null
-): Promise<Record<string, any>[] | null> => {
-  ensureInitialized();
-
-  if (!criteria || !collectionName) return null;
-
-  try {
-    const foundDocList = await _db!
-      .collection(collectionName)
-      .find(criteria);
-
-    const docList = await foundDocList.toArray();
-    const transformedList = docList
-      .map(transformId)
-      .filter((doc) => doc !== null);
-    return transformedList;
-  } catch (error) {
-    return handleDbError(
-      `Error finding item with criteria ${criteria} in ${collectionName}`,
-      error
-    );
-  }
-};
-
-/**
- * Retrieves all items from a specified collection.
- * @param collectionName - The name of the collection.
- * @returns A Promise resolving with an array of items in the collection.
- */
-const getAllInCollection = async (
-  collectionName: string
-): Promise<object[]> => {
-  ensureInitialized();
-  try {
-    const results = (
-      await _db!.collection(collectionName).find({}).toArray()
-    ).map(transformId);
-    return results.filter((doc) => doc !== null);
-  } catch (error) {
-    return handleDbError(
-      `Failed to retrieve items from ${collectionName}`,
-      error
-    );
-  }
-};
-
-/**
- * Removes an item by ID from a specified collection.
- * @param collectionName - The name of the collection.
- * @param id - The ID of the item to remove.
- * @returns A `Promise` resolving with `true` if the item was removed, otherwise `false`.
- */
-const removeItemFromCollection = async (
-  collectionName: string,
-  id: string
-): Promise<boolean> => {
-  ensureInitialized();
-  const objectId = toObjectId(id);
-  if (!objectId) return false;
-
-  try {
-    const { acknowledged } = await _db!
-      .collection(collectionName)
-      .deleteOne({ _id: objectId });
-    return acknowledged;
-  } catch (error) {
-    return handleDbError(
-      `Error removing item with id ${id} from ${collectionName}`,
-      error
-    );
-  }
-};
-
-/**
- * Clears all items in a specified collection.
- * @param collectionName - The name of the collection.
- * @returns A `Promise` resolving when the collection is cleared.
- * @throws Will throw an error if the operation fails.
- */
-const clearCollection = async (collectionName: string): Promise<void> => {
-  ensureInitialized();
-  try {
-    await _db!.collection(collectionName).drop();
-  } catch (error) {
-    handleDbError(`Failed to clear collection: ${collectionName}`, error);
-  }
-};
-
-/**
- * Checks if a specified collection is empty.
- * @param collectionName - The name of the collection.
- * @returns A `Promise` resolving with `true` if the collection is empty, otherwise `false`.
- */
-const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
-  ensureInitialized();
-  try {
-    const count = await _db!
-      .collection(collectionName)
-      .countDocuments({});
-    return count === 0;
-  } catch (error) {
-    return handleDbError(
-      `Failed to check if collection is empty: ${collectionName}`,
-      error
-    );
-  }
-};
-
 export const MongoDBManager = {
-  init,
-  close,
-  transformId,
-  ensureInitialized,
-  getCollectionChangeReadable,
-  findItemByIdInCollection,
-  findItemsInCollection,
-  addItemToCollection,
-  updateItemInCollection,
-  getAllInCollection,
-  removeItemFromCollection,
-  clearCollection,
-  isCollectionEmpty,
+  /**
+   * Connect and select a database.
+   * Safe to call more than once; subsequent calls no-op if already connected.
+   *
+   * @param uri - Mongo connection string.
+   * @param dbName - Database name to use.
+   */
+  async connect(uri: string = DEFAULT_MONGO_URI, dbName: string = DEFAULT_DB_NAME): Promise<void> {
+    if (_isConnected && _client && _db) return;
+
+    try {
+      _client = new mongoDB.MongoClient(uri);
+      await _client.connect();
+      _db = _client.db(dbName);
+      _isConnected = true;
+      Log.dev(`MongoDBManager connected to ${dbName}`);
+    } catch (err) {
+      handleDbError("Error connecting to MongoDB", err);
+      throw err;
+    }
+  },
+
+  /**
+   * Close the MongoDB client.
+   * No-ops if already closed.
+   */
+  async disconnect(): Promise<void> {
+    try {
+      if (_client) await _client.close();
+    } catch (err) {
+      handleDbError("Error disconnecting MongoDB", err);
+    } finally {
+      _client = null;
+      _db = null;
+      _isConnected = false;
+      Log.dev("MongoDBManager disconnected");
+    }
+  },
+
+  /**
+   * Guard that throws if the adapter is not ready.
+   */
+  ensureInitialized(): void {
+    if (!_client || !_db || !_isConnected) {
+      const msg = "MongoDB client not initialized";
+      Log.error(msg);
+      throw new Error(msg);
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Provisioning (minimal, idempotent)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Ensure a collection exists. Optionally apply basic schema validation with `collMod`.
+   * Idempotent: creates the collection if missing; otherwise best-effort `collMod`.
+   *
+   * @param storeName - Collection name.
+   * @param options - Optional validation settings.
+   */
+  async ensureStore(
+    storeName: string,
+    options?: {
+      validation?: {
+        validator?: Record<string, unknown>;
+        validationLevel?: "off" | "strict" | "moderate";
+        validationAction?: "error" | "warn";
+      };
+    }
+  ): Promise<void> {
+    this.ensureInitialized();
+    if (!storeName) return;
+
+    // create if missing
+    const exists = await _db!.listCollections({ name: storeName }, { nameOnly: true }).hasNext();
+    if (!exists) {
+      await _db!.createCollection(storeName, {
+        validator: options?.validation?.validator,
+        validationLevel: options?.validation?.validationLevel,
+        validationAction: options?.validation?.validationAction,
+      });
+      Log.dev(`ensureStore: created '${storeName}'`);
+      return;
+    }
+
+    // best-effort collMod for validator; ignore if unsupported
+    if (options?.validation) {
+      const cmd: Record<string, unknown> = { collMod: storeName };
+      if (options.validation.validator) cmd.validator = options.validation.validator;
+      if (options.validation.validationLevel) cmd.validationLevel = options.validation.validationLevel;
+      if (options.validation.validationAction) cmd.validationAction = options.validation.validationAction;
+
+      try {
+        await _db!.command(cmd);
+        Log.dev(`ensureStore: applied collMod to '${storeName}'`);
+      } catch (e) {
+        Log.warn(`ensureStore: collMod skipped for '${storeName}': ${(e as Error).message}`);
+      }
+    }
+  },
+
+  /**
+   * Ensure the given named indexes exist on a collection.
+   * Idempotent by **index name** or **key**: if either already exists, we skip it.
+   *
+   * @param storeName - Collection name.
+   * @param indexes - Indexes to ensure. Provide a `name` for clean idempotency.
+   *
+   * @example
+   * await ensureIndexes('users', [
+   *   { name: 'email_1', key: { email: 1 }, unique: true },
+   *   { name: 'createdAt_-1', key: { createdAt: -1 } },
+   * ]);
+   */
+  async ensureIndexes(
+    storeName: string,
+    indexes: Array<{ name: string; key: mongoDB.IndexSpecification; unique?: boolean }>
+  ): Promise<void> {
+    this.ensureInitialized();
+    if (!storeName || !indexes?.length) return;
+
+    const coll = _db!.collection(storeName);
+    const existing = await coll.indexes(); // [{ name, key, ... }]
+
+    const existingNames = new Set(existing.map((idx) => idx.name));
+    const existingKeySigs = new Set(
+      existing.map((idx) => normalizeIndexKey(idx.key as any))
+    );
+
+    const toCreate: mongoDB.IndexDescription[] = [];
+
+    for (const idx of indexes) {
+      if (!idx?.name || !idx?.key) continue;
+
+      const byName = existingNames.has(idx.name);
+      const byKey = existingKeySigs.has(normalizeIndexKey(idx.key));
+      if (byName || byKey) continue; // idempotent by name OR key
+
+      toCreate.push({
+        name: idx.name,
+        key: asIndexKey(idx.key), // normalize union → object/Map for the driver
+        unique: idx.unique,
+      });
+    }
+
+    if (toCreate.length > 0) {
+      await coll.createIndexes(toCreate);
+      Log.dev(`ensureIndexes: created ${toCreate.length} index(es) on '${storeName}'`);
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // CRUD
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Insert a document. Returns the inserted doc with `id` as a string.
+   *
+   * @param collectionName - Target collection.
+   * @param item - Document to insert.
+   */
+  async addItemToCollection<T extends WithId>(collectionName: string, item: T): Promise<T> {
+    this.ensureInitialized();
+    if (!collectionName) throw new Error("collectionName is required");
+
+    try {
+      const coll = _db!.collection(collectionName);
+      const doc = { ...item } as any;
+
+      // Respect provided id if it's a valid ObjectId; otherwise Mongo assigns.
+      let _id: mongoDB.ObjectId | undefined;
+      if (doc.id) {
+        const maybe = toObjectId(doc.id);
+        if (maybe) _id = maybe;
+      }
+      delete doc.id; // don't persist "id" alongside _id
+
+      const res = await coll.insertOne(_id ? { _id, ...doc } : doc);
+      const id = (res.insertedId || _id) as mongoDB.ObjectId;
+      return { ...(item as any), id: id.toHexString() } as T;
+    } catch (err) {
+      handleDbError(`addItemToCollection failed for ${collectionName}`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Update a document by id. Returns the updated doc with `id`, or `null` if not found.
+   *
+   * @param collectionName - Target collection.
+   * @param id - Document id (string ObjectId).
+   * @param updates - Partial update payload.
+   */
+  async updateItemInCollection<T extends WithId>(
+    collectionName: string,
+    id: string,
+    updates: Partial<T>
+  ): Promise<T | null> {
+    this.ensureInitialized();
+    if (!collectionName) throw new Error("collectionName is required");
+    if (!id) throw new Error("id is required");
+
+    try {
+      const _id = toObjectId(id);
+      if (!_id) throw new Error("Invalid id");
+
+      const coll = _db!.collection(collectionName);
+      const { id: _ignore, _id: __ignore, ...safe } = (updates ?? {}) as any;
+
+      const res = await coll.findOneAndUpdate({ _id }, { $set: safe }, { returnDocument: "after" });
+      if (!res?.value) return null;
+
+      const v = res.value as any;
+      return { ...v, id: v._id?.toHexString?.() ?? v.id } as T;
+    } catch (err) {
+      handleDbError(`updateItemInCollection failed for ${collectionName}`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Delete a document by id.
+   *
+   * @param collectionName - Target collection.
+   * @param id - Document id (string ObjectId).
+   * @returns `true` if a document was deleted.
+   */
+  async deleteItemFromCollection(collectionName: string, id: string): Promise<boolean> {
+    this.ensureInitialized();
+    if (!collectionName) throw new Error("collectionName is required");
+    if (!id) throw new Error("id is required");
+
+    try {
+      const _id = toObjectId(id);
+      if (!_id) throw new Error("Invalid id");
+
+      const coll = _db!.collection(collectionName);
+      const res = await coll.deleteOne({ _id });
+      return res.deletedCount === 1;
+    } catch (err) {
+      handleDbError(`deleteItemFromCollection failed for ${collectionName}`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Read a single document by id.
+   *
+   * @param collectionName - Target collection.
+   * @param id - Document id (string ObjectId).
+   */
+  async findItemInCollectionById<T extends WithId>(collectionName: string, id: string): Promise<T | null> {
+    this.ensureInitialized();
+    if (!collectionName) throw new Error("collectionName is required");
+    if (!id) throw new Error("id is required");
+
+    try {
+      const _id = toObjectId(id);
+      if (!_id) throw new Error("Invalid id");
+
+      const coll = _db!.collection(collectionName);
+      const doc = await coll.findOne({ _id });
+      if (!doc) return null;
+
+      const v = doc as any;
+      return { ...v, id: v._id?.toHexString?.() ?? v.id } as T;
+    } catch (err) {
+      handleDbError(`findItemInCollectionById failed for ${collectionName}`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Find multiple documents by a simple filter.
+   *
+   * @param collectionName - Target collection.
+   * @param filter - Basic query object.
+   */
+  async findItemsInCollection<T extends WithId>(
+    collectionName: string,
+    filter: Record<string, unknown>
+  ): Promise<T[] | null> {
+    this.ensureInitialized();
+    if (!collectionName) return null;
+
+    try {
+      const coll = _db!.collection(collectionName);
+      const arr = await coll.find(filter ?? {}).toArray();
+      return arr.map((v: any) => ({ ...v, id: v._id?.toHexString?.() ?? v.id }));
+    } catch (err) {
+      handleDbError(`findItemsInCollection failed for ${collectionName}`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Read all documents in a collection.
+   *
+   * @param collectionName - Target collection.
+   */
+  async getAllItemsFromCollection<T extends WithId>(collectionName: string): Promise<T[]> {
+    this.ensureInitialized();
+    if (!collectionName) return [];
+
+    try {
+      const coll = _db!.collection(collectionName);
+      const arr = await coll.find({}).toArray();
+      return arr.map((v: any) => ({ ...v, id: v._id?.toHexString?.() ?? v.id }));
+    } catch (err) {
+      handleDbError(`getAllItemsFromCollection failed for ${collectionName}`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Change stream for one collection filtered by operation type.
+   * Keeps the pipeline minimal.
+   *
+   * @param collectionName - Target collection.
+   * @param changeType - Operation type ('insert' | 'update' | 'delete').
+   */
+  getCollectionChangeReadable(collectionName: string, changeType: CollectionChangeType): Readable {
+    this.ensureInitialized();
+    const coll = _db!.collection(collectionName);
+    const pipeline = [{ $match: { operationType: changeType } }];
+    return coll.watch(pipeline, { fullDocument: "updateLookup" }) as unknown as Readable;
+  },
 };
 
 /**
- * TestingMongoDBManager provides additional utilities for testing.
- *
- * @namespace TestingMongoDBManager
- * @private
+ * Testing-only helpers. Not for production use.
+ * @internal
  */
 export const TestingMongoDBManager = {
   ...MongoDBManager,
@@ -413,4 +361,3 @@ export const TestingMongoDBManager = {
   _setClient,
   _setIsConnected,
 };
-
