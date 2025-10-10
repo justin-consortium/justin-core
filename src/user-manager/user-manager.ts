@@ -316,10 +316,11 @@ const updateUserById = async (
  * @param {string} userId - The user's ID.
  * @returns {Promise<void>} Resolves when deletion is complete.
  */
-const deleteUserById = async (userId: string): Promise<void> => {
+const deleteUserById = async (userId: string): Promise<boolean> => {
   _checkInitialization();
-  await dm.removeItemFromCollection(USERS, userId);
+  const result = await dm.removeItemFromCollection(USERS, userId);
   _users.delete(userId);
+  return result;
 };
 
 
@@ -329,10 +330,11 @@ const deleteUserById = async (userId: string): Promise<void> => {
  * @param {string} userId - The user's ID.
  * @returns {Promise<void>} Resolves when deletion is complete.
  */
-const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<void> => {
+const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
   const theUser: JUser = await getUserByUniqueIdentifier(uniqueIdentifier) as JUser;
-  await deleteUserById(theUser.id);
+  const result = await deleteUserById(theUser.id);
   _users.delete(theUser.id);
+  return result;
 };
 
 

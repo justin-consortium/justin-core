@@ -432,8 +432,9 @@ describe("UserManager", () => {
       getInitializationStatusStub.returns(true);
       TestingUserManager._users.set(jUser1.id, jUser1);
       const result = await TestingUserManager.deleteUserById(jUser1.id);
+      expect(result).toBe(true);
       expect(removeItemFromCollectionStub.calledOnceWith(USERS, jUser1.id)).toBe(true);
-      expect(result).toBeUndefined();
+      
     });
 
     it("should not delete a user by id when user does not exist", async () => {
@@ -443,6 +444,7 @@ describe("UserManager", () => {
       removeItemFromCollectionStub.resolves(false);
       
       const result = await TestingUserManager.deleteUserById("nonexistent-id");
+      expect(result).toBe(false);
       expect(TestingUserManager._users.size).toBe(2);
       expect(removeItemFromCollectionStub.calledOnceWith(USERS, "nonexistent-id")).toBe(true);
     });
