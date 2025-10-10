@@ -206,6 +206,9 @@ describe("UserManager", () => {
       TestingUserManager._users.set(jUser1.id, jUser1);
       const result = await TestingUserManager.addUser(initialUserRecord1);
       expect(result).toBeNull();
+      // print out what logWarnStub was called with
+      console.log("logWarnStub args:", logWarnStub.getCall(0).args);
+      
       expect(logWarnStub.calledWithMatch(/already exists/)).toBe(true);
       expect(addStub.called).toBe(false);
     });
