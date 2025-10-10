@@ -1,5 +1,6 @@
-import * as mongoDB from 'mongodb';
-import { Log } from '../../logger/logger-manager'
+import * as mongoDB from "mongodb";
+import { Log } from "../../logger/logger-manager";
+import { NO_ID } from "../data-manager.constants";
 
 /**
  * Safely converts a string to a MongoDB `ObjectId`.
@@ -10,12 +11,13 @@ import { Log } from '../../logger/logger-manager'
  * @param id - The string to convert into an `ObjectId`.
  * @returns The created `ObjectId` or `null` if the format is invalid.
  */
-export const toObjectId = (id: string | null | undefined): mongoDB.ObjectId | null => {
-  if (!id || typeof id !== 'string') {
+export const toObjectId = (
+  id: string | null | undefined
+): mongoDB.ObjectId | null => {
+  if (!id || typeof id !== "string") {
     Log.error(`Invalid ObjectId format: ${id}`);
     return null;
   }
-
   try {
     return new mongoDB.ObjectId(id);
   } catch {
@@ -25,54 +27,60 @@ export const toObjectId = (id: string | null | undefined): mongoDB.ObjectId | nu
 };
 
 /**
- * Coerces an `IndexSpecification` into what the driver expects for
- * `IndexDescription.key` (either a plain object or a Map).
+ * Moves Mongo `_id` to `id` (string). Returns `null` if `doc` is falsy.
  *
- * Keeps the shape predictable for `createIndexes`.
+ * @typeParam T - Any Mongo-shaped document.
+ * @param doc - The source document (may be null/undefined).
+ * @returns A new object with `id` and remaining fields, or `null`.
+ */
+export const transformId = <
+  T extends Record<string, any> | null | undefined
+>(doc: T) => {
+  if (!doc) return null as any;
+  const { _id, ...rest } = doc as any;
+  return { id: _id?.toString?.() ?? NO_ID, ...rest } as any;
+};
+
+/**
+ * Coerces an IndexSpecification into `IndexDescription.key` shape
+ * (plain object or Map) so `createIndexes` gets a predictable key.
  *
  * @param key - The index specification in any supported form.
- * @returns A plain object or Map keyed by field name to direction.
+ * @returns A plain object or Map keyed by field -> direction.
  */
 export const asIndexKey = (
   key: mongoDB.IndexSpecification
 ):
   | Record<string, mongoDB.IndexDirection>
   | Map<string, mongoDB.IndexDirection> => {
-  if (typeof key === "string") {
-    // "field" -> { field: 1 }
-    return { [key]: 1 };
-  }
+  if (typeof key === "string") return { [key]: 1 };
   if (Array.isArray(key)) {
-    // Cast via unknown so TS is happy with tuple shape.
     const tuples = key as unknown as Array<[string, mongoDB.IndexDirection]>;
     const out: Record<string, mongoDB.IndexDirection> = {};
     for (const [k, v] of tuples) out[String(k)] = v;
     return out;
   }
-  if (key instanceof Map) {
-    return key as Map<string, mongoDB.IndexDirection>;
-  }
-  // assume plain object { a: 1 }
+  if (key instanceof Map) return key as Map<string, mongoDB.IndexDirection>;
   return key as Record<string, mongoDB.IndexDirection>;
 };
 
 /**
  * Builds a stable string signature for an index key so we can compare
- * "same index different name" situations. Helpful for idempotency checks.
+ * "same index, different name" cases (helps with idempotency).
  *
  * Examples:
- * - { a: 1, b: -1 }      → "a:1|b:-1"
- * - [ ['a', 1], ['b', -1] ] → "a:1|b:-1"
- * - "field"               → "field:1"
- * - Map([['a',1]])        → "a:1"
+ *  - { a: 1, b: -1 }              → "a:1|b:-1"
+ *  - [ ['a', 1], ['b', -1] ]      → "a:1|b:-1"
+ *  - "field"                       → "field:1"
+ *  - new Map([['a', 1]])          → "a:1"
  *
- * @param key - The index specification in any supported form.
- * @returns A stable signature string for the key shape.
+ * @param key - The index spec in any supported form.
+ * @returns Stable signature string for the key.
  */
-export const normalizeIndexKey = (key: mongoDB.IndexSpecification): string => {
-  if (typeof key === "string") {
-    return `${key}:1`;
-  }
+export const normalizeIndexKey = (
+  key: mongoDB.IndexSpecification
+): string => {
+  if (typeof key === "string") return `${key}:1`;
 
   if (Array.isArray(key)) {
     const tuples = key as unknown as Array<[string, mongoDB.IndexDirection]>;
