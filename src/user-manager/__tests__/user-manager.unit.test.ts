@@ -439,9 +439,8 @@ describe("UserManager", () => {
       removeItemFromCollectionStub.resolves(true);
       TestingUserManager._users.set(jUser1.id, jUser1);
       const result = await TestingUserManager.deleteUserById(jUser1.id);
-      expect(result).toBe(true);
       expect(removeItemFromCollectionStub.calledOnceWith(USERS, jUser1.id)).toBe(true);
-      
+      expect(result).toBe(true);
     });
 
     it("should not delete a user by id when user does not exist", async () => {
