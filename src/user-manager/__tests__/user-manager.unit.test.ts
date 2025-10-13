@@ -16,8 +16,7 @@ const jUser1 = { id: initialUserRecord1.uniqueIdentifier, uniqueIdentifier: init
 const jUser2 = { id: initialUserRecord2.uniqueIdentifier, uniqueIdentifier: initialUserRecord2.uniqueIdentifier, attributes: initialUserRecord2.initialAttributes };
 
 describe("UserManager", () => {
-  let logInfoStub: any;
-  let logWarnStub: any;
+  let logInfoStub: any, logWarnStub: any;
   let findStub: sinon.SinonStub;
   let updateStub: sinon.SinonStub;
   let addStub: sinon.SinonStub;
@@ -80,7 +79,6 @@ describe("UserManager", () => {
   afterEach(() => {
     sandbox.restore();
   });
-
 
   describe("init", () => {
     it("should call DataManager.init", async () => {
@@ -207,10 +205,7 @@ describe("UserManager", () => {
       getInitializationStatusStub.returns(true);
       TestingUserManager._users.set(jUser1.uniqueIdentifier, jUser1);
       const result = await TestingUserManager.addUser(initialUserRecord1);
-      expect(result).toBeNull();
-      // print out what logWarnStub was called with
-      console.log("logWarnStub args:", logWarnStub.getCall(0).args);
-      
+      expect(result).toBeNull();      
       expect(logWarnStub.calledWithMatch(/already exists/)).toBe(true);
       expect(addStub.called).toBe(false);
     });
@@ -232,7 +227,6 @@ describe("UserManager", () => {
       await expect(UserManager.addUser(initialUserRecord1)).rejects.toThrow(/fail/);
     });
   });
-
   
   describe("addUsers", () => {
 
