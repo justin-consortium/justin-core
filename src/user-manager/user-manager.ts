@@ -319,7 +319,7 @@ const updateUserById = async (
 const deleteUserById = async (userId: string): Promise<boolean> => {
   _checkInitialization();
   const result = await dm.removeItemFromCollection(USERS, userId);
-  _users.delete(userId);
+  if (result) _users.delete(userId);
   return result;
 };
 
@@ -333,7 +333,7 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
 const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
   const theUser: JUser = await getUserByUniqueIdentifier(uniqueIdentifier) as JUser;
   const result = await deleteUserById(theUser.id);
-  _users.delete(theUser.id);
+  if (result) _users.delete(theUser.id);
   return result;
 };
 
