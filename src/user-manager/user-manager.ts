@@ -25,6 +25,13 @@ const clm = ChangeListenerManager.getInstance();
  */
 const init = async (): Promise<void> => {
   await dm.init();
+
+  // ensure USERS exists and has a unique index on uniqueIdentifier (idempotent, DB-agnostic)
+  await dm.ensureStore(USERS);
+  await dm.ensureIndexes(USERS, [
+    { name: "uniq_user_identifier", key: { uniqueIdentifier: 1 }, unique: true },
+  ]);
+
   await refreshCache();
   setupChangeListeners();
 };
@@ -311,6 +318,47 @@ const updateUserById = async (
 };
 
 /**
+ * Change a user's uniqueIdentifier to a new value.
+ * @param {string} currentUniqueIdentifier - The user's current uniqueIdentifier.
+ * @param {string} newUniqueIdentifier - The new uniqueIdentifier to set.
+ * @returns {Promise<JUser>} Resolves with the updated JUser.
+ */
+const modifyUserUniqueIdentifier = async (
+  currentUniqueIdentifier: string,
+  newUniqueIdentifier: string
+): Promise<JUser> => {
+  _checkInitialization();
+
+  if (!newUniqueIdentifier || typeof newUniqueIdentifier !== "string" || newUniqueIdentifier.trim() === "") {
+    throw new Error("uniqueIdentifier must be a non-empty string.");
+  }
+
+  const theUser: JUser | null = getUserByUniqueIdentifier(currentUniqueIdentifier);
+
+  if (!theUser) {
+    throw new Error(`User with uniqueIdentifier (${currentUniqueIdentifier}) not found.`);
+  }
+
+  if (theUser.uniqueIdentifier === newUniqueIdentifier) {
+    return theUser; // no-op
+  }
+
+  const updatedUser =
+    (await dm.updateItemByIdInCollection(
+      USERS,
+      theUser.id,
+      { uniqueIdentifier: newUniqueIdentifier }
+    )) as JUser;
+
+  if (!updatedUser) {
+    throw new Error(`Failed to update uniqueIdentifier for user: ${theUser.id}`);
+  }
+
+  _users.set(updatedUser.id, updatedUser);
+  return updatedUser;
+};
+
+/**
  * Deletes a user by ID from both the database and the in-memory cache.
  *
  * @param {string} userId - The user's ID.
@@ -390,10 +438,11 @@ const isIdentifierUnique = async (
 export const UserManager = {
   init,
   addUser,
-  addUsers, 
+  addUsers,
   getAllUsers,
   getUserByUniqueIdentifier,
   updateUserByUniqueIdentifier,
+  modifyUserUniqueIdentifier,
   deleteUserByUniqueIdentifier,
   deleteAllUsers,
   shutdown,
