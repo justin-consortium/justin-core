@@ -56,7 +56,7 @@ describe("UserManager", () => {
       .resolves();
     removeItemFromCollectionStub = sandbox
       .stub(DataManager.prototype, "removeItemFromCollection")
-      .resolves();
+      .resolves(true);
     getAllInCollectionStub = sandbox
       .stub(DataManager.prototype, "getAllInCollection")
       .resolves([jUser1, jUser2]);
@@ -81,7 +81,7 @@ describe("UserManager", () => {
     sandbox.restore();
   });
 
-  /*
+
   describe("init", () => {
     it("should call DataManager.init", async () => {
       await TestingUserManager.init();
@@ -180,7 +180,6 @@ describe("UserManager", () => {
       expect(getInitializationStatusStub.called).toBe(true);
     });
   });
-  */
 
   describe("addUser", () => {
     it("should throw if not initialized", async () => {
@@ -188,7 +187,6 @@ describe("UserManager", () => {
       await expect(UserManager.addUser(initialUserRecord1)).rejects.toThrow("UserManager has not been initialized");
     });
 
-    /*
     it("should log warning and return null if user is invalid", async () => {
       getInitializationStatusStub.returns(true);
       // @ts-ignore
@@ -233,10 +231,9 @@ describe("UserManager", () => {
       addStub.rejects(new Error("db error"));
       await expect(UserManager.addUser(initialUserRecord1)).rejects.toThrow(/fail/);
     });
-    */
   });
 
-  /*
+  
   describe("addUsers", () => {
 
     it("should add users to database", async () => {
@@ -439,6 +436,7 @@ describe("UserManager", () => {
   describe("deleteUserById", () => {
     it("should delete user by id when user exists", async () => {
       getInitializationStatusStub.returns(true);
+      removeItemFromCollectionStub.resolves(true);
       TestingUserManager._users.set(jUser1.id, jUser1);
       const result = await TestingUserManager.deleteUserById(jUser1.id);
       expect(result).toBe(true);
@@ -462,11 +460,12 @@ describe("UserManager", () => {
   describe("deleteUserByUniqueIdentifier", () => {
     it("should delete user by unique identifier when user exists", async () => {
       getInitializationStatusStub.returns(true);
+      removeItemFromCollectionStub.resolves(true);
       TestingUserManager._users.set(jUser1.id, jUser1);
       TestingUserManager._users.set(jUser2.id, jUser2);
       const result = await TestingUserManager.deleteUserByUniqueIdentifier(jUser1.uniqueIdentifier);
       expect(removeItemFromCollectionStub.calledOnceWith(USERS, jUser1.uniqueIdentifier)).toBe(true);
-      expect(result).toBeUndefined();
+      expect(result).toBe(true);
       // _users cache should be updated
       expect(TestingUserManager._users.has(jUser1.id)).toBe(false);
       expect(TestingUserManager._users.has(jUser2.id)).toBe(true);
@@ -524,5 +523,4 @@ describe("UserManager", () => {
       await expect(() => TestingUserManager.isIdentifierUnique("")).rejects.toThrow();
     });
   });
-  */
 });
