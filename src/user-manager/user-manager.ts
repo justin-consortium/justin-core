@@ -314,12 +314,12 @@ const updateUserById = async (
  * Deletes a user by ID from both the database and the in-memory cache.
  *
  * @param {string} userId - The user's ID.
- * @returns {Promise<void>} Resolves when deletion is complete.
+ * @returns {Promise<boolean>} Resolves to true if deletion was successful, false otherwise.
  */
 const deleteUserById = async (userId: string): Promise<boolean> => {
   _checkInitialization();
   const result = await dm.removeItemFromCollection(USERS, userId);
-  _users.delete(userId);
+  if (result) _users.delete(userId);
   return result;
 };
 
@@ -328,12 +328,13 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
  * Deletes a user by ID from both the database and the in-memory cache.
  *
  * @param {string} userId - The user's ID.
- * @returns {Promise<void>} Resolves when deletion is complete.
+ * @returns {Promise<boolean>} Resolves to true if deletion was successful, false otherwise.
  */
 const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
-  const theUser: JUser = await getUserByUniqueIdentifier(uniqueIdentifier) as JUser;
-  const result = await deleteUserById(theUser.id);
-  _users.delete(theUser.id);
+  const theUser: JUser | null = await getUserByUniqueIdentifier(uniqueIdentifier);
+  const userId = theUser?.id as any;
+  const result = await deleteUserById(userId);
+  if(result) _users.delete(userId);
   return result;
 };
 

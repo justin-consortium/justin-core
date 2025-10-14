@@ -448,6 +448,17 @@ describe("UserManager", () => {
       expect(TestingUserManager._users.size).toBe(2);
       expect(removeItemFromCollectionStub.calledOnceWith(USERS, "nonexistent-id")).toBe(true);
     });
+
+    it("should not delete a user in cache if database delete is not successful.", async () => {
+      getInitializationStatusStub.returns(true);
+      TestingUserManager._users.set(jUser1.id, jUser1);
+      TestingUserManager._users.set(jUser2.id, jUser2);
+      removeItemFromCollectionStub.resolves(false);
+      
+      await TestingUserManager.deleteUserById(jUser1.id);
+      expect(TestingUserManager._users.size).toBe(2);
+      expect(removeItemFromCollectionStub.calledOnceWith(USERS, jUser1.id)).toBe(true);
+    });
   });
 
   describe("deleteUserByUniqueIdentifier", () => {
@@ -470,10 +481,20 @@ describe("UserManager", () => {
       TestingUserManager._users.set(jUser1.id, jUser1);
       TestingUserManager._users.set(jUser2.id, jUser2);
       removeItemFromCollectionStub.resolves(false);
-      
-      await TestingUserManager.deleteUserById("nonexistent-id");
+      const nonExistentUID = "nonexistent-unique-id";
+      await TestingUserManager.deleteUserByUniqueIdentifier(nonExistentUID);
       expect(TestingUserManager._users.size).toBe(2);
-      expect(removeItemFromCollectionStub.calledOnceWith(USERS, "nonexistent-id")).toBe(true);
+      expect(removeItemFromCollectionStub.calledOnceWith(USERS, sinon.match.any)).toBe(true);
+    });
+
+    it("should not delete a user in cache if database delete is not successful.", async () => {
+      getInitializationStatusStub.returns(true);
+      TestingUserManager._users.set(jUser1.id, jUser1);
+      TestingUserManager._users.set(jUser2.id, jUser2);
+      removeItemFromCollectionStub.resolves(false);
+      await TestingUserManager.deleteUserByUniqueIdentifier(jUser1.uniqueIdentifier);
+      expect(TestingUserManager._users.size).toBe(2);
+      expect(removeItemFromCollectionStub.calledOnceWith(USERS, jUser1.id)).toBe(true);
     });
   });
 
