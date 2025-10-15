@@ -46,7 +46,6 @@ class DataManager extends EventEmitter {
 
   /**
    * Initializes the DataManager with the specified database type.
-   * Sets up listeners for collection changes.
    * @param {DBType} dbType - The type of database to initialize. Defaults to MongoDB.
    * @returns {Promise<void>} Resolves when initialization is complete.
    */
@@ -59,12 +58,6 @@ class DataManager extends EventEmitter {
       }
       await this.db.init();
       this.isInitialized = true;
-      // TODO: figure out why we're doing this here
-      this.changeListenerManager.addChangeListener(
-        'EVENTS_QUEUE',
-        CollectionChangeType.INSERT,
-        this.handleEventsQueueInsert.bind(this)
-      );
       Log.dev('DataManager initialized successfully');
     } catch (error) {
       handleDbError('Failed to initialize DataManager', error);
@@ -72,13 +65,34 @@ class DataManager extends EventEmitter {
   }
 
   /**
-   * Handles `insert` changes in the EVENTS_QUEUE collection.
-   * Emits an `eventAdded` signal to notify external systems.
-   * @param {any} data - Data from the change stream.
-   * @private
+   * Ensures a store exists and applies adapter-supported options (idempotent).
+   * @param {string} storeName - The collection/table name.
+   * @param {object} [options] - Optional storage options (adapter-specific).
    */
-  private async handleEventsQueueInsert(data: any): Promise<void> {
-    this.emit('eventAdded', data);
+  public async ensureStore(
+    storeName: string,
+    options?: { validator?: unknown }
+  ): Promise<void> {
+    this.checkInitialization();
+    await this.db.ensureStore(storeName, options as any);
+  }
+
+  /**
+   * Ensures indexes exist on a store (idempotent by name and key).
+   * @param {string} storeName - The collection/table name.
+   * @param {Array<{name?: string; key: unknown; unique?: boolean; partialFilterExpression?: unknown}>} indexes
+   */
+  public async ensureIndexes(
+    storeName: string,
+    indexes: Array<{
+      name?: string;
+      key: unknown;
+      unique?: boolean;
+      partialFilterExpression?: unknown;
+    }>
+  ): Promise<void> {
+    this.checkInitialization();
+    await this.db.ensureIndexes(storeName, indexes as any);
   }
 
   /**
@@ -131,8 +145,6 @@ class DataManager extends EventEmitter {
 
       if (collectionName === USERS) {
         this.emit('userAdded', newItem);
-      } else if (collectionName === 'EVENTS_QUEUE') {
-        this.emit('eventAdded', newItem);
       }
 
       return newItem;
@@ -279,7 +291,7 @@ class DataManager extends EventEmitter {
     }
   }
 
-    /**
+  /**
    * Finds items by criteria in a specified collection.
    * @template T - The expected type of the item in the collection.
    * @param {string} collectionName - The name of the collection.
@@ -291,11 +303,10 @@ class DataManager extends EventEmitter {
     collectionName: string,
     criteria: Record<string, any>
   ): Promise<T[] | null> {
-
     if (!criteria || !collectionName) {
       return null; // Return null if criteria is null
     }
-    
+
     try {
       this.checkInitialization();
       const itemList = await this.db.findItemsInCollection(
