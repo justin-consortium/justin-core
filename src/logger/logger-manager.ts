@@ -109,21 +109,38 @@ export const Log = {
 const _scopedLoggers = new Map<string, Logger>();
 
 /**
- * Register a logger used only for a given scope.
+ * Register (or update) a logger for a given scope.
  *
- * If no scoped logger is registered for `scope`, {@link scopedLog} falls back to the global logger.
+ * - If `logger` is omitted, the scope inherits a **snapshot** of the current global logger.
+ * - If `logger` is partial, any missing methods are filled from the current global logger.
+ * - Future calls to {@link setLogger} do **not** retroactively change already-registered scoped loggers.
  *
  * @param scope - Non-empty scope name (e.g., `"core"`, `"events"`).
- * @param logger - Logger to route scoped messages to.
+ * @param logger - Optional partial logger; overrides corresponding global methods.
  *
  * @example
- * setLoggerFor('events', fileLogger);
+ * // Inherit global (snapshot at registration time)
+ * setLoggerFor('events');
+ *
+ * // Override only info; others come from global at registration time
+ * setLoggerFor('events', { info: (...a) => fileSink.info(...a) });
  */
-export function setLoggerFor(scope: string, logger: Logger): void {
+export function setLoggerFor(scope: string): void;
+export function setLoggerFor(scope: string, logger: Partial<Logger>): void;
+export function setLoggerFor(scope: string, logger?: Partial<Logger>): void {
   if (!scope || typeof scope !== 'string') {
     throw new Error('setLoggerFor: scope must be a non-empty string');
   }
-  _scopedLoggers.set(scope, logger);
+
+  // Merge over the *current* global logger (snapshot semantics).
+  const merged: Logger = {
+    info: logger?.info ?? activeLogger.info,
+    warn: logger?.warn ?? activeLogger.warn,
+    error: logger?.error ?? activeLogger.error,
+    dev: logger?.dev ?? activeLogger.dev,
+  };
+
+  _scopedLoggers.set(scope, merged);
 }
 
 /**
@@ -146,39 +163,54 @@ export function clearLoggerFor(scope: string): void {
 }
 
 /**
- * Returns a logger that:
- *  - prefixes messages with `[SCOPE]` or `[SCOPE][global]` when no scoped logger is registered
- *  - respects {@link logLevels} gates
- *  - routes to a scope-specific logger if set via `setLoggerFor(scope, ...)`,
- *    otherwise falls back to the current global logger
+ * Create a scoped logger that:
+ *  - prefixes messages with `[SCOPE]` when a scoped logger exists,
+ *    or `[SCOPE][GLOBAL]` when falling back to the global logger
+ *  - checks {@link logLevels} before writing
+ *  - routes to the scope-specific logger if registered via {@link setLoggerFor},
+ *    otherwise uses the current global logger
  *
- * The scoped binding is dynamic: if you register/unregister a scoped logger later,
- * existing scoped loggers will pick it up on the next call.
+ * The binding is dynamic at call time: if you later register/unregister a scoped logger,
+ * existing scoped logger instances pick it up on the next call.
  *
- * @param scope - Scope label (e.g. "events", "core").
+ * @param scope - Scope label (e.g. `"events"`, `"core"`).
+ * @returns A {@link Logger} with the rules above.
+ *
+ * @example
+ * const log = scopedLog('events');
+ * log.info('engine started'); // "[EVENTS] engine started" if scoped logger exists, else "[EVENTS][GLOBAL] ..."
  */
 export const scopedLog = (scope: string): Logger => {
-  const SCOPE = scope.toUpperCase();
-  const pick = () => getLoggerFor(scope) ?? activeLogger;
-  const tag = () => (getLoggerFor(scope) ? `[${SCOPE}]` : `[${SCOPE}][GLOBAL]`);
+  const SCOPE = String(scope || 'unknown').toUpperCase();
 
   return {
     info: (message: string, ...optionalParams: any[]) => {
       if (!logLevels.info) return;
-      pick().info?.(`${tag()} ${message}`, ...optionalParams);
+      const scoped = getLoggerFor(scope);
+      const target = scoped ?? activeLogger;
+      const prefix = scoped ? `[${SCOPE}]` : `[${SCOPE}][GLOBAL]`;
+      target.info?.(`${prefix} ${message}`, ...optionalParams);
     },
     warn: (message: string, ...optionalParams: any[]) => {
       if (!logLevels.warn) return;
-      pick().warn?.(`${tag()} ${message}`, ...optionalParams);
+      const scoped = getLoggerFor(scope);
+      const target = scoped ?? activeLogger;
+      const prefix = scoped ? `[${SCOPE}]` : `[${SCOPE}][GLOBAL]`;
+      target.warn?.(`${prefix} ${message}`, ...optionalParams);
     },
     error: (message: string, ...optionalParams: any[]) => {
       if (!logLevels.error) return;
-      pick().error?.(`${tag()} ${message}`, ...optionalParams);
+      const scoped = getLoggerFor(scope);
+      const target = scoped ?? activeLogger;
+      const prefix = scoped ? `[${SCOPE}]` : `[${SCOPE}][GLOBAL]`;
+      target.error?.(`${prefix} ${message}`, ...optionalParams);
     },
     dev: (message: string, ...optionalParams: any[]) => {
       if (!logLevels.dev) return;
-      pick().dev?.(`${tag()} ${message}`, ...optionalParams);
+      const scoped = getLoggerFor(scope);
+      const target = scoped ?? activeLogger;
+      const prefix = scoped ? `[${SCOPE}]` : `[${SCOPE}][GLOBAL]`;
+      target.dev?.(`${prefix} ${message}`, ...optionalParams);
     },
   } as Logger;
 };
-
