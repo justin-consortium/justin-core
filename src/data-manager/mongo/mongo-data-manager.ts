@@ -338,9 +338,12 @@ const removeItemFromCollection = async (
   if (!objectId) return false;
 
   try {
-    const { acknowledged } = await _db!
+    const { acknowledged, deletedCount } = await _db!
       .collection(collectionName)
       .deleteOne({ _id: objectId });
+    if (deletedCount == 0) {
+        Log.warn(`No deletion made for item with id ${id} in ${collectionName}: not found.`);
+      }
     return acknowledged;
   } catch (error) {
     return handleDbError(
