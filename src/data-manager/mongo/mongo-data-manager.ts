@@ -342,8 +342,8 @@ const removeItemFromCollection = async (
       .collection(collectionName)
       .deleteOne({ _id: objectId });
     if (deletedCount == 0) {
-        Log.warn(`No deletion made for item with id ${id} in ${collectionName}: not found.`);
-      }
+      Log.warn(`No deletion made for item with id ${id} in ${collectionName}: not found.`);
+    }
     return acknowledged;
   } catch (error) {
     return handleDbError(
