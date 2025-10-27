@@ -333,20 +333,8 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
 const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
   const theUser: JUser | null = await getUserByUniqueIdentifier(uniqueIdentifier);
   const userId = theUser?.id as any;
-  let result = false;
-
-  try {
-    // attempt to delete user by id
-    result = await deleteUserById(userId);
-    if(result) _users.delete(userId);
-  }
-  catch (error) {
-    if (!theUser?.id) {
-      // deletion was attempted but failed because user does not exist (an invalid id as the search criterion)
-      result = true;
-    }
-  }
-
+  const result = await deleteUserById(userId);
+  if(result) _users.delete(userId);
   return result;
 };
 
