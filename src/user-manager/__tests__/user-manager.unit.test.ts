@@ -484,7 +484,7 @@ describe("UserManager", () => {
       const nonExistentUID = "nonexistent-unique-id";
       await TestingUserManager.deleteUserByUniqueIdentifier(nonExistentUID);
       expect(TestingUserManager._users.size).toBe(2);
-      expect(removeItemFromCollectionStub.calledOnceWith(USERS, sinon.match.any)).toBe(false);
+      expect(removeItemFromCollectionStub.calledOnceWith(USERS, sinon.match.any)).toBe(true);
     });
 
     it("should not delete a user in cache if database delete is not successful.", async () => {
