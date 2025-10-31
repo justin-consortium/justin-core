@@ -8,7 +8,13 @@
     "type": "git",
     "url": "https://github.com/MIACollaborative/justin-core"
   },
-  "keywords": ["jitai","justin", "just-in time", "digital intervention", "adaptive intervention"],
+  "keywords": [
+    "jitai",
+    "justin",
+    "just-in time",
+    "digital intervention",
+    "adaptive intervention"
+  ],
   "homepage": "https://miacollaborative.github.io/justin-core/",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,7 +30,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "prepare": "yarn build",

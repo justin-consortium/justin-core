@@ -194,7 +194,7 @@ export class JustInWrapper {
    * @param {string} uniqueIdentifier - The unique identifier of the user.
    * @returns {Promise<void>} A promise that resolves when the user is deleted.
    */
-  public async deleteUser(uniqueIdentifier: string): Promise<void> {
+  public async deleteUser(uniqueIdentifier: string): Promise<boolean> {
     return await UserManager.deleteUserByUniqueIdentifier(uniqueIdentifier);
   }
 

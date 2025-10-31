@@ -141,8 +141,8 @@ describe('JustInWrapper Integration', () => {
       expect(addedUser.uniqueIdentifier).toBe(user.uniqueIdentifier);
       expect(addedUser.attributes).toEqual(user.initialAttributes);
 
-      const deletedUser:void = await justIn.deleteUser(user.uniqueIdentifier);
-      expect(deletedUser).toBeUndefined();
+      const deleteResult: boolean = await justIn.deleteUser(user.uniqueIdentifier);
+      expect(deleteResult).toBe(true);
 
       const theUser: JUser | null = await justIn.getUser(user.uniqueIdentifier);
       expect(theUser).toBeNull();
