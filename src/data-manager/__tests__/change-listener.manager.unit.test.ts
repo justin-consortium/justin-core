@@ -1,183 +1,150 @@
-import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import {
-  initializeLoggerMocks,
-  LoggerMocksType,
-} from '../../__tests__/mocks/logger.mock';
+import { Readable } from 'stream';
 import { ChangeListenerManager } from '../change-listener.manager';
-import {
-  createDataManagerStub,
-  restoreDataManagerStub,
-} from '../../__tests__/stubs/data-manager.stub';
+import { CollectionChangeType } from '../../data-manager/data-manager.type';
+import DataManager from '../../data-manager/data-manager';
 import { Log } from '../../logger/logger-manager';
 
-describe('ChangeListenerManager', () => {
-  let loggerMock: LoggerMocksType;
-  let mockDataManagerStub: any;
-  let changeListenerManager: ChangeListenerManager;
+// mock DataManager so addChangeListener doesn't try to talk to real DB
+jest.mock('../../data-manager/data-manager', () => ({
+  __esModule: true,
+  default: {
+    getInstance: jest.fn(),
+  },
+}));
 
-  const callback = jest.fn();
-  const insertChangeType = CollectionChangeType.INSERT;
-  const collectionName = 'testCollection';
+describe('ChangeListenerManager (unit)', () => {
+  let manager: ChangeListenerManager;
+  let mockStream: Readable;
+  let getInstanceMock: jest.Mock;
+  let devSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+  let infoSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    loggerMock = initializeLoggerMocks();
-    mockDataManagerStub = createDataManagerStub();
-    changeListenerManager = ChangeListenerManager.getInstance();
+    (ChangeListenerManager as any).killInstance?.();
+
+    manager = ChangeListenerManager.getInstance();
+
+    mockStream = new Readable({
+      objectMode: true,
+      read() {
+        /* no-op */
+      },
+    });
+
+    getInstanceMock = (DataManager as any).getInstance as jest.Mock;
+    getInstanceMock.mockReturnValue({
+      getChangeStream: jest.fn(() => mockStream),
+    });
+
+    devSpy = jest.spyOn(Log, 'dev').mockImplementation(() => {});
+    warnSpy = jest.spyOn(Log, 'warn').mockImplementation(() => {});
+    errorSpy = jest.spyOn(Log, 'error').mockImplementation(() => {});
+    infoSpy = jest.spyOn(Log, 'info').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    loggerMock.restoreLoggerMocks();
-    restoreDataManagerStub();
+    jest.restoreAllMocks();
   });
 
-  it('should add a change listener and log its addition', () => {
-    changeListenerManager.addChangeListener(
-      collectionName,
-      insertChangeType,
-      callback
-    );
-
-    expect(
-      loggerMock.mockLogDev.calledWith(
-        'Change listener added for testCollection-insert.'
-      )
-    ).toBe(true);
+  it('creates a singleton', () => {
+    const again = ChangeListenerManager.getInstance();
+    expect(again).toBe(manager);
   });
 
-  it('should log a warning when attempting to add a duplicate listener', () => {
-    changeListenerManager.addChangeListener(
-      collectionName,
-      insertChangeType,
-      callback
-    );
-    changeListenerManager.addChangeListener(
-      collectionName,
-      insertChangeType,
-      callback
-    );
+  it('registers a change listener and wires the stream to the callback', () => {
+    const cb = jest.fn();
 
-    expect(
-      loggerMock.mockLogWarn.calledWith(
-        'Change listener for testCollection-insert is already registered.'
-      )
-    ).toBe(true);
+    manager.addChangeListener('users', CollectionChangeType.INSERT, cb);
+
+    // push data through stream
+    const payload = { id: '1' };
+    mockStream.emit('data', payload);
+
+    expect(cb).toHaveBeenCalledWith(payload);
+    // it also re-emits on the manager
+    const eventKey = 'users-INSERT';
+    // we didn't subscribe in this test, but we can check that cb was called at least
+    expect(devSpy).toHaveBeenCalledWith('Change listener added for users-INSERT.');
   });
 
-  it('should remove a change listener and log its removal', () => {
-    changeListenerManager.addChangeListener(
-      collectionName,
-      insertChangeType,
-      callback
-    );
+  it('logs and skips if listener already exists', () => {
+    const cb = jest.fn();
 
-    changeListenerManager.removeChangeListener(
-      collectionName,
-      insertChangeType
-    );
+    manager.addChangeListener('users', CollectionChangeType.INSERT, cb);
+    manager.addChangeListener('users', CollectionChangeType.INSERT, cb);
 
+    // DataManager.getInstance().getChangeStream should only be called once
+    const dm = getInstanceMock.mock.results[0].value;
+    expect(dm.getChangeStream).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Change listener for users-INSERT is already registered.'
+    );
+  });
+
+  it('logs error when stream emits error', () => {
+    const cb = jest.fn();
+
+    manager.addChangeListener('users', CollectionChangeType.UPDATE, cb);
+
+    const err = new Error('boom');
+    mockStream.emit('error', err);
+
+    expect(errorSpy).toHaveBeenCalledWith('Change stream error', err);
+  });
+
+  it('removes a change listener and destroys its stream', () => {
+    const cb = jest.fn();
+    const destroySpy = jest.spyOn(mockStream, 'destroy');
+
+    manager.addChangeListener('users', CollectionChangeType.DELETE, cb);
+
+    manager.removeChangeListener('users', CollectionChangeType.DELETE);
+
+    expect(destroySpy).toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledWith('Change listener removed for users-DELETE.');
     expect(
-      loggerMock.mockLogInfo.calledWith(
-        'Change listener removed for testCollection-insert.'
-      )
-    ).toBe(true);
-    expect(
-      changeListenerManager.hasChangeListener(collectionName, insertChangeType)
+      manager.hasChangeListener('users', CollectionChangeType.DELETE)
     ).toBe(false);
   });
 
-  it('should log a warning when attempting to remove a non-existent listener', () => {
-    changeListenerManager.removeChangeListener(
-      collectionName,
-      insertChangeType
-    );
+  it('warns when removing a listener that does not exist', () => {
+    manager.removeChangeListener('users', CollectionChangeType.DELETE);
 
+    expect(warnSpy).toHaveBeenCalledWith(
+      'No change listener registered for users-DELETE.'
+    );
+  });
+
+  it('clears all listeners', () => {
+    const destroySpy = jest.spyOn(mockStream, 'destroy');
+
+    manager.addChangeListener('users', CollectionChangeType.INSERT, jest.fn());
+    manager.addChangeListener('events', CollectionChangeType.UPDATE, jest.fn());
+
+    manager.clearChangeListeners();
+
+    expect(destroySpy).toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledWith(
+      'All custom change listeners removed.'
+    );
     expect(
-      loggerMock.mockLogWarn.calledWith(
-        'No change listener registered for testCollection-insert.'
-      )
-    ).toBe(true);
-    expect(
-      changeListenerManager.hasChangeListener(collectionName, insertChangeType)
+      manager.hasChangeListener('users', CollectionChangeType.INSERT)
     ).toBe(false);
   });
 
-  it('should log a warning when attempting to remove a non-existent listener', () => {
-    const changeListenerManager = ChangeListenerManager.getInstance();
-
-    changeListenerManager.removeChangeListener(
-      collectionName,
-      insertChangeType
-    );
+  it('hasChangeListener returns true when listener is present', () => {
+    manager.addChangeListener('users', CollectionChangeType.INSERT, jest.fn());
 
     expect(
-      loggerMock.mockLogWarn.calledWith(
-        'No change listener registered for testCollection-insert.'
-      )
+      manager.hasChangeListener('users', CollectionChangeType.INSERT)
     ).toBe(true);
   });
 
-  it('should clear all change listeners and log their removal', () => {
-    const changeListenerManager = ChangeListenerManager.getInstance();
-
-    changeListenerManager.addChangeListener(
-      collectionName,
-      insertChangeType,
-      callback
-    );
-    changeListenerManager.addChangeListener(
-      collectionName,
-      CollectionChangeType.UPDATE,
-      callback
-    );
-    changeListenerManager.clearChangeListeners();
-
-    Log.dev("loggerMock.mockLogInfo.args", loggerMock.mockLogInfo.args);
+  it('hasChangeListener returns false when listener is not present', () => {
     expect(
-      loggerMock.mockLogInfo.calledWith('All custom change listeners removed.')
-    ).toBe(true);
-
-    expect(
-      changeListenerManager.hasChangeListener(collectionName, insertChangeType)
+      manager.hasChangeListener('users', CollectionChangeType.INSERT)
     ).toBe(false);
-    expect(
-      changeListenerManager.hasChangeListener(
-        'testCollection2',
-        CollectionChangeType.UPDATE
-      )
-    ).toBe(false);
-  });
-
-  it('should invoke the callback when a data event is emitted', () => {
-    const changeListenerManager = ChangeListenerManager.getInstance();
-    const mockData = { id: '123', name: 'test' };
-
-    changeListenerManager.addChangeListener(
-      collectionName,
-      insertChangeType,
-      callback
-    );
-    mockDataManagerStub.mockDataStream.emit('data', mockData);
-
-    expect(callback).toHaveBeenCalledWith(mockData);
-  });
-
-  it('should handle a stream error event and log the error', () => {
-    try {
-      const changeListenerManager = ChangeListenerManager.getInstance();
-      const mockError = new Error('Stream error');
-
-      changeListenerManager.addChangeListener(
-        collectionName,
-        insertChangeType,
-        callback
-      );
-      mockDataManagerStub.mockDataStream.emit('error', mockError);
-
-      expect(
-        loggerMock.mockLogError.calledWith('Change stream error', mockError)
-      ).toBe(true);
-    } catch (error) {
-      // Error is thrown when creating the mockError
-    }
   });
 });
