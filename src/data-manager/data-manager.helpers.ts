@@ -1,4 +1,10 @@
-import { Log } from '../logger/logger-manager';
+import {createLogger} from "../logger/logger";
+
+const Log = createLogger({
+  context: {
+    source: "data-manager-helpers",
+  }
+})
 
 /**
  * Logs and throws a database-related error.
@@ -14,7 +20,7 @@ import { Log } from '../logger/logger-manager';
  * @throws {Error} Throws the provided error if it is an `Error` instance,
  * or wraps and throws a new `Error` with the specified message if it is not.
  */
-export const handleDbError = (message: string, error: unknown): never => {
-  Log.error(message, error);
+export const handleDbError = (message: string, funcName: string, error: unknown): never => {
+  Log.error(message, { function: funcName, error});
   throw error instanceof Error ? error : new Error(message);
 };

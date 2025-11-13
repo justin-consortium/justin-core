@@ -1,7 +1,12 @@
 import * as mongoDB from "mongodb";
-import { Log } from "../../logger/logger-manager";
 import { NO_ID } from "../data-manager.constants";
+import { createLogger } from "../../logger/logger";
 
+const Log = createLogger({
+  context: {
+    source: "mongo-manager-helpers",
+  }
+})
 /**
  * Safely converts a string to a MongoDB `ObjectId`.
  *
@@ -15,13 +20,13 @@ export const toObjectId = (
   id: string | null | undefined
 ): mongoDB.ObjectId | null => {
   if (!id || typeof id !== "string") {
-    Log.error(`Invalid ObjectId format: ${id}`);
+    Log.error(`Invalid ObjectId format: ${id}`, {function: 'toObjectId'});
     return null;
   }
   try {
     return new mongoDB.ObjectId(id);
   } catch {
-    Log.error(`Invalid ObjectId format: ${id}`);
+    Log.error(`Invalid ObjectId format: ${id}`, {function: 'toObjectId'});
     return null;
   }
 };

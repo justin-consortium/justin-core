@@ -5,9 +5,14 @@ import { CollectionChangeType } from './data-manager.type';
 import { DBType } from './data-manager.constants';
 import { handleDbError } from './data-manager.helpers';
 import { Readable } from 'stream';
-import { Log } from '../logger/logger-manager';
 import { USERS } from './data-manager.constants';
+import {createLogger} from "../logger/logger";
 
+const Log = createLogger({
+  context: {
+    source: "data-manager",
+  }
+})
 /**
  * Manages database operations and collection change listeners.
  */
@@ -50,7 +55,6 @@ class DataManager extends EventEmitter {
    * @returns {Promise<void>} Resolves when initialization is complete.
    */
   public async init(dbType: DBType = DBType.MONGO): Promise<void> {
-    Log.dev('Entering DM.init, isInitialized:', this.isInitialized);
     try {
       if (this.getInitializationStatus() && dbType === DBType.MONGO) return;
       if (dbType !== DBType.MONGO) {
@@ -58,9 +62,8 @@ class DataManager extends EventEmitter {
       }
       await this.db.init();
       this.isInitialized = true;
-      Log.dev('DataManager initialized successfully');
     } catch (error) {
-      handleDbError('Failed to initialize DataManager', error);
+      handleDbError('Failed to initialize DataManager', 'init', error);
     }
   }
 
@@ -108,20 +111,18 @@ class DataManager extends EventEmitter {
    * @returns {Promise<void>} Resolves when closed.
    */
   public async close(): Promise<void> {
-    Log.dev('Initiating DataManager.close');
     try {
       this.checkInitialization();
       this.changeListenerManager.clearChangeListeners();
       await this.db.close();
       this.isInitialized = false;
-      Log.dev('DataManager closed and uninitialized');
+      Log.debug('DataManager closed and uninitialized');
     } catch (error) {
-      handleDbError('Failed to close DataManager', error);
+      handleDbError('Failed to close DataManager', 'close', error);
     }
   }
 
   public checkInitialization(): void {
-    Log.dev('Checking DataManager initialization status:', this.isInitialized);
     if (!this.isInitialized) {
       throw new Error('DataManager has not been initialized');
     }
@@ -151,6 +152,7 @@ class DataManager extends EventEmitter {
     } catch (error) {
       return handleDbError(
         `Failed to add item to collection: ${collectionName}`,
+        'addItemToCollection',
         error
       );
     }
@@ -183,6 +185,7 @@ class DataManager extends EventEmitter {
     } catch (error) {
       return handleDbError(
         `Failed to update item in collection: ${collectionName}`,
+        'updateItemByIdInCollection',
         error
       );
     }
@@ -210,6 +213,7 @@ class DataManager extends EventEmitter {
       return (
         handleDbError(
           `Failed to remove item from collection: ${collectionName}`,
+          'removeItemFromCollection',
           error
         ) ?? false
       );
@@ -226,10 +230,11 @@ class DataManager extends EventEmitter {
   ): Promise<T[] | null> {
     try {
       this.checkInitialization();
-      return this.db.getAllInCollection(collectionName) as Promise<T[] | null>;
+      return await this.db.getAllInCollection(collectionName) as T[] | null;
     } catch (error) {
       return handleDbError(
         `Failed to retrieve items from collection: ${collectionName}`,
+        'getAllInCollection',
         error
       );
     }
@@ -245,7 +250,7 @@ class DataManager extends EventEmitter {
       this.checkInitialization();
       await this.db.clearCollection(collectionName);
     } catch (error) {
-      handleDbError(`Failed to clear collection: ${collectionName}`, error);
+      handleDbError(`Failed to clear collection: ${collectionName}`, 'clearCollection', error);
     }
   }
 
@@ -262,6 +267,7 @@ class DataManager extends EventEmitter {
       return (
         handleDbError(
           `Failed to check if collection is empty: ${collectionName}`,
+          'isCollectionEmpty',
           error
         ) ?? false
       );
@@ -286,6 +292,7 @@ class DataManager extends EventEmitter {
     } catch (error) {
       return handleDbError(
         `Failed to find item by ID in collection: ${collectionName}`,
+        'findItemByIdInCollection',
         error
       ) as null;
     }
@@ -317,6 +324,7 @@ class DataManager extends EventEmitter {
     } catch (error) {
       return handleDbError(
         `Failed to find items by criteria: ${criteria} in collection: ${collectionName}`,
+        'findItemsInCollection',
         error
       ) as null;
     }

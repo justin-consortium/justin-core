@@ -7,7 +7,6 @@ import {
   InsertedOrUpatedDocRecord,
   WithId,
 } from "./mongo-data-manager.type";
-import { Log } from "../../logger/logger-manager";
 import { handleDbError } from "../data-manager.helpers";
 import {
   toObjectId,
@@ -16,6 +15,14 @@ import {
   transformId,
 } from "./mongo.helpers";
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from "./mongo.constants";
+import {createLogger} from "../../logger/logger";
+
+
+const Log = createLogger({
+  context: {
+    source: "mongo-data-manager",
+  }
+})
 
 let _client: mongoDB.MongoClient | null = null;
 let _db: mongoDB.Db | null = null;
@@ -54,7 +61,7 @@ const init = async (
     await _client.connect();
     _db = _client.db(dbName);
     _isConnected = true;
-    Log.dev(`Mongo connected: db=${dbName}`);
+    Log.debug(`Mongo connected: db=${dbName}`);
   } catch (error) {
     Log.error("Mongo connection failed", error);
     throw error;
@@ -152,7 +159,7 @@ const ensureStore = async (
   if (!exists) {
     try {
       await _db!.createCollection(collectionName);
-      Log.dev(`Created collection ${collectionName}`);
+      Log.debug(`Created collection ${collectionName}`);
     } catch (err: any) {
       if (err?.codeName !== "NamespaceExists") throw err; // tolerate races
     }
@@ -165,7 +172,7 @@ const ensureStore = async (
         collMod: collectionName,
         validator: options.validator,
       });
-      Log.dev(`Applied validator to ${collectionName}`);
+      Log.debug(`Applied validator to ${collectionName}`);
     } catch (err) {
       Log.warn(`collMod failed for ${collectionName}`, err);
     }
@@ -223,7 +230,7 @@ const ensureIndexes = async (
   if (!createModels.length) return;
 
   await coll.createIndexes(createModels);
-  Log.dev(
+  Log.debug(
     `Created ${createModels.length} index(es) on ${collectionName}: ${createModels
       .map((m) => m.name || JSON.stringify(m.key))
       .join(", ")}`
@@ -246,6 +253,7 @@ const findItemByIdInCollection = async (
   } catch (error) {
     return handleDbError(
       `Error finding item with id ${id} in ${collectionName}`,
+      'findItemByIdInCollection',
       error
     );
   }
@@ -266,6 +274,7 @@ const findItemsInCollection = async (
       `Error finding items in ${collectionName} with filter ${JSON.stringify(
         filter
       )}`,
+      'findItemsInCollection',
       error
     );
   }
@@ -281,7 +290,7 @@ const addItemToCollection = async (
     const { insertedId } = await _db!.collection(collectionName).insertOne(item);
     return transformId({ _id: insertedId, ...item });
   } catch (error) {
-    return handleDbError(`Error inserting item into ${collectionName}`, error);
+    return handleDbError(`Error inserting item into ${collectionName}`, 'addItemToCollection', error);
   }
 };
 
@@ -306,6 +315,7 @@ const updateItemInCollection = async (
   } catch (error) {
     return handleDbError(
       `Error updating item with id ${id} in ${collectionName}`,
+      'updateItemInCollection',
       error
     );
   }
@@ -318,7 +328,7 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
     const results = await _db!.collection(collectionName).find({}).toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleDbError(`Error getting all items in ${collectionName}`, error);
+    return handleDbError(`Error getting all items in ${collectionName}`, 'getAllInCollection', error);
   }
 };
 
@@ -338,6 +348,7 @@ const removeItemFromCollection = async (
   } catch (error) {
     return handleDbError(
       `Error removing item with id ${id} from ${collectionName}`,
+      'removeItemFromCollection',
       error
     );
   }
@@ -352,7 +363,7 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
       .deleteMany({});
     return acknowledged;
   } catch (error) {
-    return handleDbError(`Error clearing collection ${collectionName}`, error);
+    return handleDbError(`Error clearing collection ${collectionName}`, 'clearCollection', error);
   }
 };
 
@@ -367,6 +378,7 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   } catch (error) {
     return handleDbError(
       `Error counting documents in ${collectionName}`,
+      'isCollectionEmpty',
       error
     );
   }

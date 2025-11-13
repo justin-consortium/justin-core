@@ -4,8 +4,14 @@ import { USERS } from "../data-manager/data-manager.constants";
 import { JUser } from "./user.type";
 import { handleDbError } from "../data-manager/data-manager.helpers";
 import { CollectionChangeType } from "../data-manager/data-manager.type";
-import { Log } from "../logger/logger-manager";
+import { createLogger } from "../logger/logger";
 import { NewUserRecord } from "./user.type";
+
+const Log = createLogger({
+  context: {
+    source: "user-manager",
+  }
+})
 /**
  * @type {Map<string, JUser>} _users - In-memory cache for user data.
  * This Map enables quick lookups, insertions, and deletions by `id`.
@@ -177,7 +183,7 @@ export const addUser = async (
     );
     return addedUser;
   } catch (error) {
-    return handleDbError("Failed to add users:", error);
+    return handleDbError("Failed to add users:", "addUser", error);
   }
 };
 
@@ -214,7 +220,7 @@ export const addUsers = async (
     }
     return addedUsers;
   } catch (error) {
-    return handleDbError("Failed to add users:", error);
+    return handleDbError("Failed to add users:", "addUsers", error);
   }
 };
 
@@ -423,7 +429,7 @@ const isIdentifierUnique = async (
 
   if (existingUser) {
     const msg = `User with unique identifier (${userUniqueIdentifier}) already exists.`;
-    Log.dev(msg);
+    Log.debug(msg);
     return false;
   }
 

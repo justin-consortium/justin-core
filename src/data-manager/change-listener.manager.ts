@@ -2,7 +2,14 @@ import { EventEmitter } from 'events';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import DataManager from '../data-manager/data-manager';
 import { Readable } from 'stream';
-import { Log } from '../logger/logger-manager';
+import {createLogger} from "../logger/logger";
+
+
+const Log = createLogger({
+  context: {
+    source: "change-listener-manager",
+  }
+})
 
 /**
  * Manages change listeners for database collections.
@@ -93,7 +100,7 @@ export class ChangeListenerManager extends EventEmitter {
       },
     });
 
-    Log.dev(`Change listener added for ${key}.`);
+    Log.debug(`Change listener added for ${key}.`);
   }
 
   /**
