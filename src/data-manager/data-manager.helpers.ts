@@ -15,6 +15,7 @@ const Log = createLogger({
  * in a new `Error` object with the provided message.
  *
  * @param message - A custom error message describing the context of the error.
+ * @param funcName - name of the calling function the error occured in.
  * @param error - The error to log and throw; if not an instance of `Error`, it will be wrapped.
  *
  * @throws {Error} Throws the provided error if it is an `Error` instance,
