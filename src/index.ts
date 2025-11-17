@@ -16,5 +16,15 @@ export type { JUser, NewUserRecord } from "./user-manager/user.type";
 /**
  * Logging
  */
-export { Log, setLogger, setLogLevels, logLevels, scopedLog } from "./logger/logger-manager";
-export type { Logger } from "./logger/logger.interface";
+export {
+  createLogger,
+  configureLogger,
+} from './logger';
+export type {
+  Logger,
+  LoggerEntry,
+  BaseSeverity,
+  LoggerCallback,
+  EmitFn,
+  LoggerConfig,
+} from './logger';

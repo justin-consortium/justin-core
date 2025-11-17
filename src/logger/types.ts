@@ -1,4 +1,3 @@
-import { JEvent, JUser } from '@just-in/core';
 
 /**
  * Built-in severities supported out of the box.
@@ -136,8 +135,3 @@ export interface Logger<T extends string = BaseSeverity> {
    */
   setCallback(next?: LoggerCallback<T>): void;
 }
-
-/**
- * Domain types used by the normalizer.
- */
-export type { JUser, JEvent } from '@just-in/core';

@@ -1,16 +1,15 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import * as mongoDB from 'mongodb';
 import { MongoDBManager } from '../mongo-data-manager';
-import { Log } from '../../../logger/logger-manager';
+import { loggerSpies } from '../../../__tests__/mocks';
 
 describe('MongoDBManager (integration)', () => {
   let repl: MongoMemoryReplSet;
   let uri: string;
+  let logs: ReturnType<typeof loggerSpies>;
 
   beforeAll(async () => {
-    jest.spyOn(Log, 'dev').mockImplementation(() => {});
-    jest.spyOn(Log, 'warn').mockImplementation(() => {});
-    jest.spyOn(Log, 'error').mockImplementation(() => {});
+    logs = loggerSpies();
 
     repl = await MongoMemoryReplSet.create({
       replSet: { count: 1 },
@@ -23,6 +22,7 @@ describe('MongoDBManager (integration)', () => {
   afterAll(async () => {
     await MongoDBManager.close();
     await repl.stop();
+    logs.restore();
     jest.restoreAllMocks();
   });
 
@@ -53,7 +53,7 @@ describe('MongoDBManager (integration)', () => {
 
     const found = await MongoDBManager.findItemByIdInCollection(
       'users',
-      inserted.id as string
+      inserted.id as string,
     );
     expect(found).not.toBeNull();
     expect(found).toMatchObject({ name: 'Alice', role: 'admin' });
@@ -61,7 +61,7 @@ describe('MongoDBManager (integration)', () => {
     const updated = await MongoDBManager.updateItemInCollection(
       'users',
       inserted.id as string,
-      { role: 'user' }
+      { role: 'user' },
     );
     expect(updated).not.toBeNull();
     expect(updated).toMatchObject({ role: 'user' });
@@ -71,7 +71,7 @@ describe('MongoDBManager (integration)', () => {
 
     const removed = await MongoDBManager.removeItemFromCollection(
       'users',
-      inserted.id as string
+      inserted.id as string,
     );
     expect(removed).toBe(true);
 

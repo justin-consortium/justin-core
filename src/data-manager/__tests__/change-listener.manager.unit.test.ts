@@ -1,150 +1,144 @@
-import { Readable } from 'stream';
 import { ChangeListenerManager } from '../change-listener.manager';
-import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import DataManager from '../../data-manager/data-manager';
-import { Log } from '../../logger/logger-manager';
-
-// mock DataManager so addChangeListener doesn't try to talk to real DB
-jest.mock('../../data-manager/data-manager', () => ({
-  __esModule: true,
-  default: {
-    getInstance: jest.fn(),
-  },
-}));
+import { CollectionChangeType } from '../data-manager.type';
+import { USERS } from '../data-manager.constants';
+import { mockDataManager, loggerSpies } from '../../__tests__/mocks';
 
 describe('ChangeListenerManager (unit)', () => {
   let manager: ChangeListenerManager;
-  let mockStream: Readable;
-  let getInstanceMock: jest.Mock;
-  let devSpy: jest.SpyInstance;
-  let warnSpy: jest.SpyInstance;
-  let errorSpy: jest.SpyInstance;
-  let infoSpy: jest.SpyInstance;
 
   beforeEach(() => {
     (ChangeListenerManager as any).killInstance?.();
-
     manager = ChangeListenerManager.getInstance();
 
-    mockStream = new Readable({
-      objectMode: true,
-      read() {
-        /* no-op */
-      },
-    });
-
-    getInstanceMock = (DataManager as any).getInstance as jest.Mock;
-    getInstanceMock.mockReturnValue({
-      getChangeStream: jest.fn(() => mockStream),
-    });
-
-    devSpy = jest.spyOn(Log, 'dev').mockImplementation(() => {});
-    warnSpy = jest.spyOn(Log, 'warn').mockImplementation(() => {});
-    errorSpy = jest.spyOn(Log, 'error').mockImplementation(() => {});
-    infoSpy = jest.spyOn(Log, 'info').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
+    jest.clearAllMocks();
     jest.restoreAllMocks();
   });
 
-  it('creates a singleton', () => {
-    const again = ChangeListenerManager.getInstance();
-    expect(again).toBe(manager);
-  });
+  it('registers a listener and marks it as present', () => {
+    const dm = mockDataManager();
 
-  it('registers a change listener and wires the stream to the callback', () => {
     const cb = jest.fn();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
 
-    manager.addChangeListener('users', CollectionChangeType.INSERT, cb);
+    expect(manager.hasChangeListener(USERS, CollectionChangeType.INSERT)).toBe(true);
 
-    // push data through stream
-    const payload = { id: '1' };
-    mockStream.emit('data', payload);
+    const payload = { id: 'u1' };
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT);
+    stream.emit('data', payload);
 
     expect(cb).toHaveBeenCalledWith(payload);
-    // it also re-emits on the manager
-    const eventKey = 'users-INSERT';
-    // we didn't subscribe in this test, but we can check that cb was called at least
-    expect(devSpy).toHaveBeenCalledWith('Change listener added for users-INSERT.');
+
+    dm.restore();
   });
 
-  it('logs and skips if listener already exists', () => {
+  it('prevents duplicate registration and warns', () => {
+    const dm = mockDataManager();
+    const logs = loggerSpies();
+
     const cb = jest.fn();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
 
-    manager.addChangeListener('users', CollectionChangeType.INSERT, cb);
-    manager.addChangeListener('users', CollectionChangeType.INSERT, cb);
+    logs.expectLast('already registered', 'WARNING');
 
-    // DataManager.getInstance().getChangeStream should only be called once
-    const dm = getInstanceMock.mock.results[0].value;
-    expect(dm.getChangeStream).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith(
-      'Change listener for users-INSERT is already registered.'
-    );
+    const payload = { id: 'u2' };
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT);
+    stream.emit('data', payload);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+
+    logs.restore();
+    dm.restore();
   });
 
-  it('logs error when stream emits error', () => {
+  it('removes a listener and stops receiving events', () => {
+    const dm = mockDataManager();
+
     const cb = jest.fn();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
 
-    manager.addChangeListener('users', CollectionChangeType.UPDATE, cb);
+    expect(manager.hasChangeListener(USERS, CollectionChangeType.INSERT)).toBe(true);
 
-    const err = new Error('boom');
-    mockStream.emit('error', err);
+    manager.removeChangeListener(USERS, CollectionChangeType.INSERT);
+    expect(manager.hasChangeListener(USERS, CollectionChangeType.INSERT)).toBe(false);
 
-    expect(errorSpy).toHaveBeenCalledWith('Change stream error', err);
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT);
+    stream.emit('data', { id: 'u3' });
+    expect(cb).not.toHaveBeenCalled();
+
+    dm.restore();
   });
 
-  it('removes a change listener and destroys its stream', () => {
-    const cb = jest.fn();
-    const destroySpy = jest.spyOn(mockStream, 'destroy');
+  it('clears all listeners and destroys streams', () => {
+    const dm = mockDataManager();
 
-    manager.addChangeListener('users', CollectionChangeType.DELETE, cb);
+    const cb1 = jest.fn();
+    const cb2 = jest.fn();
 
-    manager.removeChangeListener('users', CollectionChangeType.DELETE);
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb1);
+    manager.addChangeListener(USERS, CollectionChangeType.UPDATE, cb2);
 
-    expect(destroySpy).toHaveBeenCalled();
-    expect(infoSpy).toHaveBeenCalledWith('Change listener removed for users-DELETE.');
-    expect(
-      manager.hasChangeListener('users', CollectionChangeType.DELETE)
-    ).toBe(false);
-  });
-
-  it('warns when removing a listener that does not exist', () => {
-    manager.removeChangeListener('users', CollectionChangeType.DELETE);
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      'No change listener registered for users-DELETE.'
-    );
-  });
-
-  it('clears all listeners', () => {
-    const destroySpy = jest.spyOn(mockStream, 'destroy');
-
-    manager.addChangeListener('users', CollectionChangeType.INSERT, jest.fn());
-    manager.addChangeListener('events', CollectionChangeType.UPDATE, jest.fn());
+    const s1 = dm.getStream(USERS, CollectionChangeType.INSERT);
+    const s2 = dm.getStream(USERS, CollectionChangeType.UPDATE);
 
     manager.clearChangeListeners();
 
-    expect(destroySpy).toHaveBeenCalled();
-    expect(infoSpy).toHaveBeenCalledWith(
-      'All custom change listeners removed.'
-    );
-    expect(
-      manager.hasChangeListener('users', CollectionChangeType.INSERT)
-    ).toBe(false);
+    expect((s1 as any).destroyed ?? false).toBe(true);
+    expect((s2 as any).destroyed ?? false).toBe(true);
+
+    s1.emit('data', { id: 'nope-1' });
+    s2.emit('data', { id: 'nope-2' });
+    expect(cb1).not.toHaveBeenCalled();
+    expect(cb2).not.toHaveBeenCalled();
+
+    dm.restore();
   });
 
-  it('hasChangeListener returns true when listener is present', () => {
-    manager.addChangeListener('users', CollectionChangeType.INSERT, jest.fn());
+  it('emits the manager-level event alongside the callback', () => {
+    const dm = mockDataManager();
 
-    expect(
-      manager.hasChangeListener('users', CollectionChangeType.INSERT)
-    ).toBe(true);
+    const cb = jest.fn();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
+
+    const emitted: any[] = [];
+    const eventName = `${USERS}-${CollectionChangeType.INSERT}`;
+    manager.on(eventName, (payload) => emitted.push(payload));
+
+    const payload = { id: 'u5' };
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT);
+    stream.emit('data', payload);
+
+    expect(cb).toHaveBeenCalledWith(payload);
+    expect(emitted).toEqual([payload]);
+
+    dm.restore();
   });
 
-  it('hasChangeListener returns false when listener is not present', () => {
-    expect(
-      manager.hasChangeListener('users', CollectionChangeType.INSERT)
-    ).toBe(false);
+  it('handles stream error by logging and not crashing', () => {
+    const dm = mockDataManager();
+    const logs = loggerSpies();
+
+    const cb = jest.fn();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
+
+    const boom = new Error('stream-bad');
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT);
+    stream.emit('error', boom);
+
+    logs.expectLast('Change stream error', 'ERROR');
+    expect(cb).not.toHaveBeenCalled();
+
+    logs.restore();
+    dm.restore();
+  });
+
+  it('warns when removing a non-existent listener', () => {
+    mockDataManager();
+    const logs = loggerSpies();
+
+    manager.removeChangeListener(USERS, CollectionChangeType.DELETE);
+
+    logs.expectLast('No change listener registered', 'WARNING');
+    logs.restore();
   });
 });

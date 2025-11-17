@@ -1,4 +1,4 @@
-import { JUser, JEvent } from './types';
+import {JUser} from "../user-manager/user.type";
 
 /**
  * Return a new object with `key` added.
@@ -70,26 +70,34 @@ function extractFromJUser(
 /**
  * Attempt to extract a normalized "event" shape from an unknown value.
  *
- * We consider it a JEvent-like value if it has at least one event-specific field:
+ * We consider it "event-like" if it has at least one event-specific field:
  * - `eventType`
  * - `publishedTimestamp`
  * - `generatedTimestamp`
  *
- * (Note: `id` alone is NOT enough, because JUser also has `id`.)
+ * (Note: `id` alone is NOT enough; other domain objects can have `id` too.)
  *
  * We normalize to:
  * `{ eventId?, eventType?, eventTime? }`
  *
- * @param value - Value that might be a JEvent-like object.
+ * @param value - Value that might be an event-like object.
  * @returns A normalized event object or `undefined` if the input is not event-like.
  */
+type JEventLike = {
+  id?: unknown;
+  eventType?: unknown;
+  publishedTimestamp?: unknown;
+  generatedTimestamp?: unknown;
+};
+
 function extractFromJEvent(
   value: unknown
 ): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const maybeEvent = value as Partial<JEvent>;
 
-  // must have at least one JEvent field
+  const maybeEvent = value as JEventLike;
+
+  // must have at least one event-ish field
   if (
     !maybeEvent.eventType &&
     !maybeEvent.publishedTimestamp &&
@@ -100,15 +108,17 @@ function extractFromJEvent(
 
   const out: Record<string, unknown> = {};
 
-  if (maybeEvent.id) {
+  if (typeof maybeEvent.id === 'string') {
     out.eventId = maybeEvent.id;
   }
-  if (maybeEvent.eventType) {
+
+  if (typeof maybeEvent.eventType === 'string') {
     out.eventType = maybeEvent.eventType;
   }
 
   const when =
     maybeEvent.publishedTimestamp ?? maybeEvent.generatedTimestamp;
+
   if (when instanceof Date) {
     out.eventTime = when.toISOString();
   } else if (typeof when === 'string') {
@@ -117,6 +127,7 @@ function extractFromJEvent(
 
   return Object.keys(out).length > 0 ? out : undefined;
 }
+
 
 /**
  * Normalize a single leaf value so it is safe and consistent for JSON logging.

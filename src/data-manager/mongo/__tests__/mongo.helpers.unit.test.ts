@@ -1,5 +1,4 @@
 import * as mongoDB from 'mongodb';
-import { Log } from '../../../logger/logger-manager';
 import { NO_ID } from '../../data-manager.constants';
 import {
   toObjectId,
@@ -7,17 +6,18 @@ import {
   asIndexKey,
   normalizeIndexKey,
 } from '../mongo.helpers';
+import { loggerSpies } from '../../../__tests__/mocks';
 
 describe('mongo.utils', () => {
-  let errorSpy: jest.SpyInstance;
+  let logs: ReturnType<typeof loggerSpies>;
 
   beforeEach(() => {
     jest.restoreAllMocks();
-    errorSpy = jest.spyOn(Log, 'error').mockImplementation(() => {});
+    logs = loggerSpies();
   });
 
   afterEach(() => {
-    errorSpy.mockRestore();
+    logs.restore();
   });
 
   describe('toObjectId', () => {
@@ -28,7 +28,7 @@ describe('mongo.utils', () => {
 
       expect(result).toBeInstanceOf(mongoDB.ObjectId);
       expect(result?.toHexString()).toBe(idStr);
-      expect(errorSpy).not.toHaveBeenCalled();
+      expect(logs.captured.length).toBe(0);
     });
 
     it('returns null and logs when given null/undefined', () => {
@@ -37,10 +37,12 @@ describe('mongo.utils', () => {
 
       expect(r1).toBeNull();
       expect(r2).toBeNull();
-      // called twice because we called it twice
-      expect(errorSpy).toHaveBeenCalledTimes(2);
-      expect(errorSpy).toHaveBeenCalledWith('Invalid ObjectId format: null');
-      expect(errorSpy).toHaveBeenCalledWith('Invalid ObjectId format: undefined');
+
+      expect(logs.captured.length).toBe(2);
+      const messages = logs.captured.map((c) => c.entry.message);
+      expect(messages).toContain('Invalid ObjectId format: null');
+      expect(messages).toContain('Invalid ObjectId format: undefined');
+      logs.captured.forEach((c) => expect(c.entry.severity).toBe('ERROR'));
     });
 
     it('returns null and logs when given a non-string', () => {
@@ -48,18 +50,14 @@ describe('mongo.utils', () => {
       const result = toObjectId(123);
 
       expect(result).toBeNull();
-      expect(errorSpy).toHaveBeenCalledTimes(1);
-      expect(errorSpy).toHaveBeenCalledWith('Invalid ObjectId format: 123');
+      logs.expectLast('Invalid ObjectId format: 123', 'ERROR');
     });
 
     it('returns null and logs when string cannot be parsed as ObjectId', () => {
       const result = toObjectId('not-a-valid-object-id');
 
       expect(result).toBeNull();
-      expect(errorSpy).toHaveBeenCalledTimes(1);
-      expect(errorSpy).toHaveBeenCalledWith(
-        'Invalid ObjectId format: not-a-valid-object-id'
-      );
+      logs.expectLast('Invalid ObjectId format: not-a-valid-object-id', 'ERROR');
     });
   });
 
@@ -140,7 +138,6 @@ describe('mongo.utils', () => {
 
       const result = asIndexKey(m);
 
-      // same instance or at least same shape
       expect(result).toBe(m);
     });
 
@@ -149,7 +146,7 @@ describe('mongo.utils', () => {
 
       const result = asIndexKey(key);
 
-      expect(result).toBe(key); // same ref ok here
+      expect(result).toBe(key);
     });
   });
 
@@ -175,7 +172,6 @@ describe('mongo.utils', () => {
 
       const sig = normalizeIndexKey(m);
 
-      // even though map was b,a we expect a,b because we sort
       expect(sig).toBe('a:1|b:-1');
     });
 
