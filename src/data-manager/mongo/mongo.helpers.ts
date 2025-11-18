@@ -34,16 +34,30 @@ export const toObjectId = (
 /**
  * Moves Mongo `_id` to `id` (string). Returns `null` if `doc` is falsy.
  *
+ * - If `_id` is present, `id` is `_id.toString()`.
+ * - If `_id` is missing, `id` is {@link NO_ID}.
+ * - Any existing `id` field on the document is ignored.
+ *
  * @typeParam T - Any Mongo-shaped document.
- * @param doc - The source document (may be null/undefined).
+ * @param doc - The source document (could be null/undefined).
  * @returns A new object with `id` and remaining fields, or `null`.
  */
 export const transformId = <
   T extends Record<string, any> | null | undefined
 >(doc: T) => {
-  if (!doc) return null as any;
-  const { _id, ...rest } = doc as any;
-  return { id: _id?.toString?.() ?? NO_ID, ...rest } as any;
+  if (!doc) return null;
+
+  const { _id, id: _ignoredId, ...rest } = doc as any;
+
+  const id =
+    _id && typeof (_id as any).toString === "function"
+      ? (_id as any).toString()
+      : NO_ID;
+
+  return {
+    id,
+    ...rest,
+  };
 };
 
 /**

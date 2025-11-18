@@ -267,7 +267,7 @@ describe('MongoDBManager (unit)', () => {
   });
 
   describe('addItemToCollection', () => {
-    it('inserts and returns transformed doc', async () => {
+    it('inserts and returns inserted id', async () => {
       mongoFakes.collection.insertOne.mockResolvedValue({
         insertedId: 'abc123',
       });
@@ -278,8 +278,8 @@ describe('MongoDBManager (unit)', () => {
       });
 
       expect(mongoFakes.collection.insertOne).toHaveBeenCalledWith({ name: 'x' });
-      expect(transformIdStub.calledWith({ _id: 'abc123', name: 'x' })).toBe(true);
-      expect(result).toEqual({ id: 'abc123', name: 'x' });
+      expect(transformIdStub.called).toBe(false);
+      expect(result).toBe('abc123');
     });
 
     it('delegates to handleDbError on failure', async () => {
@@ -292,7 +292,9 @@ describe('MongoDBManager (unit)', () => {
       });
 
       expect(handleDbErrorStub.called).toBe(true);
+
       const [msg, fnName, err] = handleDbErrorStub.getCall(0).args;
+
       expect(msg).toBe('Error inserting item into users');
       expect(fnName).toBe('addItemToCollection');
       expect(err).toBeInstanceOf(Error);
@@ -312,11 +314,18 @@ describe('MongoDBManager (unit)', () => {
 
       expect(result).toBeNull();
       expect(mongoFakes.collection.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(mongoFakes.collection.findOne).not.toHaveBeenCalled();
     });
 
     it('updates and returns transformed doc', async () => {
       const fakeUpdated = { _id: '1', name: 'updated' };
-      mongoFakes.collection.findOneAndUpdate.mockResolvedValue(fakeUpdated);
+
+      toObjectIdStub.returns(new mongoDB.ObjectId('651111111111111111111111'));
+      mongoFakes.collection.updateOne.mockResolvedValue({
+        matchedCount: 1,
+        modifiedCount: 1,
+      });
+      mongoFakes.collection.findOne.mockResolvedValue(fakeUpdated);
       transformIdStub.returns({ id: '1', name: 'updated' });
 
       const result = await MongoDBManager.updateItemInCollection(
@@ -325,11 +334,14 @@ describe('MongoDBManager (unit)', () => {
         { name: 'updated' },
       );
 
-      expect(mongoFakes.collection.findOneAndUpdate).toHaveBeenCalledWith(
+      expect(mongoFakes.collection.updateOne).toHaveBeenCalledWith(
         { _id: expect.any(mongoDB.ObjectId) },
         { $set: { name: 'updated' } },
-        { returnDocument: 'after' },
       );
+      expect(mongoFakes.collection.findOne).toHaveBeenCalledWith({
+        _id: expect.any(mongoDB.ObjectId),
+      });
+      expect(transformIdStub.calledWith(fakeUpdated)).toBe(true);
       expect(result).toEqual({ id: '1', name: 'updated' });
     });
   });

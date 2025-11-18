@@ -29,15 +29,13 @@ function defaultEmit<T extends string = BaseSeverity>(
     case 'DEBUG':
       console.debug(line);
       break;
-    case 'INFO':
-      console.log(line);
-      break;
     case 'WARNING':
       console.warn(line);
       break;
     case 'ERROR':
       console.error(line);
       break;
+    case 'INFO':
     default:
       console.log(line);
       break;

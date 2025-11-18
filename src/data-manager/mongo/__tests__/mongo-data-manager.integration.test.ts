@@ -43,41 +43,46 @@ describe('MongoDBManager (integration)', () => {
   });
 
   it('can insert, fetch by id, update, and delete', async () => {
-    const inserted = await MongoDBManager.addItemToCollection('users', {
+    const insertedId = await MongoDBManager.addItemToCollection('users', {
       name: 'Alice',
       role: 'admin',
     });
 
-    expect(inserted).toHaveProperty('id');
-    expect(inserted).toMatchObject({ name: 'Alice', role: 'admin' });
+    expect(typeof insertedId).toBe('string');
 
     const found = await MongoDBManager.findItemByIdInCollection(
       'users',
-      inserted.id as string,
+      insertedId,
     );
     expect(found).not.toBeNull();
     expect(found).toMatchObject({ name: 'Alice', role: 'admin' });
 
     const updated = await MongoDBManager.updateItemInCollection(
       'users',
-      inserted.id as string,
+      insertedId,
       { role: 'user' },
     );
     expect(updated).not.toBeNull();
-    expect(updated).toMatchObject({ role: 'user' });
+    expect(updated).toMatchObject({ id: insertedId, name: 'Alice', role: 'user' });
 
     const all = await MongoDBManager.getAllInCollection('users');
     expect(all.length).toBeGreaterThan(0);
+    expect(all).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: insertedId, name: 'Alice', role: 'user' }),
+      ]),
+    );
 
     const removed = await MongoDBManager.removeItemFromCollection(
       'users',
-      inserted.id as string,
+      insertedId,
     );
     expect(removed).toBe(true);
 
     const cleared = await MongoDBManager.clearCollection('users');
     expect(cleared).toBe(true);
   });
+
 
   it('can create indexes that show up in listIndexes', async () => {
     await MongoDBManager.ensureStore('indexed');

@@ -15,30 +15,54 @@ import {
   transformId,
 } from "./mongo.helpers";
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from "./mongo.constants";
-import {createLogger} from "../../logger/logger";
-
+import { createLogger } from "../../logger/logger";
 
 const Log = createLogger({
   context: {
     source: "mongo-data-manager",
-  }
-})
+  },
+});
 
 let _client: mongoDB.MongoClient | null = null;
 let _db: mongoDB.Db | null = null;
 let _isConnected = false;
 
-/** Internal setters for tests */
+/**
+ * Test-only helper to override the MongoDB client instance.
+ *
+ * @param client - A pre-configured {@link mongoDB.MongoClient} instance.
+ * @internal
+ */
 const _setClient = (client: mongoDB.MongoClient): void => {
   _client = client;
 };
+
+/**
+ * Test-only helper to override the MongoDB database instance.
+ *
+ * @param db - A pre-configured {@link mongoDB.Db} instance.
+ * @internal
+ */
 const _setDatabaseInstance = (db: mongoDB.Db): void => {
   _db = db;
 };
+
+/**
+ * Test-only helper to override the internal connection flag.
+ *
+ * @param isConnected - Whether the manager should consider itself connected.
+ * @internal
+ */
 const _setIsConnected = (isConnected: boolean): void => {
   _isConnected = isConnected;
 };
 
+/**
+ * Ensures the MongoDB client and database are initialized.
+ *
+ * @throws {Error} If the Mongo client, database, or connection flag are not set.
+ * @internal
+ */
 const ensureInitialized = (): void => {
   if (!_isConnected || !_db || !_client) {
     throw new Error("MongoDBManager not initialized. Call init() first.");
@@ -48,14 +72,21 @@ const ensureInitialized = (): void => {
 /**
  * Initializes the MongoDB connection.
  *
- * @param uri - Connection string (defaults to localhost).
- * @param dbName - Database name (defaults to "justin").
+ * Uses the provided URI and database name, or falls back to
+ * {@link DEFAULT_MONGO_URI} and {@link DEFAULT_DB_NAME}.
+ * Subsequent calls are no-ops once connected.
+ *
+ * @param uri - Connection string for MongoDB. Defaults to {@link DEFAULT_MONGO_URI}.
+ * @param dbName - Database name. Defaults to {@link DEFAULT_DB_NAME}.
+ * @returns A promise that resolves when the connection is established.
+ * @throws If the connection or database selection fails.
  */
 const init = async (
   uri: string = DEFAULT_MONGO_URI,
   dbName: string = DEFAULT_DB_NAME
 ): Promise<void> => {
   if (_isConnected) return;
+
   try {
     _client = new mongoDB.MongoClient(uri);
     await _client.connect();
@@ -69,7 +100,12 @@ const init = async (
 };
 
 /**
- * Closes the MongoDB connection.
+ * Closes the MongoDB connection, if any.
+ *
+ * Safe to call multiple times; subsequent calls after the first
+ * will be no-ops once the client reference is cleared.
+ *
+ * @returns A promise that resolves when the client is closed.
  */
 const close = async (): Promise<void> => {
   if (!_client) return;
@@ -82,6 +118,22 @@ const close = async (): Promise<void> => {
   }
 };
 
+/**
+ * Creates a readable stream of collection change events for a specific
+ * collection and change type, backed by a MongoDB change stream.
+ *
+ * The resulting {@link Readable} emits normalized documents:
+ *
+ * - For {@link CollectionChangeType.DELETE}, an object with just `id`.
+ * - For inserts/updates, a document passed through {@link transformId}.
+ *
+ * The readable has a `cleanup()` method attached (as a dynamic property)
+ * that will close the underlying change stream when invoked.
+ *
+ * @param collectionName - The collection to watch.
+ * @param changeType - The type of change to observe (insert, update, delete).
+ * @returns A readable stream of normalized change payloads.
+ */
 const getCollectionChangeReadable = (
   collectionName: string,
   changeType: CollectionChangeType
@@ -127,6 +179,7 @@ const getCollectionChangeReadable = (
     collectionChangeReadable.destroy(error);
   });
 
+  // Attach a cleanup hook so higher layers can explicitly close the stream.
   (collectionChangeReadable as any).cleanup = async () => {
     try {
       await changeStream.close();
@@ -140,10 +193,14 @@ const getCollectionChangeReadable = (
 
 /**
  * Ensures a collection exists; optionally applies a validator via `collMod`.
- * Idempotent; safe to call repeatedly.
+ *
+ * This method is idempotent:
+ * - Creates the collection if it does not exist.
+ * - Applies the provided JSON schema validator on top of an existing collection,
+ *   best-effort (warnings are logged but not thrown).
  *
  * @param collectionName - Target collection name.
- * @param options - Optional `{ validator }` JSON Schema (best-effort).
+ * @param options - Optional validator configuration.
  */
 const ensureStore = async (
   collectionName: string,
@@ -151,7 +208,7 @@ const ensureStore = async (
 ): Promise<void> => {
   ensureInitialized();
 
-  // create if missing
+  // Create if missing.
   const exists = await _db!
     .listCollections({ name: collectionName }, { nameOnly: true })
     .hasNext();
@@ -161,11 +218,12 @@ const ensureStore = async (
       await _db!.createCollection(collectionName);
       Log.debug(`Created collection ${collectionName}`);
     } catch (err: any) {
-      if (err?.codeName !== "NamespaceExists") throw err; // tolerate races
+      // Tolerate concurrent creation races.
+      if (err?.codeName !== "NamespaceExists") throw err;
     }
   }
 
-  // optional validator
+  // Optional validator.
   if (options?.validator) {
     try {
       await _db!.command({
@@ -181,6 +239,12 @@ const ensureStore = async (
 
 /**
  * Ensures indexes exist on a collection. Idempotent by name and by key.
+ *
+ * Existing indexes are discovered and compared by:
+ * - Name (if provided).
+ * - Canonicalized key signature via {@link normalizeIndexKey}.
+ *
+ * Only missing indexes are created.
  *
  * @param collectionName - Target collection.
  * @param indexes - Index models to ensure.
@@ -202,7 +266,9 @@ const ensureIndexes = async (
   const existing = await coll.listIndexes().toArray();
   const byName = new Set<string>(existing.map((i: any) => String(i.name)));
   const keySigs = new Set<string>(
-    existing.map((i: any) => normalizeIndexKey(i.key as mongoDB.IndexSpecification))
+    existing.map((i: any) =>
+      normalizeIndexKey(i.key as mongoDB.IndexSpecification)
+    )
   );
 
   const createModels: mongoDB.IndexDescription[] = [];
@@ -237,6 +303,17 @@ const ensureIndexes = async (
   );
 };
 
+/**
+ * Finds a single item by Mongo `_id` in the given collection.
+ *
+ * The returned document has `_id` transformed into a string `id`
+ * via {@link transformId}. Returns `null` if the id is invalid or
+ * no document is found.
+ *
+ * @param collectionName - Target collection name.
+ * @param id - String representation of the `_id`.
+ * @returns A normalized document or `null`.
+ */
 const findItemByIdInCollection = async (
   collectionName: string,
   id: string
@@ -253,12 +330,22 @@ const findItemByIdInCollection = async (
   } catch (error) {
     return handleDbError(
       `Error finding item with id ${id} in ${collectionName}`,
-      'findItemByIdInCollection',
+      "findItemByIdInCollection",
       error
     );
   }
 };
 
+/**
+ * Finds items in a collection matching the given filter.
+ *
+ * All results are normalized via {@link transformId} to expose
+ * an `id` string field instead of `_id`.
+ *
+ * @param collectionName - Target collection name.
+ * @param filter - MongoDB filter object.
+ * @returns An array of normalized documents.
+ */
 const findItemsInCollection = async (
   collectionName: string,
   filter: object
@@ -274,26 +361,63 @@ const findItemsInCollection = async (
       `Error finding items in ${collectionName} with filter ${JSON.stringify(
         filter
       )}`,
-      'findItemsInCollection',
+      "findItemsInCollection",
       error
     );
   }
 };
 
+/**
+ * Inserts an item into a collection and returns the stringified Mongo `_id`.
+ *
+ * Any existing `id` or `_id` fields on the input object are stripped before
+ * insertion so that MongoDB remains the single source of truth for the primary
+ * key. The caller is expected to reconstruct a normalized document (e.g., by
+ * calling {@link transformId}) if needed.
+ *
+ * @param collectionName - Target collection name.
+ * @param item - The object to insert.
+ * @returns The inserted `_id` as a string.
+ */
 const addItemToCollection = async (
   collectionName: string,
   item: object
-): Promise<WithId> => {
+): Promise<string> => {
   ensureInitialized();
 
+  const { id, _id, ...filteredObject } = item as WithId;
+
   try {
-    const { insertedId } = await _db!.collection(collectionName).insertOne(item);
-    return transformId({ _id: insertedId, ...item });
+    const { insertedId } = await _db!
+      .collection(collectionName)
+      .insertOne(filteredObject);
+
+    Log.debug(`Item added to ${collectionName}`, {
+      id: insertedId.toString(),
+    });
+
+    return insertedId.toString();
   } catch (error) {
-    return handleDbError(`Error inserting item into ${collectionName}`, 'addItemToCollection', error);
+    return handleDbError(
+      `Error inserting item into ${collectionName}`,
+      "addItemToCollection",
+      error
+    );
   }
 };
 
+/**
+ * Updates an item by ID in a collection and returns the updated document.
+ *
+ * The update is applied as `$set` on the provided `item` object.
+ * The returned document is normalized via {@link transformId}.
+ * Returns `null` if the id is invalid or no document is found.
+ *
+ * @param collectionName - Target collection name.
+ * @param id - String representation of the `_id`.
+ * @param item - Partial document to `$set`.
+ * @returns The updated and normalized document, or `null`.
+ */
 const updateItemInCollection = async (
   collectionName: string,
   id: string,
@@ -304,34 +428,73 @@ const updateItemInCollection = async (
   if (!objectId) return null;
 
   try {
-    const updatedItem = await _db!
-      .collection(collectionName)
-      .findOneAndUpdate(
-        { _id: objectId },
-        { $set: item },
-        { returnDocument: "after" }
+    const coll = _db!.collection(collectionName);
+    const { matchedCount, modifiedCount } = await coll.updateOne(
+      { _id: objectId },
+      { $set: item }
+    );
+
+    if (matchedCount !== 1) {
+      Log.warn(
+        `Update failed for item with id ${id} in ${collectionName}: no match`
       );
-    return transformId(updatedItem);
+      return null;
+    }
+
+    if (modifiedCount === 0) {
+      Log.warn(
+        `No changes made for item with id ${id} in ${collectionName}`
+      );
+    }
+
+    const updatedDoc = await coll.findOne({ _id: objectId });
+    return transformId(updatedDoc);
   } catch (error) {
     return handleDbError(
       `Error updating item with id ${id} in ${collectionName}`,
-      'updateItemInCollection',
+      "updateItemInCollection",
       error
     );
   }
 };
 
-const getAllInCollection = async (collectionName: string): Promise<object[]> => {
+
+/**
+ * Retrieves all items from a collection.
+ *
+ * Returns an array of documents with `_id` normalized to `id` via
+ * {@link transformId}.
+ *
+ * @param collectionName - Target collection name.
+ * @returns An array of normalized documents.
+ */
+const getAllInCollection = async (
+  collectionName: string
+): Promise<object[]> => {
   ensureInitialized();
 
   try {
     const results = await _db!.collection(collectionName).find({}).toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleDbError(`Error getting all items in ${collectionName}`, 'getAllInCollection', error);
+    return handleDbError(
+      `Error getting all items in ${collectionName}`,
+      "getAllInCollection",
+      error
+    );
   }
 };
 
+/**
+ * Removes a single item by ID from a collection.
+ *
+ * Returns `true` if the delete operation was acknowledged by MongoDB,
+ * and `false` if the ID was invalid or an error occurred.
+ *
+ * @param collectionName - Target collection name.
+ * @param id - String representation of the `_id`.
+ * @returns `true` if the delete was acknowledged, `false` otherwise.
+ */
 const removeItemFromCollection = async (
   collectionName: string,
   id: string
@@ -348,12 +511,20 @@ const removeItemFromCollection = async (
   } catch (error) {
     return handleDbError(
       `Error removing item with id ${id} from ${collectionName}`,
-      'removeItemFromCollection',
+      "removeItemFromCollection",
       error
     );
   }
 };
 
+/**
+ * Clears all items in a collection using `deleteMany({})`.
+ *
+ * Returns `true` if the operation was acknowledged by MongoDB.
+ *
+ * @param collectionName - Target collection name.
+ * @returns `true` if the delete operation was acknowledged, `false` otherwise.
+ */
 const clearCollection = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
 
@@ -363,10 +534,22 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
       .deleteMany({});
     return acknowledged;
   } catch (error) {
-    return handleDbError(`Error clearing collection ${collectionName}`, 'clearCollection', error);
+    return handleDbError(
+      `Error clearing collection ${collectionName}`,
+      "clearCollection",
+      error
+    );
   }
 };
 
+/**
+ * Checks if a collection is empty.
+ *
+ * Uses a `countDocuments` call with `limit: 1` for efficiency.
+ *
+ * @param collectionName - Target collection name.
+ * @returns `true` if the collection contains zero documents, `false` otherwise.
+ */
 const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
 
@@ -378,15 +561,17 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   } catch (error) {
     return handleDbError(
       `Error counting documents in ${collectionName}`,
-      'isCollectionEmpty',
+      "isCollectionEmpty",
       error
     );
   }
 };
 
 /**
- * Thin Mongo adapter used internally by DataManager.
- * Not re-exported from the package entry.
+ * Thin Mongo adapter used internally by the {@link DataManager}.
+ *
+ * This module is not re-exported from the package entry; higher-level
+ * code should depend on the adapter-agnostic `DataManager` instead.
  */
 export const MongoDBManager = {
   /**
@@ -413,7 +598,14 @@ export const MongoDBManager = {
   isCollectionEmpty,
 };
 
-/** test-only (not exported from index) */
+/**
+ * Test-only variant of {@link MongoDBManager} that exposes
+ * internal setters for dependency injection.
+ *
+ * Not exported from the package entry.
+ *
+ * @internal
+ */
 export const TestingMongoDBManager = {
   ...MongoDBManager,
   _setDatabaseInstance,

@@ -33,6 +33,7 @@ export type FakeCollection = {
   find: jest.Mock;
   insertOne: jest.Mock;
   findOneAndUpdate: jest.Mock;
+  updateOne: jest.Mock;
   deleteOne: jest.Mock;
   deleteMany: jest.Mock;
   countDocuments: jest.Mock;
@@ -64,6 +65,7 @@ export function makeFakeMongo(): FakeMongo {
     find: jest.fn(),
     insertOne: jest.fn(),
     findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn(),
     deleteOne: jest.fn(),
     deleteMany: jest.fn(),
     countDocuments: jest.fn(),
