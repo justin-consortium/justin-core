@@ -1,11 +1,10 @@
 import DataManager from '../data-manager/data-manager';
 import { ChangeListenerManager } from '../data-manager/change-listener.manager';
 import { USERS } from '../data-manager/data-manager.constants';
-import { JUser } from './user.type';
+import { JUser, NewUserRecord } from './user.type';
 import { handleDbError } from '../data-manager/data-manager.helpers';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import { createLogger } from '../logger/logger';
-import { NewUserRecord } from './user.type';
 
 const Log = createLogger({
   context: {

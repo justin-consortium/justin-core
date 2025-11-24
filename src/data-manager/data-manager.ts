@@ -2,10 +2,9 @@ import { MongoDBManager } from './mongo/mongo-data-manager';
 import { EventEmitter } from 'events';
 import { ChangeListenerManager } from './change-listener.manager';
 import { CollectionChangeType } from './data-manager.type';
-import { DBType } from './data-manager.constants';
+import { DBType, USERS } from './data-manager.constants';
 import { handleDbError } from './data-manager.helpers';
 import { Readable } from 'stream';
-import { USERS } from './data-manager.constants';
 import { createLogger } from '../logger/logger';
 
 const Log = createLogger({
