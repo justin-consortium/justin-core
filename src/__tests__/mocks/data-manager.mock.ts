@@ -9,7 +9,7 @@ import * as Helpers from '../../data-manager/data-manager.helpers';
 
 type Key = string; // `${collection}:${type}`
 
-export function mockDataManager() {
+function mockDataManager() {
   const sb = sinon.createSandbox();
   const streams = new Map<Key, ReturnType<typeof makeStream>>();
 
@@ -39,8 +39,9 @@ export function mockDataManager() {
   };
 }
 
+// eslint-disable-next-line import/exports-last
 export type DataManagerMock = ReturnType<typeof createDataManagerMock>;
-export function createDataManagerMock() {
+function createDataManagerMock() {
   return {
     // lifecycle
     init: jest.fn(async () => {}),
@@ -64,7 +65,7 @@ export function createDataManagerMock() {
   };
 }
 
-export function installDataManagerSingleton(dm: DataManagerMock) {
+function installDataManagerSingleton(dm: DataManagerMock) {
   const sb = sinon.createSandbox();
   sb.stub(DataManager as any, 'getInstance').returns(dm as any);
 
@@ -84,6 +85,7 @@ type ClmMock = {
   clearChangeListeners: jest.Mock;
 };
 
+// eslint-disable-next-line import/exports-last
 export type DataManagerUnitSandbox = {
   sb: SinonSandbox;
   clm: ClmMock;
@@ -106,7 +108,7 @@ export type DataManagerUnitSandbox = {
   restore(): void;
 };
 
-export function makeDataManagerSandbox(): DataManagerUnitSandbox {
+function makeDataManagerSandbox(): DataManagerUnitSandbox {
   const sb = sinon.createSandbox();
 
   const clm: ClmMock = {
@@ -138,3 +140,5 @@ export function makeDataManagerSandbox(): DataManagerUnitSandbox {
 
   return { sb, clm, mongo, handleDbErrorSpy, restore };
 }
+
+export { makeDataManagerSandbox, installDataManagerSingleton, mockDataManager };
