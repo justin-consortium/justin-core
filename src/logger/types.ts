@@ -135,3 +135,30 @@ export interface Logger<T extends string = BaseSeverity> {
    */
   setCallback(next?: LoggerCallback<T>): void;
 }
+
+/**
+ * Configuration object accepted by {@link configureGlobalLoggerSettings}.
+ */
+export interface GlobalLoggerConfig {
+  /**
+   * Global minimum severity level.
+   */
+  level?: string;
+  /**
+   * Global context to be merged into every log entry.
+   */
+  context?: Record<string, unknown>;
+  /**
+   * Global emit override.
+   */
+  emitFn?: EmitFn<any>;
+  /**
+   * Global callback override.
+   */
+  callback?: LoggerCallback<any>;
+  /**
+   * Global severity ranking, for custom severities.
+   */
+  severityRanking?: Record<string, number>;
+}
+

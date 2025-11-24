@@ -6,12 +6,10 @@ export type {
   LoggerEntry,
   EmitFn,
   LoggerCallback,
+  GlobalLoggerConfig as LoggerConfig,
 } from './types';
 
 export {
   configureGlobalLoggerSettings as configureLogger,
 } from './global';
 
-export type {
-  GlobalLoggerConfig as LoggerConfig,
-} from './global';

@@ -99,7 +99,7 @@ function toRank<T extends string>(
  * @param options - Logger creation options.
  * @returns A structured (but flattened) logger instance.
  */
-export function createLogger<T extends string = BaseSeverity>(
+function createLogger<T extends string = BaseSeverity>(
   options: CreateLoggerOptions<T> = {}
 ): Logger<T> {
   // build severity→rank map
@@ -261,3 +261,5 @@ export function createLogger<T extends string = BaseSeverity>(
     error,
   };
 }
+
+export { createLogger }

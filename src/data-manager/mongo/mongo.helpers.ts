@@ -16,7 +16,7 @@ const Log = createLogger({
  * @param id - The string to convert into an `ObjectId`.
  * @returns The created `ObjectId` or `null` if the format is invalid.
  */
-export const toObjectId = (
+const toObjectId = (
   id: string | null | undefined
 ): mongoDB.ObjectId | null => {
   if (!id || typeof id !== "string") {
@@ -42,7 +42,7 @@ export const toObjectId = (
  * @param doc - The source document (could be null/undefined).
  * @returns A new object with `id` and remaining fields, or `null`.
  */
-export const transformId = <
+const transformId = <
   T extends Record<string, any> | null | undefined
 >(doc: T) => {
   if (!doc) return null;
@@ -67,7 +67,7 @@ export const transformId = <
  * @param key - The index specification in any supported form.
  * @returns A plain object or Map keyed by field -> direction.
  */
-export const asIndexKey = (
+const asIndexKey = (
   key: mongoDB.IndexSpecification
 ):
   | Record<string, mongoDB.IndexDirection>
@@ -96,7 +96,7 @@ export const asIndexKey = (
  * @param key - The index spec in any supported form.
  * @returns Stable signature string for the key.
  */
-export const normalizeIndexKey = (
+const normalizeIndexKey = (
   key: mongoDB.IndexSpecification
 ): string => {
   if (typeof key === "string") return `${key}:1`;
@@ -119,3 +119,6 @@ export const normalizeIndexKey = (
     .map(([k, v]) => `${k}:${String(v)}`)
     .join("|");
 };
+
+
+export { toObjectId, transformId, asIndexKey, normalizeIndexKey }

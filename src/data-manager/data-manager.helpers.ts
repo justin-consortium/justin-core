@@ -1,4 +1,4 @@
-import {createLogger} from "../logger/logger";
+import { createLogger } from "../logger";
 
 const Log = createLogger({
   context: {
@@ -21,7 +21,9 @@ const Log = createLogger({
  * @throws {Error} Throws the provided error if it is an `Error` instance,
  * or wraps and throws a new `Error` with the specified message if it is not.
  */
-export const handleDbError = (message: string, funcName: string, error: unknown): never => {
+const handleDbError = (message: string, funcName: string, error: unknown): never => {
   Log.error(message, { function: funcName, error});
   throw error instanceof Error ? error : new Error(message);
 };
+
+export { handleDbError, }

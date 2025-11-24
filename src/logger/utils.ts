@@ -12,7 +12,7 @@ import {JUser} from "../user-manager/user.type";
  * @param value - The value to set for the property.
  * @returns A new object containing all properties of `target` plus the new (or suffixed) key.
  */
-export function mergeWithPossibleSuffix(
+function mergeWithPossibleSuffix(
   target: Record<string, unknown>,
   key: string,
   value: unknown
@@ -210,7 +210,7 @@ function normalizeObjectEntry(
  * @param arg - The extra value passed to the logger.
  * @returns A flat object of normalized fields, or `undefined` if nothing could be extracted.
  */
-export function normalizeExtraArg(
+function normalizeExtraArg(
   arg: unknown
 ): Record<string, unknown> | undefined {
   if (arg instanceof Error) {
@@ -249,3 +249,6 @@ export function normalizeExtraArg(
   // primitive (string/number/boolean)
   return { value: arg };
 }
+
+
+export { mergeWithPossibleSuffix, normalizeExtraArg }

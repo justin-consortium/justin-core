@@ -18,7 +18,7 @@ const Log = createLogger({
  * listeners for changes in database collections. It works with the DataManager
  * to ensure a database-agnostic implementation.
  */
-export class ChangeListenerManager extends EventEmitter {
+class ChangeListenerManager extends EventEmitter {
   private static instance: ChangeListenerManager | undefined = undefined;
   private changeListeners: Map<
     string,
@@ -158,3 +158,5 @@ export class ChangeListenerManager extends EventEmitter {
     return this.changeListeners.has(`${collectionName}-${changeType}`);
   }
 }
+
+export { ChangeListenerManager };

@@ -17,7 +17,7 @@ const Log = createLogger({
  * This Map enables quick lookups, insertions, and deletions by `id`.
  * @private
  */
-export const _users: Map<string, JUser> = new Map();
+const _users: Map<string, JUser> = new Map();
 
 const dm = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();
@@ -129,7 +129,7 @@ const setupChangeListeners = (): void => {
  * @throws Error if DataManager is not initialized.
  * @private
  */
-export const _checkInitialization = (): void => {
+const _checkInitialization = (): void => {
   if (!dm.getInitializationStatus()) {
     throw new Error("UserManager has not been initialized");
   }
@@ -144,7 +144,7 @@ export const _checkInitialization = (): void => {
  * @returns {Promise<JUser | null>} Resolves with the added user or null if the operation fails.
  * @throws {Error} If no user is provided or if the user fails validation.
  */
-export const addUser = async (
+const addUser = async (
   user: NewUserRecord
 ): Promise<(JUser | null)> => {
   _checkInitialization();
@@ -195,7 +195,7 @@ export const addUser = async (
  * @returns {Promise<(JUser | null)[]>} Resolves with the added users or null if the operation fails.
  * @throws {Error} If no users are provided or if any user fails validation.
  */
-export const addUsers = async (
+const addUsers = async (
   users: NewUserRecord[]
 ): Promise<(JUser | null)[]> => {
 
@@ -204,7 +204,7 @@ export const addUsers = async (
   }
 
   try {
-    let addedUsers: JUser[] = [];
+    const addedUsers: JUser[] = [];
 
     for (const user of users) {
       const addedUser = await addUser(user);
