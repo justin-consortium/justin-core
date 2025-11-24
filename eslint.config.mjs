@@ -1,6 +1,12 @@
-import tsParser from '@typescript-eslint/parser';
+// eslint.config.mjs
+// @ts-check
 
+import tsParser from '@typescript-eslint/parser';
+import importPlugin from 'eslint-plugin-import';
+
+/** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
+  // 1) Global ignores
   {
     ignores: [
       'node_modules/**',
@@ -9,6 +15,8 @@ export default [
       'coverage/**',
     ],
   },
+
+  // 2) Main rules for src
   {
     files: ['src/**/*.{ts,tsx,js,jsx}'],
 
@@ -20,11 +28,39 @@ export default [
       },
     },
 
+    plugins: {
+      import: importPlugin,
+    },
+
     rules: {
+      /*
+       * Imports
+       */
       'no-duplicate-imports': 'error',
-      'no-unreachable': 'error',   // code after return/throw/etc.
-      'no-fallthrough': 'error',  // fall-through between switch cases
-      'default-case': 'warn',     // nudge for a default in switch
+
+      /*
+       * Control-flow safety
+       */
+      'no-unreachable': 'error',
+      'no-fallthrough': 'error',
+      'default-case': 'warn',
+
+      /*
+       * Exports must be last in the file
+       */
+      'import/exports-last': 'error',
+    },
+  },
+
+  // 3) Typing files: relax exports-last
+  {
+    files: [
+      'src/**/*.d.ts',
+      'src/**/*.type.ts', // tweak/extend this pattern if you use something else
+    ],
+
+    rules: {
+      'import/exports-last': 'off',
     },
   },
 ];
