@@ -2,14 +2,13 @@ import { EventEmitter } from 'events';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import DataManager from '../data-manager/data-manager';
 import { Readable } from 'stream';
-import {createLogger} from "../logger/logger";
-
+import { createLogger } from '../logger/logger';
 
 const Log = createLogger({
   context: {
-    source: "change-listener-manager",
-  }
-})
+    source: 'change-listener-manager',
+  },
+});
 
 /**
  * Manages change listeners for database collections.
@@ -65,7 +64,7 @@ class ChangeListenerManager extends EventEmitter {
   public addChangeListener<T = any>(
     collectionName: string,
     changeType: CollectionChangeType,
-    callback: (data: T) => void
+    callback: (data: T) => void,
   ): void {
     const key = `${collectionName}-${changeType}`;
     if (this.changeListeners.has(key)) {
@@ -73,10 +72,7 @@ class ChangeListenerManager extends EventEmitter {
       return;
     }
 
-    const stream = DataManager.getInstance().getChangeStream(
-      collectionName,
-      changeType
-    );
+    const stream = DataManager.getInstance().getChangeStream(collectionName, changeType);
 
     const listener = (data: T) => {
       callback(data);
@@ -109,10 +105,7 @@ class ChangeListenerManager extends EventEmitter {
    * @param {string} collectionName - The name of the collection.
    * @param {CollectionChangeType} changeType - The type of changes to stop listening for.
    */
-  public removeChangeListener(
-    collectionName: string,
-    changeType: CollectionChangeType
-  ): void {
+  public removeChangeListener(collectionName: string, changeType: CollectionChangeType): void {
     const key = `${collectionName}-${changeType}`;
 
     if (!this.changeListeners.has(key)) {
@@ -151,10 +144,7 @@ class ChangeListenerManager extends EventEmitter {
    * @param {CollectionChangeType} changeType - The type of changes to check for.
    * @returns {boolean} True if the listener exists, false otherwise.
    */
-  public hasChangeListener(
-    collectionName: string,
-    changeType: CollectionChangeType
-  ): boolean {
+  public hasChangeListener(collectionName: string, changeType: CollectionChangeType): boolean {
     return this.changeListeners.has(`${collectionName}-${changeType}`);
   }
 }

@@ -1,4 +1,3 @@
-
 import { Readable } from 'stream';
 import DataManager from '../data-manager';
 import { DBType, USERS } from '../data-manager.constants';
@@ -42,9 +41,7 @@ describe('DataManager (unit)', () => {
   it('errors via handleDbError on unsupported DB type', async () => {
     const dm = DataManager.getInstance();
 
-    await expect(dm.init('POSTGRES' as unknown as DBType)).rejects.toBeInstanceOf(
-      Error,
-    );
+    await expect(dm.init('POSTGRES' as unknown as DBType)).rejects.toBeInstanceOf(Error);
 
     expect(dmSandbox.handleDbErrorSpy.calledOnce).toBe(true);
     const [msg, fnName, err] = dmSandbox.handleDbErrorSpy.getCall(0).args;
@@ -57,9 +54,7 @@ describe('DataManager (unit)', () => {
   it('requires init before ensureStore/ensureIndexes', async () => {
     const dm = DataManager.getInstance();
 
-    await expect(dm.ensureStore('things')).rejects.toThrow(
-      'DataManager has not been initialized',
-    );
+    await expect(dm.ensureStore('things')).rejects.toThrow('DataManager has not been initialized');
     await expect(dm.ensureIndexes('things', [])).rejects.toThrow(
       'DataManager has not been initialized',
     );
@@ -69,12 +64,10 @@ describe('DataManager (unit)', () => {
     const dm = DataManager.getInstance();
     await dm.init(DBType.MONGO);
 
-    await expect(
-      dm.ensureStore('things', { validator: { ok: true } }),
-    ).resolves.toBeUndefined();
-    expect(
-      dmSandbox.mongo.ensureStore.calledWith('things', { validator: { ok: true } }),
-    ).toBe(true);
+    await expect(dm.ensureStore('things', { validator: { ok: true } })).resolves.toBeUndefined();
+    expect(dmSandbox.mongo.ensureStore.calledWith('things', { validator: { ok: true } })).toBe(
+      true,
+    );
 
     const indexes = [{ name: 'i1', key: { a: 1 }, unique: true }];
     await expect(dm.ensureIndexes('things', indexes)).resolves.toBeUndefined();
@@ -107,9 +100,7 @@ describe('DataManager (unit)', () => {
 
     const res = await dm.addItemToCollection(USERS, { name: 'Ada' });
     expect(res).toEqual({ id: 'new-id-1', name: 'Ada' });
-    expect(
-      dmSandbox.mongo.addItemToCollection.calledWith(USERS, { name: 'Ada' }),
-    ).toBe(true);
+    expect(dmSandbox.mongo.addItemToCollection.calledWith(USERS, { name: 'Ada' })).toBe(true);
     expect(onUserAdded).toHaveBeenCalledWith({ id: 'new-id-1', name: 'Ada' });
   });
 
@@ -163,9 +154,7 @@ describe('DataManager (unit)', () => {
     const boom = new Error('fail-update');
     dmSandbox.mongo.updateItemInCollection.rejects(boom);
 
-    await expect(
-      dm.updateItemByIdInCollection('things', 't1', { x: 2 }),
-    ).rejects.toBe(boom);
+    await expect(dm.updateItemByIdInCollection('things', 't1', { x: 2 })).rejects.toBe(boom);
 
     expect(dmSandbox.handleDbErrorSpy.calledOnce).toBe(true);
     const [msg, fnName, err] = dmSandbox.handleDbErrorSpy.getCall(0).args;
@@ -185,9 +174,7 @@ describe('DataManager (unit)', () => {
 
     const ok = await dm.removeItemFromCollection(USERS, 'u9');
     expect(ok).toBe(true);
-    expect(
-      dmSandbox.mongo.removeItemFromCollection.calledWith(USERS, 'u9'),
-    ).toBe(true);
+    expect(dmSandbox.mongo.removeItemFromCollection.calledWith(USERS, 'u9')).toBe(true);
     expect(onDeleted).toHaveBeenCalledWith('u9');
   });
 
@@ -311,22 +298,16 @@ describe('DataManager (unit)', () => {
     const result = [{ id: 'x' }, { id: 'y' }];
     dmSandbox.mongo.findItemsInCollection.resolves(result);
 
-    await expect(
-      dm.findItemsInCollection('things', { active: true }),
-    ).resolves.toEqual(result);
+    await expect(dm.findItemsInCollection('things', { active: true })).resolves.toEqual(result);
 
     const boom = new Error('fail-findItems');
     dmSandbox.mongo.findItemsInCollection.rejects(boom);
 
-    await expect(dm.findItemsInCollection('things', { a: 1 })).rejects.toBe(
-      boom,
-    );
+    await expect(dm.findItemsInCollection('things', { a: 1 })).rejects.toBe(boom);
 
     expect(dmSandbox.handleDbErrorSpy.calledOnce).toBe(true);
     const [msg, fnName, err] = dmSandbox.handleDbErrorSpy.getCall(0).args;
-    expect(msg).toBe(
-      'Failed to find items by criteria: [object Object] in collection: things',
-    );
+    expect(msg).toBe('Failed to find items by criteria: [object Object] in collection: things');
     expect(fnName).toBe('findItemsInCollection');
     expect(err).toBe(boom);
   });
@@ -334,9 +315,9 @@ describe('DataManager (unit)', () => {
   it('getChangeStream requires init and delegates to adapter', async () => {
     const dm = DataManager.getInstance();
 
-    expect(() =>
-      dm.getChangeStream('things', CollectionChangeType.INSERT),
-    ).toThrow('DataManager has not been initialized');
+    expect(() => dm.getChangeStream('things', CollectionChangeType.INSERT)).toThrow(
+      'DataManager has not been initialized',
+    );
 
     await dm.init(DBType.MONGO);
 
@@ -346,10 +327,7 @@ describe('DataManager (unit)', () => {
     const out = dm.getChangeStream('things', CollectionChangeType.INSERT);
     expect(out).toBe(fakeStream);
     expect(
-      dmSandbox.mongo.getCollectionChangeReadable.calledWith(
-        'things',
-        CollectionChangeType.INSERT,
-      ),
+      dmSandbox.mongo.getCollectionChangeReadable.calledWith('things', CollectionChangeType.INSERT),
     ).toBe(true);
   });
 });

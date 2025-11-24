@@ -1,10 +1,10 @@
-import { createLogger } from "../logger";
+import { createLogger } from '../logger';
 
 const Log = createLogger({
   context: {
-    source: "data-manager-helpers",
-  }
-})
+    source: 'data-manager-helpers',
+  },
+});
 
 /**
  * Logs and throws a database-related error.
@@ -22,8 +22,8 @@ const Log = createLogger({
  * or wraps and throws a new `Error` with the specified message if it is not.
  */
 const handleDbError = (message: string, funcName: string, error: unknown): never => {
-  Log.error(message, { function: funcName, error});
+  Log.error(message, { function: funcName, error });
   throw error instanceof Error ? error : new Error(message);
 };
 
-export { handleDbError, }
+export { handleDbError };

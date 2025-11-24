@@ -24,6 +24,7 @@ Good tests make subtle behavior obvious.
 # Guiding Principles
 
 ## 1. Tests Should Explain Intent
+
 A test name should read like a sentence (remember tests tend to start with the it() function:
 
 > “Given this scenario, what should happen?”
@@ -42,7 +43,7 @@ Bad examples:
 - `misc logger test`
 
 Each test is a short story.  
-Future developers should infer the *spec* from the tests alone.
+Future developers should infer the _spec_ from the tests alone.
 
 ---
 
@@ -53,12 +54,12 @@ We assert **meaningful outcomes**, not internal structures.
 Instead of checking exact nested structure of `ctx.error`, we use:
 
 ```ts
-expect(logCtx.error).toMatchObject({ message: "boom" });
+expect(logCtx.error).toMatchObject({ message: 'boom' });
 ```
 
 Why?
 
-Because logging internals may evolve, but the *contract* stays stable.
+Because logging internals may evolve, but the _contract_ stays stable.
 
 ---
 
@@ -83,13 +84,16 @@ If mocking becomes repetitive, **write a small helper**—it’s worth it.
 ---
 
 ## 4. Unit Tests First, Integration Tests When It Matters
+
 Unit tests define the intent.  
 Integration tests confirm our assumptions about processes.
 
 ### Unit tests
+
 Mock everything. Fast and deterministic.
 
 ### Integration tests
+
 When you want to see how the functions nteract together.
 See that our database interactions work as intended
 
@@ -112,11 +116,11 @@ Our structure:
 Example:
 
 ```ts
-describe("findItemByIdInCollection", () => {
-  it("returns null if toObjectId fails", async () => {
+describe('findItemByIdInCollection', () => {
+  it('returns null if toObjectId fails', async () => {
     toObjectIdStub.returns(null);
 
-    const result = await MongoDBManager.findItemByIdInCollection("users", "bad-id");
+    const result = await MongoDBManager.findItemByIdInCollection('users', 'bad-id');
 
     expect(result).toBeNull();
   });
@@ -136,8 +140,8 @@ Don’t mock the logger. Capture its behavior.
 ```ts
 const logs = loggerSpies();
 fn();
-logs.expectLast("message text", "ERROR");
-expect(logs.last()?.ctx.userId).toBe("123");
+logs.expectLast('message text', 'ERROR');
+expect(logs.last()?.ctx.userId).toBe('123');
 logs.restore();
 ```
 
@@ -193,6 +197,7 @@ We avoid Jest module hoisting entirely.
 # How to Add New Tests
 
 ### Step 1 — Define behaviors
+
 Before writing code, write down:
 
 - what the function guarantees
@@ -205,26 +210,28 @@ Each becomes a test.
 ---
 
 ### Step 2 — Use helpers
+
 If your module interacts with:
 
-| Dependency | Use this helper |
-|-----------|-----------------|
-| Logger | `loggerSpies()` |
-| Mongo | `makeFakeMongo()` |
-| DataManager | `makeDmMock()` |
-| Time | sinon fake timers |
+| Dependency     | Use this helper                      |
+| -------------- | ------------------------------------ |
+| Logger         | `loggerSpies()`                      |
+| Mongo          | `makeFakeMongo()`                    |
+| DataManager    | `makeDmMock()`                       |
+| Time           | sinon fake timers                    |
 | Change streams | EventEmitter fake from makeFakeMongo |
 
 ---
 
 ### Step 3 — Assert behaviors, not implementation
+
 We don’t check:
 
 - property order
 - exact object shapes
 - stack traces
 
-We *do* check:
+We _do_ check:
 
 - returned values
 - thrown errors
@@ -235,6 +242,7 @@ We *do* check:
 ---
 
 ### Step 4 — Keep tests conversational
+
 Write tests so anyone can read them and instantly understand the entire module.
 
 This reduces onboarding time enormously.

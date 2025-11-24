@@ -20,9 +20,7 @@ describe('DataManager (integration)', () => {
     uri = repl.getUri();
 
     const realInit = MongoDBManager.init.bind(MongoDBManager);
-    jest
-      .spyOn(MongoDBManager, 'init')
-      .mockImplementation(() => realInit(uri, 'dm-int-test'));
+    jest.spyOn(MongoDBManager, 'init').mockImplementation(() => realInit(uri, 'dm-int-test'));
 
     dm = DataManager.getInstance();
     await dm.init();
@@ -45,9 +43,7 @@ describe('DataManager (integration)', () => {
 
     const createdAny = created as any;
     const createdId =
-      typeof createdAny?.id === 'string'
-        ? createdAny.id
-        : (createdAny?.id as any)?.id;
+      typeof createdAny?.id === 'string' ? createdAny.id : (createdAny?.id as any)?.id;
 
     expect(createdId).toBeTruthy();
     expect(createdAny).toMatchObject({ name: 'Alice', role: 'admin' });
@@ -64,10 +60,7 @@ describe('DataManager (integration)', () => {
     });
 
     const insertedAny = inserted as any;
-    const id =
-      typeof insertedAny?.id === 'string'
-        ? insertedAny.id
-        : (insertedAny?.id as any)?.id;
+    const id = typeof insertedAny?.id === 'string' ? insertedAny.id : (insertedAny?.id as any)?.id;
 
     const updated = await dm.updateItemByIdInCollection(USERS, id, {
       role: 'power-user',

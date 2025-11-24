@@ -1,8 +1,4 @@
-import {
-  makeLoggerSandbox,
-  type CapturedEmit,
-  type LoggerSandboxOptions,
-} from '../helpers/logger';
+import { makeLoggerSandbox, type CapturedEmit, type LoggerSandboxOptions } from '../helpers/logger';
 
 export type LoggerSpies = ReturnType<typeof makeLoggerSandbox> & {
   captured: CapturedEmit[];

@@ -9,7 +9,4 @@ export type {
   GlobalLoggerConfig as LoggerConfig,
 } from './types';
 
-export {
-  configureGlobalLoggerSettings as configureLogger,
-} from './global';
-
+export { configureGlobalLoggerSettings as configureLogger } from './global';

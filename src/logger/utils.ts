@@ -1,4 +1,4 @@
-import {JUser} from "../user-manager/user.type";
+import { JUser } from '../user-manager/user.type';
 
 /**
  * Return a new object with `key` added.
@@ -15,7 +15,7 @@ import {JUser} from "../user-manager/user.type";
 function mergeWithPossibleSuffix(
   target: Record<string, unknown>,
   key: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> {
   if (!(key in target)) {
     return { ...target, [key]: value };
@@ -44,9 +44,7 @@ function mergeWithPossibleSuffix(
  * @param value - Value that might be a JUser-like object.
  * @returns A normalized user object or `undefined` if the input is not user-like.
  */
-function extractFromJUser(
-  value: unknown
-): Record<string, unknown> | undefined {
+function extractFromJUser(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const maybeUser = value as Partial<JUser>;
 
@@ -90,19 +88,13 @@ type JEventLike = {
   generatedTimestamp?: unknown;
 };
 
-function extractFromJEvent(
-  value: unknown
-): Record<string, unknown> | undefined {
+function extractFromJEvent(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object') return undefined;
 
   const maybeEvent = value as JEventLike;
 
   // must have at least one event-ish field
-  if (
-    !maybeEvent.eventType &&
-    !maybeEvent.publishedTimestamp &&
-    !maybeEvent.generatedTimestamp
-  ) {
+  if (!maybeEvent.eventType && !maybeEvent.publishedTimestamp && !maybeEvent.generatedTimestamp) {
     return undefined;
   }
 
@@ -116,8 +108,7 @@ function extractFromJEvent(
     out.eventType = maybeEvent.eventType;
   }
 
-  const when =
-    maybeEvent.publishedTimestamp ?? maybeEvent.generatedTimestamp;
+  const when = maybeEvent.publishedTimestamp ?? maybeEvent.generatedTimestamp;
 
   if (when instanceof Date) {
     out.eventTime = when.toISOString();
@@ -127,7 +118,6 @@ function extractFromJEvent(
 
   return Object.keys(out).length > 0 ? out : undefined;
 }
-
 
 /**
  * Normalize a single leaf value so it is safe and consistent for JSON logging.
@@ -170,10 +160,7 @@ function normalizeValue(value: unknown): unknown {
  * @param value - The original property value.
  * @returns A partial object that can be merged into the final fields object.
  */
-function normalizeObjectEntry(
-  key: string,
-  value: unknown
-): Record<string, unknown> {
+function normalizeObjectEntry(key: string, value: unknown): Record<string, unknown> {
   const userBits = extractFromJUser(value);
   if (userBits) {
     if (key === 'user') {
@@ -210,9 +197,7 @@ function normalizeObjectEntry(
  * @param arg - The extra value passed to the logger.
  * @returns A flat object of normalized fields, or `undefined` if nothing could be extracted.
  */
-function normalizeExtraArg(
-  arg: unknown
-): Record<string, unknown> | undefined {
+function normalizeExtraArg(arg: unknown): Record<string, unknown> | undefined {
   if (arg instanceof Error) {
     return { error: normalizeValue(arg) };
   }
@@ -250,5 +235,4 @@ function normalizeExtraArg(
   return { value: arg };
 }
 
-
-export { mergeWithPossibleSuffix, normalizeExtraArg }
+export { mergeWithPossibleSuffix, normalizeExtraArg };

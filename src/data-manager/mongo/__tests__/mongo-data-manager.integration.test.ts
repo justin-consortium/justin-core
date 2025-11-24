@@ -33,9 +33,7 @@ describe('MongoDBManager (integration)', () => {
     await client.connect();
     const db = client.db('test-db');
 
-    const found = await db
-      .listCollections({ name: 'users' }, { nameOnly: true })
-      .hasNext();
+    const found = await db.listCollections({ name: 'users' }, { nameOnly: true }).hasNext();
 
     await client.close();
 
@@ -50,18 +48,13 @@ describe('MongoDBManager (integration)', () => {
 
     expect(typeof insertedId).toBe('string');
 
-    const found = await MongoDBManager.findItemByIdInCollection(
-      'users',
-      insertedId,
-    );
+    const found = await MongoDBManager.findItemByIdInCollection('users', insertedId);
     expect(found).not.toBeNull();
     expect(found).toMatchObject({ name: 'Alice', role: 'admin' });
 
-    const updated = await MongoDBManager.updateItemInCollection(
-      'users',
-      insertedId,
-      { role: 'user' },
-    );
+    const updated = await MongoDBManager.updateItemInCollection('users', insertedId, {
+      role: 'user',
+    });
     expect(updated).not.toBeNull();
     expect(updated).toMatchObject({ id: insertedId, name: 'Alice', role: 'user' });
 
@@ -73,16 +66,12 @@ describe('MongoDBManager (integration)', () => {
       ]),
     );
 
-    const removed = await MongoDBManager.removeItemFromCollection(
-      'users',
-      insertedId,
-    );
+    const removed = await MongoDBManager.removeItemFromCollection('users', insertedId);
     expect(removed).toBe(true);
 
     const cleared = await MongoDBManager.clearCollection('users');
     expect(cleared).toBe(true);
   });
-
 
   it('can create indexes that show up in listIndexes', async () => {
     await MongoDBManager.ensureStore('indexed');

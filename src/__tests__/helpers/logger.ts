@@ -21,23 +21,17 @@ export function makeLoggerSandbox(options: LoggerSandboxOptions = {}) {
     ...(options.ctx ?? {}),
   };
 
-  const emit = sb.spy(
-    (entry: LoggerEntry<string>, ctx: Record<string, unknown>) => {
-      captured.push({ entry, ctx });
-    },
-  );
+  const emit = sb.spy((entry: LoggerEntry<string>, ctx: Record<string, unknown>) => {
+    captured.push({ entry, ctx });
+  });
 
   const minLevel: string = options.minLevel ?? 'DEBUG';
 
   // Stub the global logger plumbing to route everything to our spy
   sb.stub(GlobalLogger, 'getGlobalEmitFn').returns(emit as any);
   sb.stub(GlobalLogger, 'defaultEmit').callsFake(emit as any);
-  sb
-    .stub(GlobalLogger, 'getGlobalLogContext')
-    .returns(baseCtx as Record<string, unknown>);
-  sb
-    .stub(GlobalLogger, 'getGlobalMinLogLevel')
-    .returns(minLevel as any);
+  sb.stub(GlobalLogger, 'getGlobalLogContext').returns(baseCtx as Record<string, unknown>);
+  sb.stub(GlobalLogger, 'getGlobalMinLogLevel').returns(minLevel as any);
   sb.stub(GlobalLogger, 'getGlobalSeverityRanking').returns(undefined as any);
   sb.stub(GlobalLogger, 'getGlobalLogCallback').returns(undefined as any);
 
@@ -59,9 +53,7 @@ export function makeLoggerSandbox(options: LoggerSandboxOptions = {}) {
       expect(last?.entry.severity).toBe(severity);
     },
     findByMessage(substr: string) {
-      return captured.filter((c) =>
-        String(c.entry.message).includes(substr),
-      );
+      return captured.filter((c) => String(c.entry.message).includes(substr));
     },
   };
 }

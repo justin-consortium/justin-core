@@ -27,12 +27,8 @@ describe('logger integration', () => {
 
     getGlobalEmitFnStub = sb.stub(globalFns, 'getGlobalEmitFn');
     getGlobalLogCallbackStub = sb.stub(globalFns, 'getGlobalLogCallback');
-    getGlobalLogContextStub = sb
-      .stub(globalFns, 'getGlobalLogContext')
-      .returns({ app: 'demo' });
-    getGlobalMinLogLevelStub = sb
-      .stub(globalFns, 'getGlobalMinLogLevel')
-      .returns('INFO');
+    getGlobalLogContextStub = sb.stub(globalFns, 'getGlobalLogContext').returns({ app: 'demo' });
+    getGlobalMinLogLevelStub = sb.stub(globalFns, 'getGlobalMinLogLevel').returns('INFO');
     getGlobalSeverityRankingStub = sb
       .stub(globalFns, 'getGlobalSeverityRanking')
       .returns(undefined);

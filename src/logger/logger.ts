@@ -55,10 +55,7 @@ function buildRankMap<T extends string>(): Record<T, number> {
  * @param ranks - Map of severity to numeric rank.
  * @returns Numeric rank for comparison.
  */
-function toRank<T extends string>(
-  value: T | number,
-  ranks: Record<T, number>
-): number {
+function toRank<T extends string>(value: T | number, ranks: Record<T, number>): number {
   if (typeof value === 'number') return value;
   return ranks[value] ?? 0;
 }
@@ -100,7 +97,7 @@ function toRank<T extends string>(
  * @returns A structured (but flattened) logger instance.
  */
 function createLogger<T extends string = BaseSeverity>(
-  options: CreateLoggerOptions<T> = {}
+  options: CreateLoggerOptions<T> = {},
 ): Logger<T> {
   // build severity→rank map
   const ranks: Record<T, number> = buildRankMap<T>();
@@ -131,11 +128,7 @@ function createLogger<T extends string = BaseSeverity>(
    * @param message - Log message.
    * @param extras - Optional extras (user, event, error, etc.).
    */
-  const emit = (
-    severity: T,
-    message: string,
-    extras?: unknown
-  ): void => {
+  const emit = (severity: T, message: string, extras?: unknown): void => {
     // always normalize severity to upper-case for consistency
     const sevUpper = String(severity).toUpperCase() as T;
     if (!shouldEmit(sevUpper)) return;
@@ -158,8 +151,7 @@ function createLogger<T extends string = BaseSeverity>(
     };
 
     // pick the effective emit fn
-    const effectiveEmit =
-      instanceEmitFn ?? (getGlobalEmitFn<T>() ?? defaultEmit<T>);
+    const effectiveEmit = instanceEmitFn ?? getGlobalEmitFn<T>() ?? defaultEmit<T>;
 
     // call it with the flattened shape
     effectiveEmit(entry, mergedContext);
@@ -187,8 +179,7 @@ function createLogger<T extends string = BaseSeverity>(
    * @param message - Log message.
    * @param extras - Optional extras to flatten into context.
    */
-  const debug = (message: string, extras?: unknown) =>
-    emit('DEBUG' as T, message, extras);
+  const debug = (message: string, extras?: unknown) => emit('DEBUG' as T, message, extras);
 
   /**
    * Convenience INFO logger.
@@ -196,8 +187,7 @@ function createLogger<T extends string = BaseSeverity>(
    * @param message - Log message.
    * @param extras - Optional extras to flatten into context.
    */
-  const info = (message: string, extras?: unknown) =>
-    emit('INFO' as T, message, extras);
+  const info = (message: string, extras?: unknown) => emit('INFO' as T, message, extras);
 
   /**
    * Convenience WARNING logger.
@@ -205,8 +195,7 @@ function createLogger<T extends string = BaseSeverity>(
    * @param message - Log message.
    * @param extras - Optional extras to flatten into context.
    */
-  const warn = (message: string, extras?: unknown) =>
-    emit('WARNING' as T, message, extras);
+  const warn = (message: string, extras?: unknown) => emit('WARNING' as T, message, extras);
 
   /**
    * Convenience ERROR logger.
@@ -214,8 +203,7 @@ function createLogger<T extends string = BaseSeverity>(
    * @param message - Log message.
    * @param extras - Optional extras to flatten into context.
    */
-  const error = (message: string, extras?: unknown) =>
-    emit('ERROR' as T, message, extras);
+  const error = (message: string, extras?: unknown) => emit('ERROR' as T, message, extras);
 
   return {
     /**
@@ -262,4 +250,4 @@ function createLogger<T extends string = BaseSeverity>(
   };
 }
 
-export { createLogger }
+export { createLogger };

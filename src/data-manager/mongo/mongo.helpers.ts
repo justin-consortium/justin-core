@@ -1,12 +1,12 @@
-import * as mongoDB from "mongodb";
-import { NO_ID } from "../data-manager.constants";
-import { createLogger } from "../../logger/logger";
+import * as mongoDB from 'mongodb';
+import { NO_ID } from '../data-manager.constants';
+import { createLogger } from '../../logger/logger';
 
 const Log = createLogger({
   context: {
-    source: "mongo-manager-helpers",
-  }
-})
+    source: 'mongo-manager-helpers',
+  },
+});
 /**
  * Safely converts a string to a MongoDB `ObjectId`.
  *
@@ -16,17 +16,15 @@ const Log = createLogger({
  * @param id - The string to convert into an `ObjectId`.
  * @returns The created `ObjectId` or `null` if the format is invalid.
  */
-const toObjectId = (
-  id: string | null | undefined
-): mongoDB.ObjectId | null => {
-  if (!id || typeof id !== "string") {
-    Log.error(`Invalid ObjectId format: ${id}`, {function: 'toObjectId'});
+const toObjectId = (id: string | null | undefined): mongoDB.ObjectId | null => {
+  if (!id || typeof id !== 'string') {
+    Log.error(`Invalid ObjectId format: ${id}`, { function: 'toObjectId' });
     return null;
   }
   try {
     return new mongoDB.ObjectId(id);
   } catch {
-    Log.error(`Invalid ObjectId format: ${id}`, {function: 'toObjectId'});
+    Log.error(`Invalid ObjectId format: ${id}`, { function: 'toObjectId' });
     return null;
   }
 };
@@ -42,17 +40,12 @@ const toObjectId = (
  * @param doc - The source document (could be null/undefined).
  * @returns A new object with `id` and remaining fields, or `null`.
  */
-const transformId = <
-  T extends Record<string, any> | null | undefined
->(doc: T) => {
+const transformId = <T extends Record<string, any> | null | undefined>(doc: T) => {
   if (!doc) return null;
 
   const { _id, id: _ignoredId, ...rest } = doc as any;
 
-  const id =
-    _id && typeof (_id as any).toString === "function"
-      ? (_id as any).toString()
-      : NO_ID;
+  const id = _id && typeof (_id as any).toString === 'function' ? (_id as any).toString() : NO_ID;
 
   return {
     id,
@@ -68,11 +61,9 @@ const transformId = <
  * @returns A plain object or Map keyed by field -> direction.
  */
 const asIndexKey = (
-  key: mongoDB.IndexSpecification
-):
-  | Record<string, mongoDB.IndexDirection>
-  | Map<string, mongoDB.IndexDirection> => {
-  if (typeof key === "string") return { [key]: 1 };
+  key: mongoDB.IndexSpecification,
+): Record<string, mongoDB.IndexDirection> | Map<string, mongoDB.IndexDirection> => {
+  if (typeof key === 'string') return { [key]: 1 };
   if (Array.isArray(key)) {
     const tuples = key as unknown as Array<[string, mongoDB.IndexDirection]>;
     const out: Record<string, mongoDB.IndexDirection> = {};
@@ -96,29 +87,26 @@ const asIndexKey = (
  * @param key - The index spec in any supported form.
  * @returns Stable signature string for the key.
  */
-const normalizeIndexKey = (
-  key: mongoDB.IndexSpecification
-): string => {
-  if (typeof key === "string") return `${key}:1`;
+const normalizeIndexKey = (key: mongoDB.IndexSpecification): string => {
+  if (typeof key === 'string') return `${key}:1`;
 
   if (Array.isArray(key)) {
     const tuples = key as unknown as Array<[string, mongoDB.IndexDirection]>;
-    return tuples.map(([k, v]) => `${String(k)}:${String(v)}`).join("|");
+    return tuples.map(([k, v]) => `${String(k)}:${String(v)}`).join('|');
   }
 
   if (key instanceof Map) {
     return Array.from(key.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${String(k)}:${String(v)}`)
-      .join("|");
+      .join('|');
   }
 
   const obj = key as Record<string, unknown>;
   return Object.entries(obj)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}:${String(v)}`)
-    .join("|");
+    .join('|');
 };
 
-
-export { toObjectId, transformId, asIndexKey, normalizeIndexKey }
+export { toObjectId, transformId, asIndexKey, normalizeIndexKey };

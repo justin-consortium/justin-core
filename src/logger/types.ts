@@ -1,9 +1,7 @@
-
 /**
  * Built-in severities supported out of the box.
  */
 export type BaseSeverity = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
-
 
 export interface LoggerEntry<T extends string = BaseSeverity> {
   severity: T;
@@ -20,7 +18,7 @@ export interface LoggerEntry<T extends string = BaseSeverity> {
  */
 export type EmitFn<T extends string = BaseSeverity> = (
   entry: LoggerEntry<T>,
-  mergedContext: Record<string, unknown>
+  mergedContext: Record<string, unknown>,
 ) => void;
 
 /**
@@ -29,9 +27,7 @@ export type EmitFn<T extends string = BaseSeverity> = (
  * @typeParam T - Severity union used by this callback.
  * @param entry - The structured log entry that was just emitted.
  */
-export type LoggerCallback<T extends string = BaseSeverity> = (
-  entry: LoggerEntry<T>
-) => void;
+export type LoggerCallback<T extends string = BaseSeverity> = (entry: LoggerEntry<T>) => void;
 
 /**
  * Options for creating a logger instance.
@@ -161,4 +157,3 @@ export interface GlobalLoggerConfig {
    */
   severityRanking?: Record<string, number>;
 }
-

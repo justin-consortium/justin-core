@@ -1,4 +1,3 @@
-
 # Testing Standards for @just-in/core
 
 This document is the “how we actually do it” companion to the main testing README.
@@ -10,18 +9,18 @@ The goal: **tests that both prove behavior and explain the codebase to future de
 ## 1. Test Philosophy (Short Version)
 
 1. **Behavior over implementation.**  
-   Assert *what* the module promises, not *how* it’s wired internally.
+   Assert _what_ the module promises, not _how_ it’s wired internally.
 
 2. **Readable first, clever second.**  
    A new dev should be able to skim tests and immediately understand:
-    - What the module is for
-    - How it behaves on the happy path
-    - How it reacts when things go sideways
+   - What the module is for
+   - How it behaves on the happy path
+   - How it reacts when things go sideways
 
 3. **Tests as documentation.**  
    Think of each `describe` block as a mini guide:
-    - “Here’s what this unit does.”
-    - “Here’s how it interacts with its neighbors.”
+   - “Here’s what this unit does.”
+   - “Here’s how it interacts with its neighbors.”
 
 4. **Stable tests, swappable internals.**  
    We lean on public APIs, logger helpers, and mocks that survive refactors.
@@ -37,32 +36,37 @@ We mostly write three kinds of tests:
 **Scope:** one module, with dependencies mocked or stubbed.
 
 Use when:
+
 - The module has clear inputs/outputs
 - We want fast feedback and tight error messages
 
 Patterns:
+
 - Use **Jest + Sinon** together:
-    - Jest for `describe/it/expect`
-    - Sinon for spies/stubs/sandbox in more complex cases
+  - Jest for `describe/it/expect`
+  - Sinon for spies/stubs/sandbox in more complex cases
 - Prefer local helpers from `src/__tests__/` for logger, DataManager, Mongo, etc.
 
 Example of a “good” unit test:
+
 - Arranges a fake dependency via helper
 - Calls a single public function
 - Asserts:
-    - return value
-    - side effects (logger calls, event emission, etc.)
-    - error handling when dependencies misbehave
+  - return value
+  - side effects (logger calls, event emission, etc.)
+  - error handling when dependencies misbehave
 
 ### 2.2 Integration Tests
 
 **Scope:** a small cluster of real modules working together, with minimal mocking.
 
 Use when:
+
 - You want to confirm the wiring between related pieces (e.g., `DataManager` + `MongoDBManager`)
 - You care about real IO-ish behavior (mongodb-memory-server, change streams, etc.)
 
 Patterns:
+
 - Use `MongoMemoryReplSet` for Mongo-backed flows
 - Use real instances of managers (UserManager, DataManager) where possible
 - Only stub where it would be painful or flaky to use the real thing
@@ -70,6 +74,7 @@ Patterns:
 ### 2.3 System / Sanity Tests (Lightweight)
 
 We don’t have a huge suite of these, but the idea is:
+
 - Bring up enough of the stack to simulate a real use case
 - Prove that the “happy path” still works after structural refactors
 
@@ -92,20 +97,21 @@ We have a shared helper (from `src/__tests__/mocks` / `helpers`) that gives you:
 **Rules:**
 
 1. **One logger sandbox per test (or per suite).**
-    - Call `loggerSpies()` in the test or `beforeEach`.
-    - Always call `logs.restore()` in `afterEach` or at the end of the test.
+   - Call `loggerSpies()` in the test or `beforeEach`.
+   - Always call `logs.restore()` in `afterEach` or at the end of the test.
 
 2. **Assert shape, not exact detail.**
-    - Check `message`, `severity`, and key context fields.
-    - Don’t rely on full stack traces or exact error shapes.
+   - Check `message`, `severity`, and key context fields.
+   - Don’t rely on full stack traces or exact error shapes.
 
 3. **Let `normalizeExtraArg` do its thing.**
-    - When logging errors or complex objects, assert on normalized forms
-      (e.g., `error.message`, `event.eventId`) rather than raw instances.
+   - When logging errors or complex objects, assert on normalized forms
+     (e.g., `error.message`, `event.eventId`) rather than raw instances.
 
 ### 3.2 When to Assert Logs
 
 Assert logging when:
+
 - A function is explicitly responsible for error reporting (e.g. `handleDbError`)
 - A branch exists primarily to log something (e.g., “listener already registered”, “invalid payload”)
 - The log message conveys key domain behavior (e.g., “Added user: X”, “Created collection users”)
@@ -120,44 +126,44 @@ Don’t assert logging for every single `debug` call unless it’s important for
 
 - **Jest** for module mocking, test structure, and expectations
 - **Sinon** for:
-    - `sandbox.stub(...)`
-    - `sandbox.spy(...)`
-    - Cleaner teardown via `sandbox.restore()`
+  - `sandbox.stub(...)`
+  - `sandbox.spy(...)`
+  - Cleaner teardown via `sandbox.restore()`
 
 ### 4.2 Patterns We Prefer
 
 1. **Centralized helpers for common fakes.**
-    - `makeLoggerSandbox` + `loggerSpies`
-    - `makeFakeMongo` (client, db, collection with typed mocks)
-    - `createMongoManagerMock` / `mockDataManager`
+   - `makeLoggerSandbox` + `loggerSpies`
+   - `makeFakeMongo` (client, db, collection with typed mocks)
+   - `createMongoManagerMock` / `mockDataManager`
 
 2. **Avoid hoisted `jest.mock(...)` whenever possible.**
-    - They’re sometimes necessary, but they make tests harder to follow.
-    - Prefer explicit stubs against imported modules:
-      ```ts
-      const sb = sinon.createSandbox();
-      sb.stub(DataManager, 'getInstance').returns(fakeDm);
-      ```
+   - They’re sometimes necessary, but they make tests harder to follow.
+   - Prefer explicit stubs against imported modules:
+     ```ts
+     const sb = sinon.createSandbox();
+     sb.stub(DataManager, 'getInstance').returns(fakeDm);
+     ```
 
 3. **Use `jest.isolateModules` only when needed.**
-    - Use it when the module under test captures singletons or logger instances at import time.
-    - The pattern:
-      ```ts
-      jest.isolateModules(() => {
-        const { Something } = require('../something');
-        // use Something in this block or export via a local variable
-      });
-      ```
+   - Use it when the module under test captures singletons or logger instances at import time.
+   - The pattern:
+     ```ts
+     jest.isolateModules(() => {
+       const { Something } = require('../something');
+       // use Something in this block or export via a local variable
+     });
+     ```
 
 4. **Reset behavior between tests.**
-    - Always clean up:
-      ```ts
-      afterEach(() => {
-        jest.clearAllMocks();
-        jest.restoreAllMocks();
-        sb.restore(); // if using sinon sandbox
-      });
-      ```
+   - Always clean up:
+     ```ts
+     afterEach(() => {
+       jest.clearAllMocks();
+       jest.restoreAllMocks();
+       sb.restore(); // if using sinon sandbox
+     });
+     ```
 
 ### 4.3 What’s Okay to Mock
 
@@ -181,25 +187,25 @@ These are foundational pieces, so their tests are a bit more structured.
 
 - Mock `MongoDBManager` via a helper or module stub.
 - Assert that:
-    - `init` delegates correctly and enforces the DB type
-    - `ensureStore` / `ensureIndexes` only work after init
-    - CRUD methods:
-        - Call the right adapter methods
-        - Emit the expected events (e.g., `userAdded`, `userUpdated`, `userDeleted`)
-        - Call `handleDbError` with the right context on failure
+  - `init` delegates correctly and enforces the DB type
+  - `ensureStore` / `ensureIndexes` only work after init
+  - CRUD methods:
+    - Call the right adapter methods
+    - Emit the expected events (e.g., `userAdded`, `userUpdated`, `userDeleted`)
+    - Call `handleDbError` with the right context on failure
 
 ### 5.2 `MongoDBManager` Unit Tests
 
 - Use `makeFakeMongo` to provide:
-    - `db.listCollections`, `db.createCollection`, `db.command`, `db.collection`
-    - `collection.watch`, `collection.insertOne`, `collection.findOne`, etc.
+  - `db.listCollections`, `db.createCollection`, `db.command`, `db.collection`
+  - `collection.watch`, `collection.insertOne`, `collection.findOne`, etc.
 - Stub helpers:
-    - `toObjectId`, `transformId`, `asIndexKey`, `normalizeIndexKey`
+  - `toObjectId`, `transformId`, `asIndexKey`, `normalizeIndexKey`
 - Assert that:
-    - Collections are only created when needed
-    - Validators and indexes are applied correctly
-    - IDs are transformed from `_id` to `id`
-    - `handleDbError` is called with `message`, `functionName`, and the error
+  - Collections are only created when needed
+  - Validators and indexes are applied correctly
+  - IDs are transformed from `_id` to `id`
+  - `handleDbError` is called with `message`, `functionName`, and the error
 
 ### 5.3 Integration Tests with MongoMemoryServer
 
@@ -221,30 +227,30 @@ User caching and uniqueness logic are easy to break accidentally, so tests here 
 Key behaviors we always cover:
 
 1. **Initialization (init/shutdown):**
-    - Ensures stores + indexes
-    - Refreshes the cache from the DB
-    - Registers and removes change listeners for users
+   - Ensures stores + indexes
+   - Refreshes the cache from the DB
+   - Registers and removes change listeners for users
 
 2. **Cache Refresh:**
-    - Clears the old cache
-    - Transforms `_id` → `id`
-    - Stores users keyed by `id`
+   - Clears the old cache
+   - Transforms `_id` → `id`
+   - Stores users keyed by `id`
 
 3. **Add User / Add Users:**
-    - Validates payload shapes
-    - Enforces unique `uniqueIdentifier`
-    - Writes through to DataManager
-    - Updates cache
-    - Calls `handleDbError` on DB failures
+   - Validates payload shapes
+   - Enforces unique `uniqueIdentifier`
+   - Writes through to DataManager
+   - Updates cache
+   - Calls `handleDbError` on DB failures
 
 4. **Lookups:**
-    - `getAllUsers` returns cache contents
-    - `getUserByUniqueIdentifier` scans cache
+   - `getAllUsers` returns cache contents
+   - `getUserByUniqueIdentifier` scans cache
 
 5. **Updates and Deletes:**
-    - Merge attributes and write via DataManager
-    - Keep cache in sync
-    - Handle not-found cases with clear errors
+   - Merge attributes and write via DataManager
+   - Keep cache in sync
+   - Handle not-found cases with clear errors
 
 Tests here should read like a narrative of how the user lifecycle works.
 
@@ -255,24 +261,23 @@ Tests here should read like a narrative of how the user lifecycle works.
 When adding a new module or feature:
 
 1. **Decide what kind of test you’re writing.**
-    - Pure logic? → unit test
-    - Wiring between managers? → integration-ish unit test
-    - Real IO? → integration test with MongoMemoryServer
+   - Pure logic? → unit test
+   - Wiring between managers? → integration-ish unit test
+   - Real IO? → integration test with MongoMemoryServer
 
 2. **Use the shared helpers.**
-    - Need logging? → `loggerSpies()`
-    - Need Mongo fakes? → `makeFakeMongo()`
-    - Need a DM mock? → `createMongoManagerMock()` or `mockDataManager()`
+   - Need logging? → `loggerSpies()`
+   - Need Mongo fakes? → `makeFakeMongo()`
+   - Need a DM mock? → `createMongoManagerMock()` or `mockDataManager()`
 
 3. **Name your tests in plain language.**
-    - `it('rejects invalid payloads with a clear error', ...)`
-    - `it('logs and rethrows when the DB call fails', ...)`
+   - `it('rejects invalid payloads with a clear error', ...)`
+   - `it('logs and rethrows when the DB call fails', ...)`
 
 4. **Assert what matters.**
-    - The return value or thrown error
-    - The logs that explain what happened
-    - Any events or side effects that external code relies on
+   - The return value or thrown error
+   - The logs that explain what happened
+   - Any events or side effects that external code relies on
 
 5. **Keep one behavior per test.**
-    - If you find yourself asserting 10 different things, you probably have multiple behaviors hiding in one test.
-
+   - If you find yourself asserting 10 different things, you probably have multiple behaviors hiding in one test.

@@ -1,11 +1,6 @@
 import * as mongoDB from 'mongodb';
 import { NO_ID } from '../../data-manager.constants';
-import {
-  toObjectId,
-  transformId,
-  asIndexKey,
-  normalizeIndexKey,
-} from '../mongo.helpers';
+import { toObjectId, transformId, asIndexKey, normalizeIndexKey } from '../mongo.helpers';
 import { loggerSpies } from '../../../__tests__/mocks';
 
 describe('mongo.utils', () => {

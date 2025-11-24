@@ -8,15 +8,8 @@ import sinon, { SinonSandbox, SinonStub } from 'sinon';
 import { CollectionChangeType } from '../../data-manager.type';
 import * as Helpers from '../../data-manager.helpers';
 import * as MongoHelpers from '../mongo.helpers';
-import {
-  MongoDBManager,
-  TestingMongoDBManager,
-} from '../mongo-data-manager';
-import {
-  loggerSpies,
-  makeFakeMongo,
-  FakeMongo,
-} from '../../../__tests__/mocks';
+import { MongoDBManager, TestingMongoDBManager } from '../mongo-data-manager';
+import { loggerSpies, makeFakeMongo, FakeMongo } from '../../../__tests__/mocks';
 
 describe('MongoDBManager (unit)', () => {
   let sb: SinonSandbox;
@@ -44,19 +37,13 @@ describe('MongoDBManager (unit)', () => {
         return null as never;
       });
 
-    toObjectIdStub = sb
-      .stub(MongoHelpers, 'toObjectId')
-      .callsFake(() => new mongoDB.ObjectId());
-    transformIdStub = sb
-      .stub(MongoHelpers, 'transformId')
-      .callsFake((doc: any) => doc);
+    toObjectIdStub = sb.stub(MongoHelpers, 'toObjectId').callsFake(() => new mongoDB.ObjectId());
+    transformIdStub = sb.stub(MongoHelpers, 'transformId').callsFake((doc: any) => doc);
     asIndexKeyStub = sb.stub(MongoHelpers, 'asIndexKey').callsFake((k: any) => k);
-    normalizeIndexKeyStub = sb
-      .stub(MongoHelpers, 'normalizeIndexKey')
-      .callsFake((k: unknown) => {
-        if (typeof k === 'string') return `${k}:1`;
-        return 'key:1';
-      });
+    normalizeIndexKeyStub = sb.stub(MongoHelpers, 'normalizeIndexKey').callsFake((k: unknown) => {
+      if (typeof k === 'string') return `${k}:1`;
+      return 'key:1';
+    });
 
     mongoFakes = makeFakeMongo();
 
@@ -137,9 +124,7 @@ describe('MongoDBManager (unit)', () => {
         validator: { x: 1 },
       });
 
-      const warnings = logs.captured.filter(
-        (c) => c.entry.severity === 'WARNING',
-      );
+      const warnings = logs.captured.filter((c) => c.entry.severity === 'WARNING');
       expect(warnings.length).toBeGreaterThan(0);
     });
   });
@@ -152,9 +137,7 @@ describe('MongoDBManager (unit)', () => {
 
     it('creates indexes that do not already exist', async () => {
       mongoFakes.collection.listIndexes.mockReturnValue({
-        toArray: jest.fn().mockResolvedValue([
-          { name: 'existing', key: { existing: 1 } },
-        ]),
+        toArray: jest.fn().mockResolvedValue([{ name: 'existing', key: { existing: 1 } }]),
       });
 
       normalizeIndexKeyStub.callsFake((key: any) => {
@@ -192,10 +175,7 @@ describe('MongoDBManager (unit)', () => {
     it('returns null if toObjectId returns null', async () => {
       toObjectIdStub.onFirstCall().returns(null);
 
-      const result = await MongoDBManager.findItemByIdInCollection(
-        'users',
-        'bad-id',
-      );
+      const result = await MongoDBManager.findItemByIdInCollection('users', 'bad-id');
 
       expect(result).toBeNull();
       expect(mongoFakes.collection.findOne).not.toHaveBeenCalled();
@@ -206,10 +186,7 @@ describe('MongoDBManager (unit)', () => {
       mongoFakes.collection.findOne.mockResolvedValue(fakeMongoDoc);
       transformIdStub.returns({ id: 'a', name: 'test' });
 
-      const result = await MongoDBManager.findItemByIdInCollection(
-        'users',
-        'good-id',
-      );
+      const result = await MongoDBManager.findItemByIdInCollection('users', 'good-id');
 
       expect(mongoFakes.collection.findOne).toHaveBeenCalledWith({
         _id: expect.any(mongoDB.ObjectId),
@@ -221,10 +198,7 @@ describe('MongoDBManager (unit)', () => {
     it('delegates to handleDbError on failure', async () => {
       mongoFakes.collection.findOne.mockRejectedValueOnce(new Error('boom'));
 
-      const result = await MongoDBManager.findItemByIdInCollection(
-        'users',
-        'good-id',
-      );
+      const result = await MongoDBManager.findItemByIdInCollection('users', 'good-id');
 
       expect(handleDbErrorStub.called).toBe(true);
       const [msg, fnName, err] = handleDbErrorStub.getCall(0).args;
@@ -240,11 +214,7 @@ describe('MongoDBManager (unit)', () => {
       mongoFakes.collection.find.mockReturnValue({
         toArray: jest.fn().mockResolvedValue([{ _id: '1' }, { _id: '2' }]),
       });
-      transformIdStub
-        .onFirstCall()
-        .returns({ id: '1' })
-        .onSecondCall()
-        .returns({ id: '2' });
+      transformIdStub.onFirstCall().returns({ id: '1' }).onSecondCall().returns({ id: '2' });
 
       const result = await MongoDBManager.findItemsInCollection('users', {
         active: true,
@@ -283,9 +253,7 @@ describe('MongoDBManager (unit)', () => {
     });
 
     it('delegates to handleDbError on failure', async () => {
-      mongoFakes.collection.insertOne.mockRejectedValueOnce(
-        new Error('insert bad'),
-      );
+      mongoFakes.collection.insertOne.mockRejectedValueOnce(new Error('insert bad'));
 
       const result = await MongoDBManager.addItemToCollection('users', {
         name: 'x',
@@ -306,11 +274,7 @@ describe('MongoDBManager (unit)', () => {
     it('returns null when toObjectId fails', async () => {
       toObjectIdStub.onFirstCall().returns(null);
 
-      const result = await MongoDBManager.updateItemInCollection(
-        'users',
-        'bad-id',
-        { name: 'x' },
-      );
+      const result = await MongoDBManager.updateItemInCollection('users', 'bad-id', { name: 'x' });
 
       expect(result).toBeNull();
       expect(mongoFakes.collection.findOneAndUpdate).not.toHaveBeenCalled();
@@ -328,11 +292,9 @@ describe('MongoDBManager (unit)', () => {
       mongoFakes.collection.findOne.mockResolvedValue(fakeUpdated);
       transformIdStub.returns({ id: '1', name: 'updated' });
 
-      const result = await MongoDBManager.updateItemInCollection(
-        'users',
-        'good-id',
-        { name: 'updated' },
-      );
+      const result = await MongoDBManager.updateItemInCollection('users', 'good-id', {
+        name: 'updated',
+      });
 
       expect(mongoFakes.collection.updateOne).toHaveBeenCalledWith(
         { _id: expect.any(mongoDB.ObjectId) },
@@ -363,10 +325,7 @@ describe('MongoDBManager (unit)', () => {
     it('returns false when toObjectId fails', async () => {
       toObjectIdStub.onFirstCall().returns(null);
 
-      const result = await MongoDBManager.removeItemFromCollection(
-        'users',
-        'bad-id',
-      );
+      const result = await MongoDBManager.removeItemFromCollection('users', 'bad-id');
 
       expect(result).toBe(false);
       expect(mongoFakes.collection.deleteOne).not.toHaveBeenCalled();
@@ -375,10 +334,7 @@ describe('MongoDBManager (unit)', () => {
     it('returns true when delete is acknowledged', async () => {
       mongoFakes.collection.deleteOne.mockResolvedValue({ acknowledged: true });
 
-      const result = await MongoDBManager.removeItemFromCollection(
-        'users',
-        'good-id',
-      );
+      const result = await MongoDBManager.removeItemFromCollection('users', 'good-id');
 
       expect(result).toBe(true);
     });

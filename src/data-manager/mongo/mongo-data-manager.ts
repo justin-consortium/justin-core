@@ -1,25 +1,16 @@
-import * as mongoDB from "mongodb";
-import { Readable } from "stream";
-import { CollectionChangeType } from "../data-manager.type";
-import { NO_ID } from "../data-manager.constants";
-import {
-  DeletedDocRecord,
-  InsertedOrUpatedDocRecord,
-  WithId,
-} from "./mongo-data-manager.type";
-import { handleDbError } from "../data-manager.helpers";
-import {
-  toObjectId,
-  asIndexKey,
-  normalizeIndexKey,
-  transformId,
-} from "./mongo.helpers";
-import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from "./mongo.constants";
-import { createLogger } from "../../logger/logger";
+import * as mongoDB from 'mongodb';
+import { Readable } from 'stream';
+import { CollectionChangeType } from '../data-manager.type';
+import { NO_ID } from '../data-manager.constants';
+import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-data-manager.type';
+import { handleDbError } from '../data-manager.helpers';
+import { toObjectId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
+import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
+import { createLogger } from '../../logger/logger';
 
 const Log = createLogger({
   context: {
-    source: "mongo-data-manager",
+    source: 'mongo-data-manager',
   },
 });
 
@@ -65,7 +56,7 @@ const _setIsConnected = (isConnected: boolean): void => {
  */
 const ensureInitialized = (): void => {
   if (!_isConnected || !_db || !_client) {
-    throw new Error("MongoDBManager not initialized. Call init() first.");
+    throw new Error('MongoDBManager not initialized. Call init() first.');
   }
 };
 
@@ -83,7 +74,7 @@ const ensureInitialized = (): void => {
  */
 const init = async (
   uri: string = DEFAULT_MONGO_URI,
-  dbName: string = DEFAULT_DB_NAME
+  dbName: string = DEFAULT_DB_NAME,
 ): Promise<void> => {
   if (_isConnected) return;
 
@@ -94,7 +85,7 @@ const init = async (
     _isConnected = true;
     Log.debug(`Mongo connected: db=${dbName}`);
   } catch (error) {
-    Log.error("Mongo connection failed", error);
+    Log.error('Mongo connection failed', error);
     throw error;
   }
 };
@@ -136,19 +127,15 @@ const close = async (): Promise<void> => {
  */
 const getCollectionChangeReadable = (
   collectionName: string,
-  changeType: CollectionChangeType
+  changeType: CollectionChangeType,
 ): Readable => {
   ensureInitialized();
 
   const filterList = [{ $match: { operationType: changeType } }];
   const options =
-    changeType === CollectionChangeType.UPDATE
-      ? { fullDocument: "updateLookup" }
-      : {};
+    changeType === CollectionChangeType.UPDATE ? { fullDocument: 'updateLookup' } : {};
 
-  const changeStream = _db!
-    .collection(collectionName)
-    .watch(filterList, options as any);
+  const changeStream = _db!.collection(collectionName).watch(filterList, options as any);
 
   const collectionChangeReadable = new Readable({
     objectMode: true,
@@ -157,25 +144,20 @@ const getCollectionChangeReadable = (
     },
   });
 
-  changeStream.on(
-    "change",
-    (nextDoc: DeletedDocRecord | InsertedOrUpatedDocRecord) => {
-      let normalizedDoc;
-      if (changeType === CollectionChangeType.DELETE) {
-        normalizedDoc = {
-          id: (nextDoc as DeletedDocRecord).documentKey._id?.toString() || NO_ID,
-        };
-      } else {
-        normalizedDoc = transformId(
-          (nextDoc as InsertedOrUpatedDocRecord).fullDocument
-        );
-      }
-      collectionChangeReadable.push(normalizedDoc);
+  changeStream.on('change', (nextDoc: DeletedDocRecord | InsertedOrUpatedDocRecord) => {
+    let normalizedDoc;
+    if (changeType === CollectionChangeType.DELETE) {
+      normalizedDoc = {
+        id: (nextDoc as DeletedDocRecord).documentKey._id?.toString() || NO_ID,
+      };
+    } else {
+      normalizedDoc = transformId((nextDoc as InsertedOrUpatedDocRecord).fullDocument);
     }
-  );
+    collectionChangeReadable.push(normalizedDoc);
+  });
 
-  changeStream.on("error", (error) => {
-    Log.error("Change stream error", error);
+  changeStream.on('error', (error) => {
+    Log.error('Change stream error', error);
     collectionChangeReadable.destroy(error);
   });
 
@@ -204,14 +186,12 @@ const getCollectionChangeReadable = (
  */
 const ensureStore = async (
   collectionName: string,
-  options?: { validator?: mongoDB.Document }
+  options?: { validator?: mongoDB.Document },
 ): Promise<void> => {
   ensureInitialized();
 
   // Create if missing.
-  const exists = await _db!
-    .listCollections({ name: collectionName }, { nameOnly: true })
-    .hasNext();
+  const exists = await _db!.listCollections({ name: collectionName }, { nameOnly: true }).hasNext();
 
   if (!exists) {
     try {
@@ -219,7 +199,7 @@ const ensureStore = async (
       Log.debug(`Created collection ${collectionName}`);
     } catch (err: any) {
       // Tolerate concurrent creation races.
-      if (err?.codeName !== "NamespaceExists") throw err;
+      if (err?.codeName !== 'NamespaceExists') throw err;
     }
   }
 
@@ -256,7 +236,7 @@ const ensureIndexes = async (
     key: mongoDB.IndexSpecification;
     unique?: boolean;
     partialFilterExpression?: mongoDB.Document;
-  }>
+  }>,
 ): Promise<void> => {
   ensureInitialized();
   if (!indexes?.length) return;
@@ -266,9 +246,7 @@ const ensureIndexes = async (
   const existing = await coll.listIndexes().toArray();
   const byName = new Set<string>(existing.map((i: any) => String(i.name)));
   const keySigs = new Set<string>(
-    existing.map((i: any) =>
-      normalizeIndexKey(i.key as mongoDB.IndexSpecification)
-    )
+    existing.map((i: any) => normalizeIndexKey(i.key as mongoDB.IndexSpecification)),
   );
 
   const createModels: mongoDB.IndexDescription[] = [];
@@ -299,7 +277,7 @@ const ensureIndexes = async (
   Log.debug(
     `Created ${createModels.length} index(es) on ${collectionName}: ${createModels
       .map((m) => m.name || JSON.stringify(m.key))
-      .join(", ")}`
+      .join(', ')}`,
   );
 };
 
@@ -316,22 +294,20 @@ const ensureIndexes = async (
  */
 const findItemByIdInCollection = async (
   collectionName: string,
-  id: string
+  id: string,
 ): Promise<object | null> => {
   ensureInitialized();
   const objectId = toObjectId(id);
   if (!objectId) return null;
 
   try {
-    const foundDoc = await _db!
-      .collection(collectionName)
-      .findOne({ _id: objectId });
+    const foundDoc = await _db!.collection(collectionName).findOne({ _id: objectId });
     return transformId(foundDoc);
   } catch (error) {
     return handleDbError(
       `Error finding item with id ${id} in ${collectionName}`,
-      "findItemByIdInCollection",
-      error
+      'findItemByIdInCollection',
+      error,
     );
   }
 };
@@ -346,10 +322,7 @@ const findItemByIdInCollection = async (
  * @param filter - MongoDB filter object.
  * @returns An array of normalized documents.
  */
-const findItemsInCollection = async (
-  collectionName: string,
-  filter: object
-): Promise<object[]> => {
+const findItemsInCollection = async (collectionName: string, filter: object): Promise<object[]> => {
   ensureInitialized();
 
   try {
@@ -358,11 +331,9 @@ const findItemsInCollection = async (
     return results.map(transformId);
   } catch (error) {
     return handleDbError(
-      `Error finding items in ${collectionName} with filter ${JSON.stringify(
-        filter
-      )}`,
-      "findItemsInCollection",
-      error
+      `Error finding items in ${collectionName} with filter ${JSON.stringify(filter)}`,
+      'findItemsInCollection',
+      error,
     );
   }
 };
@@ -379,18 +350,13 @@ const findItemsInCollection = async (
  * @param item - The object to insert.
  * @returns The inserted `_id` as a string.
  */
-const addItemToCollection = async (
-  collectionName: string,
-  item: object
-): Promise<string> => {
+const addItemToCollection = async (collectionName: string, item: object): Promise<string> => {
   ensureInitialized();
 
   const { id, _id, ...filteredObject } = item as WithId;
 
   try {
-    const { insertedId } = await _db!
-      .collection(collectionName)
-      .insertOne(filteredObject);
+    const { insertedId } = await _db!.collection(collectionName).insertOne(filteredObject);
 
     Log.debug(`Item added to ${collectionName}`, {
       id: insertedId.toString(),
@@ -400,8 +366,8 @@ const addItemToCollection = async (
   } catch (error) {
     return handleDbError(
       `Error inserting item into ${collectionName}`,
-      "addItemToCollection",
-      error
+      'addItemToCollection',
+      error,
     );
   }
 };
@@ -421,7 +387,7 @@ const addItemToCollection = async (
 const updateItemInCollection = async (
   collectionName: string,
   id: string,
-  item: object
+  item: object,
 ): Promise<object | null> => {
   ensureInitialized();
   const objectId = toObjectId(id);
@@ -429,22 +395,15 @@ const updateItemInCollection = async (
 
   try {
     const coll = _db!.collection(collectionName);
-    const { matchedCount, modifiedCount } = await coll.updateOne(
-      { _id: objectId },
-      { $set: item }
-    );
+    const { matchedCount, modifiedCount } = await coll.updateOne({ _id: objectId }, { $set: item });
 
     if (matchedCount !== 1) {
-      Log.warn(
-        `Update failed for item with id ${id} in ${collectionName}: no match`
-      );
+      Log.warn(`Update failed for item with id ${id} in ${collectionName}: no match`);
       return null;
     }
 
     if (modifiedCount === 0) {
-      Log.warn(
-        `No changes made for item with id ${id} in ${collectionName}`
-      );
+      Log.warn(`No changes made for item with id ${id} in ${collectionName}`);
     }
 
     const updatedDoc = await coll.findOne({ _id: objectId });
@@ -452,12 +411,11 @@ const updateItemInCollection = async (
   } catch (error) {
     return handleDbError(
       `Error updating item with id ${id} in ${collectionName}`,
-      "updateItemInCollection",
-      error
+      'updateItemInCollection',
+      error,
     );
   }
 };
-
 
 /**
  * Retrieves all items from a collection.
@@ -468,9 +426,7 @@ const updateItemInCollection = async (
  * @param collectionName - Target collection name.
  * @returns An array of normalized documents.
  */
-const getAllInCollection = async (
-  collectionName: string
-): Promise<object[]> => {
+const getAllInCollection = async (collectionName: string): Promise<object[]> => {
   ensureInitialized();
 
   try {
@@ -479,8 +435,8 @@ const getAllInCollection = async (
   } catch (error) {
     return handleDbError(
       `Error getting all items in ${collectionName}`,
-      "getAllInCollection",
-      error
+      'getAllInCollection',
+      error,
     );
   }
 };
@@ -495,24 +451,19 @@ const getAllInCollection = async (
  * @param id - String representation of the `_id`.
  * @returns `true` if the delete was acknowledged, `false` otherwise.
  */
-const removeItemFromCollection = async (
-  collectionName: string,
-  id: string
-): Promise<boolean> => {
+const removeItemFromCollection = async (collectionName: string, id: string): Promise<boolean> => {
   ensureInitialized();
   const objectId = toObjectId(id);
   if (!objectId) return false;
 
   try {
-    const { acknowledged } = await _db!
-      .collection(collectionName)
-      .deleteOne({ _id: objectId });
+    const { acknowledged } = await _db!.collection(collectionName).deleteOne({ _id: objectId });
     return acknowledged;
   } catch (error) {
     return handleDbError(
       `Error removing item with id ${id} from ${collectionName}`,
-      "removeItemFromCollection",
-      error
+      'removeItemFromCollection',
+      error,
     );
   }
 };
@@ -529,16 +480,10 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
 
   try {
-    const { acknowledged } = await _db!
-      .collection(collectionName)
-      .deleteMany({});
+    const { acknowledged } = await _db!.collection(collectionName).deleteMany({});
     return acknowledged;
   } catch (error) {
-    return handleDbError(
-      `Error clearing collection ${collectionName}`,
-      "clearCollection",
-      error
-    );
+    return handleDbError(`Error clearing collection ${collectionName}`, 'clearCollection', error);
   }
 };
 
@@ -554,15 +499,13 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
 
   try {
-    const count = await _db!
-      .collection(collectionName)
-      .countDocuments({}, { limit: 1 });
+    const count = await _db!.collection(collectionName).countDocuments({}, { limit: 1 });
     return count === 0;
   } catch (error) {
     return handleDbError(
       `Error counting documents in ${collectionName}`,
-      "isCollectionEmpty",
-      error
+      'isCollectionEmpty',
+      error,
     );
   }
 };

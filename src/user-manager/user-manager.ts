@@ -1,17 +1,17 @@
-import DataManager from "../data-manager/data-manager";
-import { ChangeListenerManager } from "../data-manager/change-listener.manager";
-import { USERS } from "../data-manager/data-manager.constants";
-import { JUser } from "./user.type";
-import { handleDbError } from "../data-manager/data-manager.helpers";
-import { CollectionChangeType } from "../data-manager/data-manager.type";
-import { createLogger } from "../logger/logger";
-import { NewUserRecord } from "./user.type";
+import DataManager from '../data-manager/data-manager';
+import { ChangeListenerManager } from '../data-manager/change-listener.manager';
+import { USERS } from '../data-manager/data-manager.constants';
+import { JUser } from './user.type';
+import { handleDbError } from '../data-manager/data-manager.helpers';
+import { CollectionChangeType } from '../data-manager/data-manager.type';
+import { createLogger } from '../logger/logger';
+import { NewUserRecord } from './user.type';
 
 const Log = createLogger({
   context: {
-    source: "user-manager",
-  }
-})
+    source: 'user-manager',
+  },
+});
 /**
  * @type {Map<string, JUser>} _users - In-memory cache for user data.
  * This Map enables quick lookups, insertions, and deletions by `id`.
@@ -35,13 +35,12 @@ const init = async (): Promise<void> => {
   // ensure USERS exists and has a unique index on uniqueIdentifier (idempotent, DB-agnostic)
   await dm.ensureStore(USERS);
   await dm.ensureIndexes(USERS, [
-    { name: "uniq_user_identifier", key: { uniqueIdentifier: 1 }, unique: true },
+    { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
   ]);
 
   await refreshCache();
   setupChangeListeners();
 };
-
 
 /**
  * Shuts down the UserManager by removing all change listeners
@@ -49,20 +48,10 @@ const init = async (): Promise<void> => {
  * @returns {void}
  */
 const shutdown = () => {
-  clm.removeChangeListener(
-    USERS,
-    CollectionChangeType.INSERT
-  );
-  clm.removeChangeListener(
-    USERS,
-    CollectionChangeType.UPDATE
-  );
-  clm.removeChangeListener(
-    USERS,
-    CollectionChangeType.DELETE
-  );
+  clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
+  clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
+  clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
 };
-
 
 /**
  * Loads all users from the database into the in-memory cache.
@@ -72,8 +61,7 @@ const shutdown = () => {
 const refreshCache = async (): Promise<void> => {
   _checkInitialization();
   _users.clear();
-  const userDocs =
-    (await dm.getAllInCollection<JUser>(USERS)) || [];
+  const userDocs = (await dm.getAllInCollection<JUser>(USERS)) || [];
   userDocs.forEach((user: any) => {
     const jUser: JUser = transformUserDocument(user);
     _users.set(jUser.id, jUser);
@@ -95,31 +83,19 @@ const transformUserDocument = (doc: any): JUser => {
  * @private
  */
 const setupChangeListeners = (): void => {
-  clm.addChangeListener(
-    USERS,
-    CollectionChangeType.INSERT,
-    (user: JUser) => {
-      const jUser: JUser = transformUserDocument(user);
-      _users.set(jUser.id, jUser);
-    }
-  );
+  clm.addChangeListener(USERS, CollectionChangeType.INSERT, (user: JUser) => {
+    const jUser: JUser = transformUserDocument(user);
+    _users.set(jUser.id, jUser);
+  });
 
-  clm.addChangeListener(
-    USERS,
-    CollectionChangeType.UPDATE,
-    (user: JUser) => {
-      const jUser: JUser = transformUserDocument(user);
-      _users.set(jUser.id, jUser);
-    }
-  );
+  clm.addChangeListener(USERS, CollectionChangeType.UPDATE, (user: JUser) => {
+    const jUser: JUser = transformUserDocument(user);
+    _users.set(jUser.id, jUser);
+  });
 
-  clm.addChangeListener(
-    USERS,
-    CollectionChangeType.DELETE,
-    (userId: string) => {
-      _users.delete(userId);
-    }
-  );
+  clm.addChangeListener(USERS, CollectionChangeType.DELETE, (userId: string) => {
+    _users.delete(userId);
+  });
 };
 
 /**
@@ -131,12 +107,9 @@ const setupChangeListeners = (): void => {
  */
 const _checkInitialization = (): void => {
   if (!dm.getInitializationStatus()) {
-    throw new Error("UserManager has not been initialized");
+    throw new Error('UserManager has not been initialized');
   }
 };
-
-
-
 
 /**
  * Adds one user to the Users collection in a single operation.
@@ -144,12 +117,10 @@ const _checkInitialization = (): void => {
  * @returns {Promise<JUser | null>} Resolves with the added user or null if the operation fails.
  * @throws {Error} If no user is provided or if the user fails validation.
  */
-const addUser = async (
-  user: NewUserRecord
-): Promise<(JUser | null)> => {
+const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
   _checkInitialization();
 
-  if (!user || typeof user !== "object" || Array.isArray(user)) {
+  if (!user || typeof user !== 'object' || Array.isArray(user)) {
     const msg = `Invalid user data: ${JSON.stringify(user)}. It must be a non-null object and should not be an array.`;
     Log.warn(msg);
     return null;
@@ -161,11 +132,11 @@ const addUser = async (
     return null;
   }
 
-  const userDataCheck = await isIdentifierUnique(user["uniqueIdentifier"]);
+  const userDataCheck = await isIdentifierUnique(user['uniqueIdentifier']);
 
   if (!userDataCheck) {
     Log.warn(
-      `User's unique identifier already exists. Skipping insertion: ${user.uniqueIdentifier}. `
+      `User's unique identifier already exists. Skipping insertion: ${user.uniqueIdentifier}. `,
     );
     return null;
   }
@@ -173,21 +144,14 @@ const addUser = async (
   try {
     const { uniqueIdentifier, initialAttributes } = user;
     const convertedUser: object = { uniqueIdentifier, attributes: initialAttributes };
-    const addedUser = (await dm.addItemToCollection(
-      USERS,
-      convertedUser
-    )) as JUser;
+    const addedUser = (await dm.addItemToCollection(USERS, convertedUser)) as JUser;
     _users.set(addedUser.id, addedUser);
-    Log.info(
-      `Added user: ${user.uniqueIdentifier}. `
-    );
+    Log.info(`Added user: ${user.uniqueIdentifier}. `);
     return addedUser;
   } catch (error) {
-    return handleDbError("Failed to add users:", "addUser", error);
+    return handleDbError('Failed to add users:', 'addUser', error);
   }
 };
-
-
 
 /**
  * Adds multiple users to the Users collection in a single operation.
@@ -195,12 +159,9 @@ const addUser = async (
  * @returns {Promise<(JUser | null)[]>} Resolves with the added users or null if the operation fails.
  * @throws {Error} If no users are provided or if any user fails validation.
  */
-const addUsers = async (
-  users: NewUserRecord[]
-): Promise<(JUser | null)[]> => {
-
+const addUsers = async (users: NewUserRecord[]): Promise<(JUser | null)[]> => {
   if (!Array.isArray(users) || users.length === 0) {
-    throw new Error("No users provided for insertion.");
+    throw new Error('No users provided for insertion.');
   }
 
   try {
@@ -212,18 +173,16 @@ const addUsers = async (
         addedUsers.push(addedUser);
       }
     }
-    if(addedUsers.length > 0) {
+    if (addedUsers.length > 0) {
       Log.info(`${addedUsers.length} user(s) added successfully.`);
-    }
-    else{
-      Log.info("No new users were added.");
+    } else {
+      Log.info('No new users were added.');
     }
     return addedUsers;
   } catch (error) {
-    return handleDbError("Failed to add users:", "addUsers", error);
+    return handleDbError('Failed to add users:', 'addUsers', error);
   }
 };
-
 
 /**
  * Retrieves all cached users.
@@ -235,14 +194,15 @@ const getAllUsers = (): JUser[] => {
   return Array.from(_users.values());
 };
 
-
 /**
  * Retrieves a user by their unique identifier from the cache.
  * @returns {JUser | null} The user with the specified unique identifier, or null if not found.
  */
 const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
   _checkInitialization();
-  return Array.from(_users.values()).find(user => user.uniqueIdentifier === uniqueIdentifier) || null;
+  return (
+    Array.from(_users.values()).find((user) => user.uniqueIdentifier === uniqueIdentifier) || null
+  );
 };
 
 /**
@@ -256,42 +216,41 @@ const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
  */
 const updateUserByUniqueIdentifier = async (
   userUniqueIdentifier: string,
-  attributesToUpdate: Record<string, any>
+  attributesToUpdate: Record<string, any>,
 ): Promise<JUser | null> => {
-
-  if (!userUniqueIdentifier || typeof userUniqueIdentifier !== "string") {
+  if (!userUniqueIdentifier || typeof userUniqueIdentifier !== 'string') {
     const msg = `Invalid uniqueIdentifier: ${userUniqueIdentifier}`;
     throw new Error(msg);
   }
 
-  if ("uniqueIdentifier" in attributesToUpdate) {
+  if ('uniqueIdentifier' in attributesToUpdate) {
     const msg = `Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier. Use modifyUserUniqueIdentifier instead.`;
     throw new Error(msg);
   }
 
-  if (!attributesToUpdate || typeof attributesToUpdate !== "object" || Object.keys(attributesToUpdate).length === 0 || Array.isArray(attributesToUpdate)) {
+  if (
+    !attributesToUpdate ||
+    typeof attributesToUpdate !== 'object' ||
+    Object.keys(attributesToUpdate).length === 0 ||
+    Array.isArray(attributesToUpdate)
+  ) {
     const msg = `Invalid updateData: ${JSON.stringify(attributesToUpdate)}. It must be a non-null and non-empty object and should not be an array.`;
     throw new Error(msg);
   }
 
-  const theUser: JUser = await getUserByUniqueIdentifier(userUniqueIdentifier) as JUser;
+  const theUser: JUser = (await getUserByUniqueIdentifier(userUniqueIdentifier)) as JUser;
 
   if (!theUser) {
     const msg = `User with uniqueIdentifier (${userUniqueIdentifier}) not found.`;
     throw new Error(msg);
   }
 
-  const {
-    id,
-    uniqueIdentifier,
-    ...dataToUpdate
-  } = attributesToUpdate as { [key: string]: any };
+  const { id, uniqueIdentifier, ...dataToUpdate } = attributesToUpdate as { [key: string]: any };
 
   const updatedUser: JUser | null = await updateUserById(theUser.id, dataToUpdate);
 
   return updatedUser;
 };
-
 
 /**
  * Updates a user's data in both the database and the in-memory cache.
@@ -300,22 +259,16 @@ const updateUserByUniqueIdentifier = async (
  * @param {object} attributesToUpdate - New data to update.
  * @returns {Promise<JUser>} Resolves to the updated user.
  */
-const updateUserById = async (
-  userId: string,
-  attributesToUpdate: object
-): Promise<JUser> => {
+const updateUserById = async (userId: string, attributesToUpdate: object): Promise<JUser> => {
   _checkInitialization();
 
   const existingUser: JUser | null = _users.get(userId) as JUser;
 
   const mergedAttributes = { ...existingUser.attributes, ...attributesToUpdate };
 
-  const updatedUser =
-    (await dm.updateItemByIdInCollection(
-      USERS,
-      userId,
-      {attributes: mergedAttributes}
-    )) as JUser;
+  const updatedUser = (await dm.updateItemByIdInCollection(USERS, userId, {
+    attributes: mergedAttributes,
+  })) as JUser;
   if (!updatedUser) {
     throw new Error(`Failed to update user: ${userId}`);
   }
@@ -331,12 +284,16 @@ const updateUserById = async (
  */
 const modifyUserUniqueIdentifier = async (
   currentUniqueIdentifier: string,
-  newUniqueIdentifier: string
+  newUniqueIdentifier: string,
 ): Promise<JUser> => {
   _checkInitialization();
 
-  if (!newUniqueIdentifier || typeof newUniqueIdentifier !== "string" || newUniqueIdentifier.trim() === "") {
-    throw new Error("uniqueIdentifier must be a non-empty string.");
+  if (
+    !newUniqueIdentifier ||
+    typeof newUniqueIdentifier !== 'string' ||
+    newUniqueIdentifier.trim() === ''
+  ) {
+    throw new Error('uniqueIdentifier must be a non-empty string.');
   }
 
   const theUser: JUser | null = getUserByUniqueIdentifier(currentUniqueIdentifier);
@@ -349,12 +306,9 @@ const modifyUserUniqueIdentifier = async (
     return theUser; // no-op
   }
 
-  const updatedUser =
-    (await dm.updateItemByIdInCollection(
-      USERS,
-      theUser.id,
-      { uniqueIdentifier: newUniqueIdentifier }
-    )) as JUser;
+  const updatedUser = (await dm.updateItemByIdInCollection(USERS, theUser.id, {
+    uniqueIdentifier: newUniqueIdentifier,
+  })) as JUser;
 
   if (!updatedUser) {
     throw new Error(`Failed to update uniqueIdentifier for user: ${theUser.id}`);
@@ -377,7 +331,6 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
   return result;
 };
 
-
 /**
  * Deletes a user by ID from both the database and the in-memory cache.
  *
@@ -388,11 +341,9 @@ const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<b
   const theUser: JUser | null = await getUserByUniqueIdentifier(uniqueIdentifier);
   const userId = theUser?.id as any;
   const result = await deleteUserById(userId);
-  if(result) _users.delete(userId);
+  if (result) _users.delete(userId);
   return result;
 };
-
-
 
 /**
  * Deletes all users from the database and clears the in-memory cache.
@@ -412,20 +363,19 @@ const deleteAllUsers = async (): Promise<void> => {
  * If the unique identifier is new, it returns true; otherwise, it returns false.
  */
 
-const isIdentifierUnique = async (
-  userUniqueIdentifier: string
-): Promise<boolean> => {
-
+const isIdentifierUnique = async (userUniqueIdentifier: string): Promise<boolean> => {
   if (
     !userUniqueIdentifier ||
-    typeof userUniqueIdentifier !== "string" ||
-    userUniqueIdentifier.trim() === ""
+    typeof userUniqueIdentifier !== 'string' ||
+    userUniqueIdentifier.trim() === ''
   ) {
     const msg = `Invalid unique identifier: ${userUniqueIdentifier}`;
     throw new Error(msg);
   }
 
-  const existingUser: JUser | null = await getUserByUniqueIdentifier(userUniqueIdentifier) as JUser;
+  const existingUser: JUser | null = (await getUserByUniqueIdentifier(
+    userUniqueIdentifier,
+  )) as JUser;
 
   if (existingUser) {
     const msg = `User with unique identifier (${userUniqueIdentifier}) already exists.`;
@@ -435,8 +385,6 @@ const isIdentifierUnique = async (
 
   return true;
 };
-
-
 
 /**
  * UserManager provides methods for managing users.

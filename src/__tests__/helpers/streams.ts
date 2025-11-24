@@ -5,7 +5,9 @@ export type Obj = Record<string, unknown>;
 export function makeStream<T = Obj>(): Readable {
   return new Readable({
     objectMode: true,
-    read() {/* no-op */},
+    read() {
+      /* no-op */
+    },
   });
 }
 

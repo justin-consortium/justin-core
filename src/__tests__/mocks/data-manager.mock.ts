@@ -77,8 +77,6 @@ export function installDataManagerSingleton(dm: DataManagerMock) {
   };
 }
 
-
-
 type ClmMock = {
   addChangeListener: jest.Mock;
   removeChangeListener: jest.Mock;
@@ -130,10 +128,7 @@ export function makeDataManagerSandbox(): DataManagerUnitSandbox {
     isCollectionEmpty: sb.stub(mongoFns, 'isCollectionEmpty'),
     findItemByIdInCollection: sb.stub(mongoFns, 'findItemByIdInCollection'),
     findItemsInCollection: sb.stub(mongoFns, 'findItemsInCollection'),
-    getCollectionChangeReadable: sb.stub(
-      mongoFns,
-      'getCollectionChangeReadable',
-    ),
+    getCollectionChangeReadable: sb.stub(mongoFns, 'getCollectionChangeReadable'),
   };
 
   const handleDbErrorSpy = sb.spy(Helpers, 'handleDbError');

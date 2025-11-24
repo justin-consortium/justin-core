@@ -30,9 +30,7 @@ describe('createLogger', () => {
     getGlobalLogContextStub = sb
       .stub(globalFns, 'getGlobalLogContext')
       .returns({ globalKey: 'globalVal' });
-    getGlobalMinLogLevelStub = sb
-      .stub(globalFns, 'getGlobalMinLogLevel')
-      .returns('DEBUG');
+    getGlobalMinLogLevelStub = sb.stub(globalFns, 'getGlobalMinLogLevel').returns('DEBUG');
     getGlobalSeverityRankingStub = sb
       .stub(globalFns, 'getGlobalSeverityRanking')
       .returns(undefined);
@@ -220,9 +218,7 @@ describe('createLogger', () => {
 
     logger.info('has extras', { user: { id: 'u1' } });
 
-    expect(
-      normalizeExtraArgStub.calledWith({ user: { id: 'u1' } }),
-    ).toBe(true);
+    expect(normalizeExtraArgStub.calledWith({ user: { id: 'u1' } })).toBe(true);
 
     const [entry, ctx] = globalEmit.mock.calls[0];
     expect(entry).toEqual({

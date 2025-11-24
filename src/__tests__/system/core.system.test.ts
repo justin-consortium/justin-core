@@ -41,11 +41,9 @@ describe('@just-in/core system / sanity tests', () => {
 
     // 3) Wire DataManager → MongoMemoryReplSet by overriding MongoDBManager.init
     const realInit = MongoDBManager.init.bind(MongoDBManager);
-    jest
-      .spyOn(MongoDBManager, 'init')
-      .mockImplementation((conn?: string, dbName?: string) => {
-        return realInit(uri, 'core-system-test');
-      });
+    jest.spyOn(MongoDBManager, 'init').mockImplementation((conn?: string, dbName?: string) => {
+      return realInit(uri, 'core-system-test');
+    });
 
     // 4) Initialize DataManager + UserManager "for real"
     dm = DataManager.getInstance();
@@ -93,13 +91,10 @@ describe('@just-in/core system / sanity tests', () => {
     // --- Read ------------------------------------------------------------------
     const allUsers = TestingUserManager.getAllUsers();
     expect(allUsers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ uniqueIdentifier: 'system-u1' }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ uniqueIdentifier: 'system-u1' })]),
     );
 
-    const byIdentifier =
-      TestingUserManager.getUserByUniqueIdentifier('system-u1');
+    const byIdentifier = TestingUserManager.getUserByUniqueIdentifier('system-u1');
     expect(byIdentifier).not.toBeNull();
     expect(byIdentifier).toMatchObject({
       id: createdId,
@@ -139,16 +134,12 @@ describe('@just-in/core system / sanity tests', () => {
     expect(TestingUserManager._users.has(createdId)).toBe(false);
 
     const allAfterDelete = await dm.getAllInCollection<typeof updated>(USERS);
-    const stillThere = (allAfterDelete ?? []).find(
-      (u) => u.id === createdId,
-    );
+    const stillThere = (allAfterDelete ?? []).find((u) => u.id === createdId);
     expect(stillThere).toBeUndefined();
 
     // --- Logging sanity check --------------------------------------------------
     // We don't assert every log, just that at least one "Added user" style info log fired.
-    const infoLogs = logs.captured.filter(
-      (c) => c.entry.severity === 'INFO',
-    );
+    const infoLogs = logs.captured.filter((c) => c.entry.severity === 'INFO');
     expect(infoLogs.length).toBeGreaterThan(0);
   });
 
@@ -175,7 +166,7 @@ describe('@just-in/core system / sanity tests', () => {
     expect(allCached).toHaveLength(2);
 
     // DB should also have both records
-    const allFromDb = await dm.getAllInCollection<typeof added[0]>(USERS);
+    const allFromDb = await dm.getAllInCollection<(typeof added)[0]>(USERS);
     expect(allFromDb).not.toBeNull();
     expect(allFromDb!.length).toBe(2);
 

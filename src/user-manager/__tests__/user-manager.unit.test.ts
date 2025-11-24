@@ -45,15 +45,8 @@ describe('UserManager (unit)', () => {
 
     // handleDbError: callable for assertions
     jest.doMock('../../data-manager/data-manager.helpers', () => {
-      const impl = (
-        message: string,
-        method: string,
-        error: unknown,
-      ): never => {
-        const err =
-          error instanceof Error
-            ? error
-            : new Error(String(error ?? message));
+      const impl = (message: string, method: string, error: unknown): never => {
+        const err = error instanceof Error ? error : new Error(String(error ?? message));
 
         (err as any).dbMessage = message;
         (err as any).dbMethod = method;
@@ -67,21 +60,21 @@ describe('UserManager (unit)', () => {
       };
     });
 
-
     return { dm: dmp, clm: clmp };
   }
 
   function loadSut() {
     let out!: {
-      UserManager: typeof import('../user-manager')['UserManager'];
-      TestingUserManager: typeof import('../user-manager')['TestingUserManager'];
-      USERS: typeof import('../../data-manager/data-manager.constants')['USERS'];
+      UserManager: (typeof import('../user-manager'))['UserManager'];
+      TestingUserManager: (typeof import('../user-manager'))['TestingUserManager'];
+      USERS: (typeof import('../../data-manager/data-manager.constants'))['USERS'];
       handleDbError: jest.Mock;
     };
 
     jest.isolateModules(() => {
       const userMod = require('../user-manager') as typeof import('../user-manager');
-      const constants = require('../../data-manager/data-manager.constants') as typeof import('../../data-manager/data-manager.constants');
+      const constants =
+        require('../../data-manager/data-manager.constants') as typeof import('../../data-manager/data-manager.constants');
       const helpersMod = require('../../data-manager/data-manager.helpers') as any;
 
       out = {
@@ -134,18 +127,9 @@ describe('UserManager (unit)', () => {
 
     UserManager.shutdown();
 
-    expect(clm.removeChangeListener).toHaveBeenCalledWith(
-      USERS,
-      expect.stringMatching(/INSERT/i),
-    );
-    expect(clm.removeChangeListener).toHaveBeenCalledWith(
-      USERS,
-      expect.stringMatching(/UPDATE/i),
-    );
-    expect(clm.removeChangeListener).toHaveBeenCalledWith(
-      USERS,
-      expect.stringMatching(/DELETE/i),
-    );
+    expect(clm.removeChangeListener).toHaveBeenCalledWith(USERS, expect.stringMatching(/INSERT/i));
+    expect(clm.removeChangeListener).toHaveBeenCalledWith(USERS, expect.stringMatching(/UPDATE/i));
+    expect(clm.removeChangeListener).toHaveBeenCalledWith(USERS, expect.stringMatching(/DELETE/i));
   });
 
   it('refreshCache: clears and repopulates cache with id transform', async () => {
@@ -245,7 +229,6 @@ describe('UserManager (unit)', () => {
       expect.any(Error),
     );
   });
-
 
   it('addUsers: rejects on empty input; otherwise iterates addUser and returns successful inserts', async () => {
     const dm = makeDmMock();
@@ -376,21 +359,19 @@ describe('UserManager (unit)', () => {
     const { TestingUserManager } = loadSut();
 
     // invalid args
-    await expect(
-      TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 }),
-    ).rejects.toThrow('Invalid uniqueIdentifier: ');
+    await expect(TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 })).rejects.toThrow(
+      'Invalid uniqueIdentifier: ',
+    );
 
     await expect(
       TestingUserManager.updateUserByUniqueIdentifier('u', {
         uniqueIdentifier: 'nope',
       } as any),
-    ).rejects.toThrow(
-      'Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier',
-    );
+    ).rejects.toThrow('Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier');
 
-    await expect(
-      TestingUserManager.updateUserByUniqueIdentifier('u', {} as any),
-    ).rejects.toThrow('Invalid updateData');
+    await expect(TestingUserManager.updateUserByUniqueIdentifier('u', {} as any)).rejects.toThrow(
+      'Invalid updateData',
+    );
 
     // not found
     await expect(
@@ -407,14 +388,14 @@ describe('UserManager (unit)', () => {
     dm.getInitializationStatus.mockReturnValue(true);
 
     // invalid new value
-    await expect(
-      TestingUserManager.modifyUserUniqueIdentifier('old', ''),
-    ).rejects.toThrow('uniqueIdentifier must be a non-empty string.');
+    await expect(TestingUserManager.modifyUserUniqueIdentifier('old', '')).rejects.toThrow(
+      'uniqueIdentifier must be a non-empty string.',
+    );
 
     // not found
-    await expect(
-      TestingUserManager.modifyUserUniqueIdentifier('missing', 'new'),
-    ).rejects.toThrow('User with uniqueIdentifier (missing) not found.');
+    await expect(TestingUserManager.modifyUserUniqueIdentifier('missing', 'new')).rejects.toThrow(
+      'User with uniqueIdentifier (missing) not found.',
+    );
 
     // no-op when same value
     TestingUserManager._users.clear();
@@ -423,9 +404,7 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'same',
       attributes: {},
     } as any);
-    await expect(
-      TestingUserManager.modifyUserUniqueIdentifier('same', 'same'),
-    ).resolves.toEqual({
+    await expect(TestingUserManager.modifyUserUniqueIdentifier('same', 'same')).resolves.toEqual({
       id: 'u1',
       uniqueIdentifier: 'same',
       attributes: {},
@@ -438,20 +417,15 @@ describe('UserManager (unit)', () => {
       attributes: {},
     });
 
-    const updated = await TestingUserManager.modifyUserUniqueIdentifier(
-      'same',
-      'new',
-    );
+    const updated = await TestingUserManager.modifyUserUniqueIdentifier('same', 'new');
     expect(updated).toEqual({
       id: 'u1',
       uniqueIdentifier: 'new',
       attributes: {},
     });
-    expect(dm.updateItemByIdInCollection).toHaveBeenCalledWith(
-      USERS,
-      'u1',
-      { uniqueIdentifier: 'new' },
-    );
+    expect(dm.updateItemByIdInCollection).toHaveBeenCalledWith(USERS, 'u1', {
+      uniqueIdentifier: 'new',
+    });
   });
 
   it('deleteUserById removes from DB and cache on success', async () => {
@@ -520,12 +494,12 @@ describe('UserManager (unit)', () => {
 
     const { TestingUserManager } = loadSut();
 
-    await expect(
-      TestingUserManager.isIdentifierUnique(''),
-    ).rejects.toThrow('Invalid unique identifier: ');
-    await expect(
-      TestingUserManager.isIdentifierUnique('   '),
-    ).rejects.toThrow('Invalid unique identifier');
+    await expect(TestingUserManager.isIdentifierUnique('')).rejects.toThrow(
+      'Invalid unique identifier: ',
+    );
+    await expect(TestingUserManager.isIdentifierUnique('   ')).rejects.toThrow(
+      'Invalid unique identifier',
+    );
 
     // put a user in cache
     TestingUserManager._users.clear();
@@ -535,12 +509,8 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    await expect(
-      TestingUserManager.isIdentifierUnique('exists'),
-    ).resolves.toBe(false);
+    await expect(TestingUserManager.isIdentifierUnique('exists')).resolves.toBe(false);
 
-    await expect(
-      TestingUserManager.isIdentifierUnique('new-one'),
-    ).resolves.toBe(true);
+    await expect(TestingUserManager.isIdentifierUnique('new-one')).resolves.toBe(true);
   });
 });
