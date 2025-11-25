@@ -1,22 +1,13 @@
-// eslint.config.mjs
-// @ts-check
-
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
+import unusedImports from 'eslint-plugin-unused-imports';
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
-  // 1) Global ignores
   {
-    ignores: [
-      'node_modules/**',
-      'dist/**',
-      'build/**',
-      'coverage/**',
-    ],
+    ignores: ['node_modules/**', 'dist/**', 'build/**', 'coverage/**'],
   },
 
-  // 2) Main rules for src
   {
     files: ['src/**/*.{ts,tsx,js,jsx}'],
 
@@ -30,6 +21,7 @@ export default [
 
     plugins: {
       import: importPlugin,
+      'unused-imports': unusedImports,
     },
 
     rules: {
@@ -39,6 +31,11 @@ export default [
       'no-duplicate-imports': 'error',
 
       /*
+       * Exports at bottom
+       */
+      'import/exports-last': 'error',
+
+      /*
        * Control-flow safety
        */
       'no-unreachable': 'error',
@@ -46,19 +43,17 @@ export default [
       'default-case': 'warn',
 
       /*
-       * Exports must be last in the file
+       * Unused imports only (not locals)
        */
-      'import/exports-last': 'error',
+      'unused-imports/no-unused-imports': 'warn',
+      // Just in case TS/ESLint adds defaults, ensure the core rule stays off:
+      'no-unused-vars': 'off',
     },
   },
 
-  // 3) Typing files: relax exports-last
+  // Typing files: relax exports-last
   {
-    files: [
-      'src/**/*.d.ts',
-      'src/**/*.type.ts', // tweak/extend this pattern if you use something else
-    ],
-
+    files: ['src/**/*.d.ts', 'src/**/*.type.ts'],
     rules: {
       'import/exports-last': 'off',
     },

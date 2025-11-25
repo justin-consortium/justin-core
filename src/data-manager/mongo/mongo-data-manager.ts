@@ -6,7 +6,7 @@ import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-dat
 import { handleDbError } from '../data-manager.helpers';
 import { toObjectId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
-import { createLogger } from '../../logger/logger';
+import { createLogger  } from '../../logger';
 
 const Log = createLogger({
   context: {
