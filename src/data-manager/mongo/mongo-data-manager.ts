@@ -454,10 +454,18 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
 const removeItemFromCollection = async (collectionName: string, id: string): Promise<boolean> => {
   ensureInitialized();
   const objectId = toObjectId(id);
+
+  // TODO: revisit the return value.
   if (!objectId) return false;
 
   try {
-    const { acknowledged } = await _db!.collection(collectionName).deleteOne({ _id: objectId });
+    const { acknowledged, deletedCount } = await _db!
+      .collection(collectionName)
+      .deleteOne({ _id: objectId });
+    if (deletedCount == 0) {
+      Log.warn(`No deletion made for item with id ${id} in ${collectionName}: not found.`);
+    }
+    // TODO: revisit the return value. If deleteCount is 0, should we return false?
     return acknowledged;
   } catch (error) {
     return handleDbError(
