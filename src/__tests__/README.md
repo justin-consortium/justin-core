@@ -269,5 +269,3 @@ This README defines the vocabulary and assumptions for ChatGPT to follow.
 - Helpers are your friend.
 - If a behavior matters, **write a test that tells its story**.
 
-Happy testing.  
-— José
