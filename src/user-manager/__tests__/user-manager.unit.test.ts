@@ -1,146 +1,101 @@
+import sinon, { SinonSandbox, SinonStub } from 'sinon';
+
+import DataManager from '../../data-manager/data-manager';
+import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
+import { USERS } from '../../data-manager/data-manager.constants';
+import { CollectionChangeType } from '../../data-manager/data-manager.type';
+import * as helpers from '../../data-manager/data-manager.helpers';
+import { UserManager, TestingUserManager } from '../user-manager';
+
 describe('UserManager (unit)', () => {
-  function makeDmMock() {
-    return {
-      init: jest.fn(async () => {}),
-      ensureStore: jest.fn(async () => {}),
-      ensureIndexes: jest.fn(async () => {}),
-      getInitializationStatus: jest.fn<boolean, []>(() => true),
+  let sb: SinonSandbox;
+  let dm: any;
+  let clm: any;
+  let handleDbErrorStub: SinonStub;
 
-      // CRUD
-      getAllInCollection: jest.fn(),
-      addItemToCollection: jest.fn(),
-      updateItemByIdInCollection: jest.fn(),
-      removeItemFromCollection: jest.fn(),
-      clearCollection: jest.fn(async () => {}),
+  beforeEach(() => {
+    sb = sinon.createSandbox();
 
-      // change streams passthrough
-      getChangeStream: jest.fn(),
-    };
-  }
+    // Grab the singleton instances that user-manager closed over at import time
+    dm = (DataManager as any).getInstance();
+    clm = (ChangeListenerManager as any).getInstance();
 
-  function makeClmMock() {
-    return {
-      addChangeListener: jest.fn(),
-      removeChangeListener: jest.fn(),
-      clearChangeListeners: jest.fn(),
-    };
-  }
+    // DataManager lifecycle
+    sb.stub(dm, 'init').resolves();
+    sb.stub(dm, 'ensureStore').resolves();
+    sb.stub(dm, 'ensureIndexes').resolves();
+    sb.stub(dm, 'getInitializationStatus').returns(true);
 
-  function installModuleMocks(dmp = makeDmMock(), clmp = makeClmMock()) {
-    // DataManager singleton
-    jest.doMock('../../data-manager/data-manager', () => ({
-      __esModule: true,
-      default: {
-        getInstance: () => dmp,
-      },
-    }));
+    // CRUD-ish methods
+    sb.stub(dm, 'getAllInCollection').resolves([]);
+    sb.stub(dm, 'addItemToCollection').resolves(undefined);
+    sb.stub(dm, 'updateItemByIdInCollection').resolves(undefined);
+    sb.stub(dm, 'removeItemFromCollection').resolves(true);
+    sb.stub(dm, 'clearCollection').resolves();
 
-    // ChangeListener singleton
-    jest.doMock('../../data-manager/change-listener.manager', () => ({
-      __esModule: true,
-      ChangeListenerManager: {
-        getInstance: () => clmp,
-      },
-    }));
+    // ChangeListenerManager wiring
+    sb.stub(clm, 'addChangeListener');
+    sb.stub(clm, 'removeChangeListener');
+    sb.stub(clm, 'clearChangeListeners');
 
-    // handleDbError: callable for assertions
-    jest.doMock('../../data-manager/data-manager.helpers', () => {
-      const impl = (message: string, method: string, error: unknown): never => {
-        const err = error instanceof Error ? error : new Error(String(error ?? message));
-
+    // handleDbError: log + rethrow, but we want to assert calls and control the error shape
+    handleDbErrorStub = sb
+      .stub(helpers, 'handleDbError')
+      .callsFake((message: string, error: unknown): never => {
+        const err =
+          error instanceof Error ? error : new Error(String(error ?? message));
         (err as any).dbMessage = message;
-        (err as any).dbMethod = method;
-
         throw err;
-      };
+      });
 
-      return {
-        __esModule: true,
-        handleDbError: jest.fn(impl),
-      };
-    });
-
-    return { dm: dmp, clm: clmp };
-  }
-
-  function loadSut() {
-    let out!: {
-      UserManager: (typeof import('../user-manager'))['UserManager'];
-      TestingUserManager: (typeof import('../user-manager'))['TestingUserManager'];
-      USERS: (typeof import('../../data-manager/data-manager.constants'))['USERS'];
-      handleDbError: jest.Mock;
-    };
-
-    jest.isolateModules(() => {
-      const userMod = require('../user-manager') as typeof import('../user-manager');
-      const constants =
-        require('../../data-manager/data-manager.constants') as typeof import('../../data-manager/data-manager.constants');
-      const helpersMod = require('../../data-manager/data-manager.helpers') as any;
-
-      out = {
-        UserManager: userMod.UserManager,
-        TestingUserManager: userMod.TestingUserManager,
-        USERS: constants.USERS,
-        handleDbError: helpersMod.handleDbError as jest.Mock,
-      };
-    });
-
-    return out;
-  }
+    // Always start from a clean cache
+    TestingUserManager._users.clear();
+  });
 
   afterEach(() => {
-    jest.resetModules();
-    jest.clearAllMocks();
-    jest.restoreAllMocks();
+    TestingUserManager._users.clear();
+    sb.restore();
   });
 
   it('init: initializes DM, ensures store/indexes, refreshes cache, and sets up change listeners', async () => {
-    const dm = makeDmMock();
-    const clm = makeClmMock();
-    const { dm: dmm, clm: clmm } = installModuleMocks(dm, clm);
-
-    const { UserManager, USERS } = loadSut();
-
-    // Seed getAllInCollection for refreshCache (with _id -> id transform)
-    dmm.getAllInCollection.mockResolvedValueOnce([
+    (dm.getAllInCollection as SinonStub).resolves([
       { _id: 'u1', uniqueIdentifier: 'a', attributes: { x: 1 } },
     ]);
 
     await expect(UserManager.init()).resolves.toBeUndefined();
 
-    expect(dmm.init).toHaveBeenCalledTimes(1);
-    expect(dmm.ensureStore).toHaveBeenCalledWith(USERS);
-    expect(dmm.ensureIndexes).toHaveBeenCalledWith(USERS, [
+    sinon.assert.calledOnce(dm.init as SinonStub);
+    sinon.assert.calledWith(dm.ensureStore as SinonStub, USERS);
+    sinon.assert.calledWith(dm.ensureIndexes as SinonStub, USERS, [
       { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
     ]);
 
     // Change listeners were registered for INSERT/UPDATE/DELETE
-    expect(clmm.addChangeListener).toHaveBeenCalledTimes(3);
+    sinon.assert.callCount(clm.addChangeListener as SinonStub, 3);
   });
 
   it('shutdown: removes all user change listeners', () => {
-    const dm = makeDmMock();
-    const clm = makeClmMock();
-    installModuleMocks(dm, clm);
-
-    const { UserManager, USERS } = loadSut();
-
     UserManager.shutdown();
 
-    expect(clm.removeChangeListener).toHaveBeenCalledWith(USERS, expect.stringMatching(/INSERT/i));
-    expect(clm.removeChangeListener).toHaveBeenCalledWith(USERS, expect.stringMatching(/UPDATE/i));
-    expect(clm.removeChangeListener).toHaveBeenCalledWith(USERS, expect.stringMatching(/DELETE/i));
+    sinon.assert.calledWith(
+      clm.removeChangeListener as SinonStub,
+      USERS,
+      CollectionChangeType.INSERT,
+    );
+    sinon.assert.calledWith(
+      clm.removeChangeListener as SinonStub,
+      USERS,
+      CollectionChangeType.UPDATE,
+    );
+    sinon.assert.calledWith(
+      clm.removeChangeListener as SinonStub,
+      USERS,
+      CollectionChangeType.DELETE,
+    );
   });
 
   it('refreshCache: clears and repopulates cache with id transform', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager, USERS } = loadSut();
-
-    // Ready state for _checkInitialization
-    dm.getInitializationStatus.mockReturnValue(true);
-    dm.getAllInCollection.mockResolvedValueOnce([
+    (dm.getAllInCollection as SinonStub).resolves([
       { _id: 'x1', uniqueIdentifier: 'uid-1', attributes: { a: 1 } },
       { _id: 'x2', uniqueIdentifier: 'uid-2', attributes: { b: 2 } },
     ]);
@@ -158,23 +113,16 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'uid-2',
       attributes: { b: 2 },
     });
-    expect(dm.getAllInCollection).toHaveBeenCalledWith(USERS);
+
+    sinon.assert.calledWith(dm.getAllInCollection as SinonStub, USERS);
   });
 
   it('addUser: validates payload and uniqueness; inserts and caches result', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { UserManager, TestingUserManager, USERS } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
-
     // seed cache empty
     TestingUserManager._users.clear();
 
     // invalid shapes -> null
     await expect(UserManager.addUser(null as any)).resolves.toBeNull();
-
     await expect(UserManager.addUser({} as any)).resolves.toBeNull();
 
     // duplicate uniqueIdentifier -> null
@@ -188,7 +136,7 @@ describe('UserManager (unit)', () => {
     ).resolves.toBeNull();
 
     // new uniqueIdentifier -> DM insert, cache
-    dm.addItemToCollection.mockResolvedValueOnce({
+    (dm.addItemToCollection as SinonStub).resolves({
       id: 'n1',
       uniqueIdentifier: 'new',
       attributes: { foo: 1 },
@@ -198,12 +146,14 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'new',
       initialAttributes: { foo: 1 },
     });
+
     expect(out).toEqual({
       id: 'n1',
       uniqueIdentifier: 'new',
       attributes: { foo: 1 },
     });
-    expect(dm.addItemToCollection).toHaveBeenCalledWith(USERS, {
+
+    sinon.assert.calledWith(dm.addItemToCollection as SinonStub, USERS, {
       uniqueIdentifier: 'new',
       attributes: { foo: 1 },
     });
@@ -211,36 +161,24 @@ describe('UserManager (unit)', () => {
   });
 
   it('addUser: on DM error calls handleDbError (throws)', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { UserManager, handleDbError } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
-    dm.addItemToCollection.mockRejectedValueOnce(new Error('fail-insert'));
+    const boom = new Error('fail-insert');
+    (dm.addItemToCollection as SinonStub).rejects(boom);
 
     await expect(
       UserManager.addUser({ uniqueIdentifier: 'x', initialAttributes: {} }),
     ).rejects.toThrow('fail-insert');
 
-    expect(handleDbError).toHaveBeenCalledWith(
+    sinon.assert.calledWith(
+      handleDbErrorStub,
       'Failed to add users:',
-      'addUser',
-      expect.any(Error),
+      boom,
     );
   });
 
   it('addUsers: rejects on empty input; otherwise iterates addUser and returns successful inserts', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { UserManager, TestingUserManager } = loadSut();
-
     await expect(UserManager.addUsers([] as any)).rejects.toThrow(
       'No users provided for insertion.',
     );
-
-    dm.getInitializationStatus.mockReturnValue(true);
 
     // seed cache with one duplicate
     TestingUserManager._users.clear();
@@ -250,17 +188,12 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    dm.addItemToCollection
-      .mockResolvedValueOnce({
-        id: 'u1',
-        uniqueIdentifier: 'a',
-        attributes: {},
-      })
-      .mockResolvedValueOnce({
-        id: 'u2',
-        uniqueIdentifier: 'b',
-        attributes: {},
-      });
+    const addStub = dm.addItemToCollection as SinonStub;
+    addStub
+      .onFirstCall()
+      .resolves({ id: 'u1', uniqueIdentifier: 'a', attributes: {} })
+      .onSecondCall()
+      .resolves({ id: 'u2', uniqueIdentifier: 'b', attributes: {} });
 
     const res = await UserManager.addUsers([
       { uniqueIdentifier: 'a', initialAttributes: {} },
@@ -274,13 +207,7 @@ describe('UserManager (unit)', () => {
     ]);
   });
 
-  it('getAllUsers returns cached list (requires init)', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
+  it('getAllUsers returns cached list (requires init)', () => {
     TestingUserManager._users.clear();
     TestingUserManager._users.set('x', {
       id: 'x',
@@ -294,12 +221,6 @@ describe('UserManager (unit)', () => {
   });
 
   it('getUserByUniqueIdentifier finds a user or null', () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
     TestingUserManager._users.clear();
     TestingUserManager._users.set('a', {
       id: 'a',
@@ -316,12 +237,6 @@ describe('UserManager (unit)', () => {
   });
 
   it('updateUserById merges attributes, writes via DM, updates cache', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager, USERS } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', {
       id: 'u1',
@@ -329,7 +244,7 @@ describe('UserManager (unit)', () => {
       attributes: { a: 1, b: 1 },
     } as any);
 
-    dm.updateItemByIdInCollection.mockResolvedValueOnce({
+    (dm.updateItemByIdInCollection as SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'a',
       attributes: { a: 1, b: 2, c: 3 },
@@ -339,39 +254,40 @@ describe('UserManager (unit)', () => {
       b: 2,
       c: 3,
     });
+
     expect(updated).toEqual({
       id: 'u1',
       uniqueIdentifier: 'a',
       attributes: { a: 1, b: 2, c: 3 },
     });
 
-    expect(dm.updateItemByIdInCollection).toHaveBeenCalledWith(USERS, 'u1', {
-      attributes: { a: 1, b: 2, c: 3 },
-    });
+    sinon.assert.calledWith(
+      dm.updateItemByIdInCollection as SinonStub,
+      USERS,
+      'u1',
+      { attributes: { a: 1, b: 2, c: 3 } },
+    );
 
     expect(TestingUserManager._users.get('u1')).toEqual(updated);
   });
 
   it('updateUserByUniqueIdentifier validates inputs and reroutes to updateUserById', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager } = loadSut();
-
     // invalid args
-    await expect(TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 })).rejects.toThrow(
-      'Invalid uniqueIdentifier: ',
-    );
+    await expect(
+      TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 }),
+    ).rejects.toThrow('Invalid uniqueIdentifier: ');
 
     await expect(
       TestingUserManager.updateUserByUniqueIdentifier('u', {
         uniqueIdentifier: 'nope',
       } as any),
-    ).rejects.toThrow('Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier');
-
-    await expect(TestingUserManager.updateUserByUniqueIdentifier('u', {} as any)).rejects.toThrow(
-      'Invalid updateData',
+    ).rejects.toThrow(
+      'Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier',
     );
+
+    await expect(
+      TestingUserManager.updateUserByUniqueIdentifier('u', {} as any),
+    ).rejects.toThrow('Invalid updateData');
 
     // not found
     await expect(
@@ -380,22 +296,15 @@ describe('UserManager (unit)', () => {
   });
 
   it('modifyUserUniqueIdentifier validates and updates via DM; no-op if same value', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager, USERS } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
-
     // invalid new value
-    await expect(TestingUserManager.modifyUserUniqueIdentifier('old', '')).rejects.toThrow(
-      'uniqueIdentifier must be a non-empty string.',
-    );
+    await expect(
+      TestingUserManager.modifyUserUniqueIdentifier('old', ''),
+    ).rejects.toThrow('uniqueIdentifier must be a non-empty string.');
 
     // not found
-    await expect(TestingUserManager.modifyUserUniqueIdentifier('missing', 'new')).rejects.toThrow(
-      'User with uniqueIdentifier (missing) not found.',
-    );
+    await expect(
+      TestingUserManager.modifyUserUniqueIdentifier('missing', 'new'),
+    ).rejects.toThrow('User with uniqueIdentifier (missing) not found.');
 
     // no-op when same value
     TestingUserManager._users.clear();
@@ -404,37 +313,42 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'same',
       attributes: {},
     } as any);
-    await expect(TestingUserManager.modifyUserUniqueIdentifier('same', 'same')).resolves.toEqual({
+
+    await expect(
+      TestingUserManager.modifyUserUniqueIdentifier('same', 'same'),
+    ).resolves.toEqual({
       id: 'u1',
       uniqueIdentifier: 'same',
       attributes: {},
     });
 
     // real update path
-    dm.updateItemByIdInCollection.mockResolvedValueOnce({
+    (dm.updateItemByIdInCollection as SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'new',
       attributes: {},
     });
 
-    const updated = await TestingUserManager.modifyUserUniqueIdentifier('same', 'new');
+    const updated = await TestingUserManager.modifyUserUniqueIdentifier(
+      'same',
+      'new',
+    );
+
     expect(updated).toEqual({
       id: 'u1',
       uniqueIdentifier: 'new',
       attributes: {},
     });
-    expect(dm.updateItemByIdInCollection).toHaveBeenCalledWith(USERS, 'u1', {
-      uniqueIdentifier: 'new',
-    });
+
+    sinon.assert.calledWith(
+      dm.updateItemByIdInCollection as SinonStub,
+      USERS,
+      'u1',
+      { uniqueIdentifier: 'new' },
+    );
   });
 
   it('deleteUserById removes from DB and cache on success', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager, USERS } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', {
       id: 'u1',
@@ -442,21 +356,20 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    dm.removeItemFromCollection.mockResolvedValueOnce(true);
+    (dm.removeItemFromCollection as SinonStub).resolves(true);
 
     const ok = await TestingUserManager.deleteUserById('u1');
     expect(ok).toBe(true);
-    expect(dm.removeItemFromCollection).toHaveBeenCalledWith(USERS, 'u1');
+
+    sinon.assert.calledWith(
+      dm.removeItemFromCollection as SinonStub,
+      USERS,
+      'u1',
+    );
     expect(TestingUserManager._users.has('u1')).toBe(false);
   });
 
   it('deleteUserByUniqueIdentifier finds id then deletes via deleteUserById', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', {
       id: 'u1',
@@ -464,42 +377,32 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    const dmRemove = jest.fn().mockResolvedValue(true);
-    dm.removeItemFromCollection = dmRemove;
+    (dm.removeItemFromCollection as SinonStub).resolves(true);
 
     const ok = await TestingUserManager.deleteUserByUniqueIdentifier('uid-1');
+
     expect(ok).toBe(true);
-    expect(dmRemove).toHaveBeenCalled();
+    sinon.assert.calledOnce(dm.removeItemFromCollection as SinonStub);
     expect(TestingUserManager._users.has('u1')).toBe(false);
   });
 
   it('deleteAllUsers clears DB and cache', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager, USERS } = loadSut();
-
-    dm.getInitializationStatus.mockReturnValue(true);
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', { id: 'u1' } as any);
 
     await expect(TestingUserManager.deleteAllUsers()).resolves.toBeUndefined();
-    expect(dm.clearCollection).toHaveBeenCalledWith(USERS);
+
+    sinon.assert.calledWith(dm.clearCollection as SinonStub, USERS);
     expect(TestingUserManager._users.size).toBe(0);
   });
 
   it('isIdentifierUnique validates input; returns false when exists; true otherwise', async () => {
-    const dm = makeDmMock();
-    installModuleMocks(dm, makeClmMock());
-
-    const { TestingUserManager } = loadSut();
-
-    await expect(TestingUserManager.isIdentifierUnique('')).rejects.toThrow(
-      'Invalid unique identifier: ',
-    );
-    await expect(TestingUserManager.isIdentifierUnique('   ')).rejects.toThrow(
-      'Invalid unique identifier',
-    );
+    await expect(
+      TestingUserManager.isIdentifierUnique(''),
+    ).rejects.toThrow('Invalid unique identifier: ');
+    await expect(
+      TestingUserManager.isIdentifierUnique('   '),
+    ).rejects.toThrow('Invalid unique identifier');
 
     // put a user in cache
     TestingUserManager._users.clear();
@@ -509,8 +412,12 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    await expect(TestingUserManager.isIdentifierUnique('exists')).resolves.toBe(false);
+    await expect(
+      TestingUserManager.isIdentifierUnique('exists'),
+    ).resolves.toBe(false);
 
-    await expect(TestingUserManager.isIdentifierUnique('new-one')).resolves.toBe(true);
+    await expect(
+      TestingUserManager.isIdentifierUnique('new-one'),
+    ).resolves.toBe(true);
   });
 });
