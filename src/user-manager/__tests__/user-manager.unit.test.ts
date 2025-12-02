@@ -16,29 +16,22 @@ describe('UserManager (unit)', () => {
   beforeEach(() => {
     sb = sinon.createSandbox();
 
-    // Grab the singleton instances that user-manager closed over at import time
     dm = (DataManager as any).getInstance();
     clm = (ChangeListenerManager as any).getInstance();
 
-    // DataManager lifecycle
     sb.stub(dm, 'init').resolves();
     sb.stub(dm, 'ensureStore').resolves();
     sb.stub(dm, 'ensureIndexes').resolves();
     sb.stub(dm, 'getInitializationStatus').returns(true);
-
-    // CRUD-ish methods
     sb.stub(dm, 'getAllInCollection').resolves([]);
     sb.stub(dm, 'addItemToCollection').resolves(undefined);
     sb.stub(dm, 'updateItemByIdInCollection').resolves(undefined);
     sb.stub(dm, 'removeItemFromCollection').resolves(true);
     sb.stub(dm, 'clearCollection').resolves();
-
-    // ChangeListenerManager wiring
     sb.stub(clm, 'addChangeListener');
     sb.stub(clm, 'removeChangeListener');
     sb.stub(clm, 'clearChangeListeners');
 
-    // handleDbError: log + rethrow, but we want to assert calls and control the error shape
     handleDbErrorStub = sb
       .stub(helpers, 'handleDbError')
       .callsFake((message: string, error: unknown): never => {
@@ -48,7 +41,6 @@ describe('UserManager (unit)', () => {
         throw err;
       });
 
-    // Always start from a clean cache
     TestingUserManager._users.clear();
   });
 
@@ -70,7 +62,6 @@ describe('UserManager (unit)', () => {
       { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
     ]);
 
-    // Change listeners were registered for INSERT/UPDATE/DELETE
     sinon.assert.callCount(clm.addChangeListener as SinonStub, 3);
   });
 
@@ -118,14 +109,11 @@ describe('UserManager (unit)', () => {
   });
 
   it('addUser: validates payload and uniqueness; inserts and caches result', async () => {
-    // seed cache empty
     TestingUserManager._users.clear();
 
-    // invalid shapes -> null
     await expect(UserManager.addUser(null as any)).resolves.toBeNull();
     await expect(UserManager.addUser({} as any)).resolves.toBeNull();
 
-    // duplicate uniqueIdentifier -> null
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'dup',
@@ -135,7 +123,6 @@ describe('UserManager (unit)', () => {
       UserManager.addUser({ uniqueIdentifier: 'dup', initialAttributes: {} }),
     ).resolves.toBeNull();
 
-    // new uniqueIdentifier -> DM insert, cache
     (dm.addItemToCollection as SinonStub).resolves({
       id: 'n1',
       uniqueIdentifier: 'new',
@@ -180,7 +167,6 @@ describe('UserManager (unit)', () => {
       'No users provided for insertion.',
     );
 
-    // seed cache with one duplicate
     TestingUserManager._users.clear();
     TestingUserManager._users.set('dupid', {
       id: 'dupid',
@@ -322,7 +308,6 @@ describe('UserManager (unit)', () => {
       attributes: {},
     });
 
-    // real update path
     (dm.updateItemByIdInCollection as SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'new',
