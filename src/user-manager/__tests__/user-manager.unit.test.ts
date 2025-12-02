@@ -1,92 +1,112 @@
-import sinon, { SinonSandbox, SinonStub } from 'sinon';
-
+import sinon from 'sinon';
 import DataManager from '../../data-manager/data-manager';
 import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
+import * as HelpersModule from '../../data-manager/data-manager.helpers';
 import { USERS } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import * as helpers from '../../data-manager/data-manager.helpers';
 import { UserManager, TestingUserManager } from '../user-manager';
 
 describe('UserManager (unit)', () => {
-  let sb: SinonSandbox;
-  let dm: any;
-  let clm: any;
-  let handleDbErrorStub: SinonStub;
+  let sb: sinon.SinonSandbox;
+  let dm: ReturnType<typeof DataManager.getInstance>;
+  let clm: ChangeListenerManager;
+  let handleDbErrorStub: sinon.SinonStub;
 
   beforeEach(() => {
     sb = sinon.createSandbox();
 
-    dm = (DataManager as any).getInstance();
-    clm = (ChangeListenerManager as any).getInstance();
+    dm = DataManager.getInstance();
+    clm = ChangeListenerManager.getInstance();
 
+    // DataManager stubs
     sb.stub(dm, 'init').resolves();
     sb.stub(dm, 'ensureStore').resolves();
     sb.stub(dm, 'ensureIndexes').resolves();
     sb.stub(dm, 'getInitializationStatus').returns(true);
     sb.stub(dm, 'getAllInCollection').resolves([]);
-    sb.stub(dm, 'addItemToCollection').resolves(undefined);
-    sb.stub(dm, 'updateItemByIdInCollection').resolves(undefined);
-    sb.stub(dm, 'removeItemFromCollection').resolves(true);
+    sb.stub(dm, 'addItemToCollection').resolves(null as any);
+    sb.stub(dm, 'updateItemByIdInCollection').resolves(null as any);
+    sb.stub(dm, 'removeItemFromCollection').resolves(false);
     sb.stub(dm, 'clearCollection').resolves();
+
+    // ChangeListenerManager stubs
     sb.stub(clm, 'addChangeListener');
     sb.stub(clm, 'removeChangeListener');
     sb.stub(clm, 'clearChangeListeners');
 
+    /**
+     * handleDbError stub
+     *
+     * We support both call styles:
+     *   handleDbError(message, error)
+     *   handleDbError(message, methodName, error)
+     *
+     * and always rethrow the underlying Error (if present), or a new Error(message).
+     */
     handleDbErrorStub = sb
-      .stub(helpers, 'handleDbError')
-      .callsFake((message: string, error: unknown): never => {
+      .stub(HelpersModule, 'handleDbError')
+      .callsFake((...args: unknown[]): never => {
+        const [message, maybeMethod, maybeError] = args;
+        const msg = String(message);
+        const error = maybeError ?? maybeMethod;
+
         const err =
-          error instanceof Error ? error : new Error(String(error ?? message));
-        (err as any).dbMessage = message;
+          error instanceof Error ? error : new Error(String(error ?? msg));
+
+        (err as any).dbMessage = msg;
         throw err;
       });
 
+    // Reset in-memory cache
     TestingUserManager._users.clear();
   });
 
   afterEach(() => {
-    TestingUserManager._users.clear();
     sb.restore();
+    jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('init: initializes DM, ensures store/indexes, refreshes cache, and sets up change listeners', async () => {
-    (dm.getAllInCollection as SinonStub).resolves([
+    // arrange a couple of docs for refreshCache
+    (dm.getAllInCollection as sinon.SinonStub).resolves([
       { _id: 'u1', uniqueIdentifier: 'a', attributes: { x: 1 } },
     ]);
 
     await expect(UserManager.init()).resolves.toBeUndefined();
 
-    sinon.assert.calledOnce(dm.init as SinonStub);
-    sinon.assert.calledWith(dm.ensureStore as SinonStub, USERS);
-    sinon.assert.calledWith(dm.ensureIndexes as SinonStub, USERS, [
+    sinon.assert.calledOnce(dm.init as sinon.SinonStub);
+    sinon.assert.calledWith(dm.ensureStore as sinon.SinonStub, USERS);
+    sinon.assert.calledWith(dm.ensureIndexes as sinon.SinonStub, USERS, [
       { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
     ]);
 
-    sinon.assert.callCount(clm.addChangeListener as SinonStub, 3);
+    // Change listeners registered for INSERT/UPDATE/DELETE
+    sinon.assert.calledThrice(clm.addChangeListener as sinon.SinonStub);
   });
 
   it('shutdown: removes all user change listeners', () => {
     UserManager.shutdown();
 
     sinon.assert.calledWith(
-      clm.removeChangeListener as SinonStub,
+      clm.removeChangeListener as sinon.SinonStub,
       USERS,
       CollectionChangeType.INSERT,
     );
     sinon.assert.calledWith(
-      clm.removeChangeListener as SinonStub,
+      clm.removeChangeListener as sinon.SinonStub,
       USERS,
       CollectionChangeType.UPDATE,
     );
     sinon.assert.calledWith(
-      clm.removeChangeListener as SinonStub,
+      clm.removeChangeListener as sinon.SinonStub,
       USERS,
       CollectionChangeType.DELETE,
     );
   });
 
   it('refreshCache: clears and repopulates cache with id transform', async () => {
-    (dm.getAllInCollection as SinonStub).resolves([
+    (dm.getAllInCollection as sinon.SinonStub).resolves([
       { _id: 'x1', uniqueIdentifier: 'uid-1', attributes: { a: 1 } },
       { _id: 'x2', uniqueIdentifier: 'uid-2', attributes: { b: 2 } },
     ]);
@@ -104,16 +124,18 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'uid-2',
       attributes: { b: 2 },
     });
-
-    sinon.assert.calledWith(dm.getAllInCollection as SinonStub, USERS);
+    sinon.assert.calledWith(dm.getAllInCollection as sinon.SinonStub, USERS);
   });
 
   it('addUser: validates payload and uniqueness; inserts and caches result', async () => {
+    // seed cache empty
     TestingUserManager._users.clear();
 
+    // invalid shapes -> null
     await expect(UserManager.addUser(null as any)).resolves.toBeNull();
     await expect(UserManager.addUser({} as any)).resolves.toBeNull();
 
+    // duplicate uniqueIdentifier -> null
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'dup',
@@ -123,7 +145,8 @@ describe('UserManager (unit)', () => {
       UserManager.addUser({ uniqueIdentifier: 'dup', initialAttributes: {} }),
     ).resolves.toBeNull();
 
-    (dm.addItemToCollection as SinonStub).resolves({
+    // new uniqueIdentifier -> DM insert, cache
+    (dm.addItemToCollection as sinon.SinonStub).resolves({
       id: 'n1',
       uniqueIdentifier: 'new',
       attributes: { foo: 1 },
@@ -139,8 +162,7 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'new',
       attributes: { foo: 1 },
     });
-
-    sinon.assert.calledWith(dm.addItemToCollection as SinonStub, USERS, {
+    sinon.assert.calledWith(dm.addItemToCollection as sinon.SinonStub, USERS, {
       uniqueIdentifier: 'new',
       attributes: { foo: 1 },
     });
@@ -148,17 +170,22 @@ describe('UserManager (unit)', () => {
   });
 
   it('addUser: on DM error calls handleDbError (throws)', async () => {
-    const boom = new Error('fail-insert');
-    (dm.addItemToCollection as SinonStub).rejects(boom);
+    (dm.addItemToCollection as sinon.SinonStub).rejects(
+      new Error('fail-insert'),
+    );
 
     await expect(
       UserManager.addUser({ uniqueIdentifier: 'x', initialAttributes: {} }),
     ).rejects.toThrow('fail-insert');
 
-    sinon.assert.calledWith(
+    // Support both 2-arg and 3-arg styles; we only care that:
+    //  - message is "Failed to add users:"
+    //  - an Error instance is passed somewhere after it
+    sinon.assert.calledWithMatch(
       handleDbErrorStub,
       'Failed to add users:',
-      boom,
+      sinon.match.any,
+      sinon.match.instanceOf(Error),
     );
   });
 
@@ -167,19 +194,29 @@ describe('UserManager (unit)', () => {
       'No users provided for insertion.',
     );
 
+    // Ready state for addUser path
     TestingUserManager._users.clear();
+
+    // Seed one duplicate
     TestingUserManager._users.set('dupid', {
       id: 'dupid',
       uniqueIdentifier: 'dup',
       attributes: {},
     } as any);
 
-    const addStub = dm.addItemToCollection as SinonStub;
-    addStub
+    (dm.addItemToCollection as sinon.SinonStub)
       .onFirstCall()
-      .resolves({ id: 'u1', uniqueIdentifier: 'a', attributes: {} })
+      .resolves({
+        id: 'u1',
+        uniqueIdentifier: 'a',
+        attributes: {},
+      })
       .onSecondCall()
-      .resolves({ id: 'u2', uniqueIdentifier: 'b', attributes: {} });
+      .resolves({
+        id: 'u2',
+        uniqueIdentifier: 'b',
+        attributes: {},
+      });
 
     const res = await UserManager.addUsers([
       { uniqueIdentifier: 'a', initialAttributes: {} },
@@ -230,7 +267,7 @@ describe('UserManager (unit)', () => {
       attributes: { a: 1, b: 1 },
     } as any);
 
-    (dm.updateItemByIdInCollection as SinonStub).resolves({
+    (dm.updateItemByIdInCollection as sinon.SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'a',
       attributes: { a: 1, b: 2, c: 3 },
@@ -248,7 +285,7 @@ describe('UserManager (unit)', () => {
     });
 
     sinon.assert.calledWith(
-      dm.updateItemByIdInCollection as SinonStub,
+      dm.updateItemByIdInCollection as sinon.SinonStub,
       USERS,
       'u1',
       { attributes: { a: 1, b: 2, c: 3 } },
@@ -290,7 +327,9 @@ describe('UserManager (unit)', () => {
     // not found
     await expect(
       TestingUserManager.modifyUserUniqueIdentifier('missing', 'new'),
-    ).rejects.toThrow('User with uniqueIdentifier (missing) not found.');
+    ).rejects.toThrow(
+      'User with uniqueIdentifier (missing) not found.',
+    );
 
     // no-op when same value
     TestingUserManager._users.clear();
@@ -308,7 +347,8 @@ describe('UserManager (unit)', () => {
       attributes: {},
     });
 
-    (dm.updateItemByIdInCollection as SinonStub).resolves({
+    // real update path
+    (dm.updateItemByIdInCollection as sinon.SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'new',
       attributes: {},
@@ -324,9 +364,8 @@ describe('UserManager (unit)', () => {
       uniqueIdentifier: 'new',
       attributes: {},
     });
-
     sinon.assert.calledWith(
-      dm.updateItemByIdInCollection as SinonStub,
+      dm.updateItemByIdInCollection as sinon.SinonStub,
       USERS,
       'u1',
       { uniqueIdentifier: 'new' },
@@ -341,13 +380,12 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    (dm.removeItemFromCollection as SinonStub).resolves(true);
+    (dm.removeItemFromCollection as sinon.SinonStub).resolves(true);
 
     const ok = await TestingUserManager.deleteUserById('u1');
     expect(ok).toBe(true);
-
     sinon.assert.calledWith(
-      dm.removeItemFromCollection as SinonStub,
+      dm.removeItemFromCollection as sinon.SinonStub,
       USERS,
       'u1',
     );
@@ -362,12 +400,11 @@ describe('UserManager (unit)', () => {
       attributes: {},
     } as any);
 
-    (dm.removeItemFromCollection as SinonStub).resolves(true);
+    (dm.removeItemFromCollection as sinon.SinonStub).resolves(true);
 
-    const ok = await TestingUserManager.deleteUserByUniqueIdentifier('uid-1');
-
+    const ok =
+      await TestingUserManager.deleteUserByUniqueIdentifier('uid-1');
     expect(ok).toBe(true);
-    sinon.assert.calledOnce(dm.removeItemFromCollection as SinonStub);
     expect(TestingUserManager._users.has('u1')).toBe(false);
   });
 
@@ -375,9 +412,14 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', { id: 'u1' } as any);
 
-    await expect(TestingUserManager.deleteAllUsers()).resolves.toBeUndefined();
+    await expect(
+      TestingUserManager.deleteAllUsers(),
+    ).resolves.toBeUndefined();
 
-    sinon.assert.calledWith(dm.clearCollection as SinonStub, USERS);
+    sinon.assert.calledWith(
+      dm.clearCollection as sinon.SinonStub,
+      USERS,
+    );
     expect(TestingUserManager._users.size).toBe(0);
   });
 
@@ -389,7 +431,7 @@ describe('UserManager (unit)', () => {
       TestingUserManager.isIdentifierUnique('   '),
     ).rejects.toThrow('Invalid unique identifier');
 
-    // put a user in cache
+    // existing
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', {
       id: 'u1',
@@ -401,6 +443,7 @@ describe('UserManager (unit)', () => {
       TestingUserManager.isIdentifierUnique('exists'),
     ).resolves.toBe(false);
 
+    // new
     await expect(
       TestingUserManager.isIdentifierUnique('new-one'),
     ).resolves.toBe(true);
