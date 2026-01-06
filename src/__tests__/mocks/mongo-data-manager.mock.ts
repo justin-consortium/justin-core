@@ -1,86 +1,96 @@
-export type MongoManagerMock = ReturnType<typeof createMongoManagerMock>;
+import sinon from 'sinon';
+import type { SinonStub } from 'sinon';
 
-export function createMongoManagerMock() {
+type MongoManagerMock = ReturnType<typeof createMongoManagerMock>;
+
+function createMongoManagerMock() {
   return {
     // lifecycle
-    init: jest.fn(async () => {}),
-    ensureStore: jest.fn(async (_storeName: string, _options?: unknown) => {}),
-    ensureIndexes: jest.fn(async (_storeName: string, _indexes?: unknown) => {}),
-    close: jest.fn(async () => {}),
+    init: sinon.stub().resolves(),
+    ensureStore: sinon.stub().resolves(),
+    ensureIndexes: sinon.stub().resolves(),
+    close: sinon.stub().resolves(),
 
     // CRUD
-    addItemToCollection: jest.fn(),
-    updateItemInCollection: jest.fn(),
-    removeItemFromCollection: jest.fn(),
-    getAllInCollection: jest.fn(),
-    clearCollection: jest.fn(async (_storeName: string) => {}),
-    isCollectionEmpty: jest.fn(),
-    findItemByIdInCollection: jest.fn(),
-    findItemsInCollection: jest.fn(),
+    addItemToCollection: sinon.stub(),
+    updateItemInCollection: sinon.stub(),
+    removeItemFromCollection: sinon.stub(),
+    getAllInCollection: sinon.stub(),
+    clearCollection: sinon.stub().resolves(),
+    isCollectionEmpty: sinon.stub(),
+    findItemByIdInCollection: sinon.stub(),
+    findItemsInCollection: sinon.stub(),
 
     // change streams
-    getCollectionChangeReadable: jest.fn(),
+    getCollectionChangeReadable: sinon.stub(),
   };
 }
 
-// src/__tests__/helpers/mongo-fakes.ts
-
-export type FakeCollection = {
-  watch: jest.Mock;
-  listIndexes: jest.Mock;
-  createIndexes: jest.Mock;
-  findOne: jest.Mock;
-  find: jest.Mock;
-  insertOne: jest.Mock;
-  findOneAndUpdate: jest.Mock;
-  updateOne: jest.Mock;
-  deleteOne: jest.Mock;
-  deleteMany: jest.Mock;
-  countDocuments: jest.Mock;
+/**
+ * Lightweight fake mongo objects (sinon stubs) used by mongo adapter unit tests.
+ */
+type FakeCollection = {
+  watch: SinonStub;
+  listIndexes: SinonStub;
+  createIndexes: SinonStub;
+  findOne: SinonStub;
+  find: SinonStub;
+  insertOne: SinonStub;
+  findOneAndUpdate: SinonStub;
+  updateOne: SinonStub;
+  deleteOne: SinonStub;
+  deleteMany: SinonStub;
+  countDocuments: SinonStub;
 };
 
-export type FakeDb = {
-  collection: jest.Mock;
-  listCollections: jest.Mock;
-  createCollection: jest.Mock;
-  command: jest.Mock;
+type FakeDb = {
+  collection: SinonStub;
+  listCollections: SinonStub;
+  createCollection: SinonStub;
+  command: SinonStub;
 };
 
-export type FakeClient = {
-  close: jest.Mock;
+type FakeClient = {
+  close: SinonStub;
 };
 
-export type FakeMongo = {
+type FakeMongo = {
   collection: FakeCollection;
   db: FakeDb;
   client: FakeClient;
 };
 
-export function makeFakeMongo(): FakeMongo {
+function makeFakeMongo(): FakeMongo {
   const collection: FakeCollection = {
-    watch: jest.fn(),
-    listIndexes: jest.fn(),
-    createIndexes: jest.fn(),
-    findOne: jest.fn(),
-    find: jest.fn(),
-    insertOne: jest.fn(),
-    findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn(),
-    deleteOne: jest.fn(),
-    deleteMany: jest.fn(),
-    countDocuments: jest.fn(),
+    watch: sinon.stub(),
+    listIndexes: sinon.stub(),
+    createIndexes: sinon.stub(),
+    findOne: sinon.stub(),
+    find: sinon.stub(),
+    insertOne: sinon.stub(),
+    findOneAndUpdate: sinon.stub(),
+    updateOne: sinon.stub(),
+    deleteOne: sinon.stub(),
+    deleteMany: sinon.stub(),
+    countDocuments: sinon.stub(),
   };
 
   const db: FakeDb = {
-    collection: jest.fn(() => collection),
-    listCollections: jest.fn(),
-    createCollection: jest.fn(),
-    command: jest.fn(),
+    collection: sinon.stub().returns(collection),
+    listCollections: sinon.stub(),
+    createCollection: sinon.stub(),
+    command: sinon.stub(),
   };
 
   const client: FakeClient = {
-    close: jest.fn(),
+    close: sinon.stub(),
   };
 
   return { collection, db, client };
 }
+
+
+
+export type { MongoManagerMock, FakeMongo, FakeCollection, FakeDb, FakeClient };
+
+export { createMongoManagerMock, makeFakeMongo };

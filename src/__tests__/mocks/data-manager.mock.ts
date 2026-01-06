@@ -1,78 +1,87 @@
 import sinon from 'sinon';
 // eslint-disable-next-line no-duplicate-imports
-import type { SinonSandbox, SinonStub, SinonSpy } from 'sinon';
+import type { SinonSandbox, SinonSpy, SinonStub } from 'sinon';
+
 import DataManager from '../../data-manager/data-manager';
-import { makeStream } from '../helpers/streams';
-import { MongoDBManager as mongoFns } from '../../data-manager/mongo/mongo-data-manager';
 import { ChangeListenerManager as CLM } from '../../data-manager/change-listener.manager';
+import { makeStream } from '../helpers/streams';
 import * as Helpers from '../../data-manager/data-manager.helpers';
+import { MongoDBManager as mongoFns } from '../../data-manager/mongo/mongo-data-manager';
 
 type Key = string; // `${collection}:${type}`
 
+/**
+ * Mocks the DataManager singleton *just enough* for ChangeListenerManager tests:
+ * - replaces DataManager.getInstance() with an object that has getChangeStream()
+ * - getChangeStream() returns a stable Readable per (collection, changeType)
+ */
 function mockDataManager() {
   const sb = sinon.createSandbox();
   const streams = new Map<Key, ReturnType<typeof makeStream>>();
 
   const getKey = (col: string, type: unknown) => `${col}:${String(type)}`;
 
-  const instance = {
-    getChangeStream: jest.fn((collection: string, changeType: unknown) => {
-      const key = getKey(collection, changeType);
-      if (!streams.has(key)) streams.set(key, makeStream());
-      return streams.get(key)!;
-    }),
-  };
+  const getChangeStream = sb.stub().callsFake((collection: string, changeType: unknown) => {
+    const key = getKey(collection, changeType);
+    if (!streams.has(key)) streams.set(key, makeStream());
+    return streams.get(key)!;
+  });
+
+  const instance = { getChangeStream };
 
   sb.stub(DataManager as any, 'getInstance').returns(instance as any);
 
   return {
-    /** The minimal DM instance with getChangeStream mocked. */
     instance,
-    /** Retrieve (and create if missing) a stream for a collection/changeType combo. */
     getStream(collection: string, changeType: unknown) {
-      return (instance as any).getChangeStream(collection, changeType);
+      return getChangeStream(collection, changeType);
     },
-    /** Restore all stubs on DataManager and associated sandbox. */
     restore() {
       sb.restore();
     },
   };
 }
 
-// eslint-disable-next-line import/exports-last
-export type DataManagerMock = ReturnType<typeof createDataManagerMock>;
+/**
+ * A standalone sinon-stubbed DataManager-shaped object.
+ *
+ * This does NOT patch the singleton; use installDataManagerSingleton for that.
+ */
 function createDataManagerMock() {
   return {
     // lifecycle
-    init: jest.fn(async () => {}),
-    ensureStore: jest.fn(async (_store: string, _opts?: unknown) => {}),
-    ensureIndexes: jest.fn(async (_store: string, _indexes?: unknown) => {}),
-    close: jest.fn(async () => {}),
-    getInitializationStatus: jest.fn<boolean, []>(() => true),
+    init: sinon.stub().resolves(),
+    ensureStore: sinon.stub().resolves(),
+    ensureIndexes: sinon.stub().resolves(),
+    close: sinon.stub().resolves(),
+    getInitializationStatus: sinon.stub().returns(true),
 
     // CRUD-ish
-    addItemToCollection: jest.fn(),
-    updateItemByIdInCollection: jest.fn(),
-    removeItemFromCollection: jest.fn(),
-    getAllInCollection: jest.fn(),
-    clearCollection: jest.fn(async (_store: string) => {}),
-    isCollectionEmpty: jest.fn(),
-    findItemByIdInCollection: jest.fn(),
-    findItemsInCollection: jest.fn(),
+    addItemToCollection: sinon.stub(),
+    updateItemByIdInCollection: sinon.stub(),
+    removeItemFromCollection: sinon.stub(),
+    getAllInCollection: sinon.stub(),
+    clearCollection: sinon.stub().resolves(),
+    isCollectionEmpty: sinon.stub(),
+    findItemByIdInCollection: sinon.stub(),
+    findItemsInCollection: sinon.stub(),
 
-    // change streams (optional in CRUD tests)
-    getChangeStream: jest.fn(),
+    // change streams (optional)
+    getChangeStream: sinon.stub(),
   };
 }
 
+type DataManagerMock = ReturnType<typeof createDataManagerMock>;
+
+/**
+ * Installs a DataManagerMock as the DataManager singleton.
+ */
 function installDataManagerSingleton(dm: DataManagerMock) {
   const sb = sinon.createSandbox();
   sb.stub(DataManager as any, 'getInstance').returns(dm as any);
 
   return {
     dm,
-    sb,
-    /** Restore the original DataManager.getInstance() and all sandbox stubs. */
     restore() {
       sb.restore();
     },
@@ -80,13 +89,12 @@ function installDataManagerSingleton(dm: DataManagerMock) {
 }
 
 type ClmMock = {
-  addChangeListener: jest.Mock;
-  removeChangeListener: jest.Mock;
-  clearChangeListeners: jest.Mock;
+  addChangeListener: SinonStub;
+  removeChangeListener: SinonStub;
+  clearChangeListeners: SinonStub;
 };
 
-// eslint-disable-next-line import/exports-last
-export type DataManagerUnitSandbox = {
+type DataManagerUnitSandbox = {
   sb: SinonSandbox;
   clm: ClmMock;
   mongo: {
@@ -104,17 +112,21 @@ export type DataManagerUnitSandbox = {
     findItemsInCollection: SinonStub;
     getCollectionChangeReadable: SinonStub;
   };
-  handleDbErrorSpy: SinonSpy<[string, string, unknown], never>;
+  handleDbErrorSpy: SinonSpy;
   restore(): void;
 };
 
+/**
+ * Sandbox for DataManager unit tests that stub the MongoDBManager module functions
+ * and ChangeListenerManager singleton instance.
+ */
 function makeDataManagerSandbox(): DataManagerUnitSandbox {
   const sb = sinon.createSandbox();
 
   const clm: ClmMock = {
-    addChangeListener: jest.fn(),
-    removeChangeListener: jest.fn(),
-    clearChangeListeners: jest.fn(),
+    addChangeListener: sb.stub(),
+    removeChangeListener: sb.stub(),
+    clearChangeListeners: sb.stub(),
   };
   sb.stub(CLM, 'getInstance').returns(clm as any);
 
@@ -136,9 +148,24 @@ function makeDataManagerSandbox(): DataManagerUnitSandbox {
 
   const handleDbErrorSpy = sb.spy(Helpers, 'handleDbError');
 
-  const restore = () => sb.restore();
-
-  return { sb, clm, mongo, handleDbErrorSpy, restore };
+  return {
+    sb,
+    clm,
+    mongo,
+    handleDbErrorSpy,
+    restore() {
+      sb.restore();
+    },
+  };
 }
 
-export { makeDataManagerSandbox, installDataManagerSingleton, mockDataManager };
+
+
+export type { DataManagerMock, DataManagerUnitSandbox };
+
+export {
+  mockDataManager,
+  createDataManagerMock,
+  installDataManagerSingleton,
+  makeDataManagerSandbox,
+};

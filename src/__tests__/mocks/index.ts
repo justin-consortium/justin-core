@@ -1,10 +1,23 @@
 export { loggerSpies } from './logger.spies';
-export { mockLogger } from './logger.mock';
-export { mockDataManager, makeDataManagerSandbox } from './data-manager.mock';
+
 export {
-  createMongoManagerMock,
-  type MongoManagerMock,
+  mockDataManager,
+  createDataManagerMock,
+  installDataManagerSingleton,
+  makeDataManagerSandbox,
+} from './data-manager.mock';
+
+export { createMongoManagerMock, makeFakeMongo } from './mongo-data-manager.mock';
+
+export type {
+  DataManagerMock,
+  DataManagerUnitSandbox,
+} from './data-manager.mock';
+
+export type {
+  MongoManagerMock,
   FakeMongo,
-  makeFakeMongo,
+  FakeCollection,
+  FakeDb,
+  FakeClient,
 } from './mongo-data-manager.mock';
-export { createChangeListenerMock } from './change-listener.mock';
