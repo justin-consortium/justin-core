@@ -23,7 +23,6 @@ describe('MongoDBManager (integration)', () => {
     await MongoDBManager.close();
     await repl.stop();
     logs.restore();
-    jest.restoreAllMocks();
   });
 
   it('creates a collection via ensureStore', async () => {

@@ -1,4 +1,5 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import sinon from 'sinon';
 import DataManager from '../data-manager';
 import { MongoDBManager } from '../mongo/mongo-data-manager';
 import { ChangeListenerManager } from '../change-listener.manager';
@@ -10,8 +11,10 @@ describe('DataManager (integration)', () => {
   let uri: string;
   let dm: DataManager;
   let logs: ReturnType<typeof loggerSpies>;
+  let sb: sinon.SinonSandbox;
 
   beforeAll(async () => {
+    sb = sinon.createSandbox();
     logs = loggerSpies();
 
     repl = await MongoMemoryReplSet.create({
@@ -20,7 +23,7 @@ describe('DataManager (integration)', () => {
     uri = repl.getUri();
 
     const realInit = MongoDBManager.init.bind(MongoDBManager);
-    jest.spyOn(MongoDBManager, 'init').mockImplementation(() => realInit(uri, 'dm-int-test'));
+    sb.stub(MongoDBManager, 'init').callsFake(() => realInit(uri, 'dm-int-test'));
 
     dm = DataManager.getInstance();
     await dm.init();
@@ -29,8 +32,9 @@ describe('DataManager (integration)', () => {
   afterAll(async () => {
     await dm.close();
     await repl.stop();
+
     logs.restore();
-    jest.restoreAllMocks();
+    sb.restore();
   });
 
   it('can ensure a store and insert + read items', async () => {
@@ -86,11 +90,11 @@ describe('DataManager (integration)', () => {
 
   it('calls change listener manager on close', async () => {
     const clm = ChangeListenerManager.getInstance();
-    const clearSpy = jest.spyOn(clm, 'clearChangeListeners');
+    const clearSpy = sb.spy(clm, 'clearChangeListeners');
 
     await dm.close();
 
-    expect(clearSpy).toHaveBeenCalled();
+    expect(clearSpy.called).toBe(true);
 
     await dm.init();
   });
