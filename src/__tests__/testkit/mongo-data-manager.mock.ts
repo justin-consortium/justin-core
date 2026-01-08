@@ -1,4 +1,5 @@
 import sinon from 'sinon';
+// eslint-disable-next-line no-duplicate-imports
 import type { SinonStub } from 'sinon';
 
 type MongoManagerMock = ReturnType<typeof createMongoManagerMock>;

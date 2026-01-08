@@ -4,7 +4,7 @@ import DataManager from '../data-manager';
 import { MongoDBManager } from '../mongo/mongo-data-manager';
 import { ChangeListenerManager } from '../change-listener.manager';
 import { USERS } from '../data-manager.constants';
-import { loggerSpies } from '../../__tests__/mocks';
+import { loggerSpies } from '../../__tests__/testkit';
 
 describe('DataManager (integration)', () => {
   let repl: MongoMemoryReplSet;
