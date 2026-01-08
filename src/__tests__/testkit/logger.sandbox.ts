@@ -1,7 +1,6 @@
 import sinon from 'sinon';
 // eslint-disable-next-line no-duplicate-imports
 import type { SinonSandbox, SinonSpy } from 'sinon';
-
 import type { LoggerEntry } from '../../logger/types';
 import * as GlobalLogger from '../../logger/global';
 
