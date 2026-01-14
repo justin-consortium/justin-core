@@ -24,7 +24,7 @@ describe('UserManager (unit)', () => {
   it('init: initializes DM, ensures store/indexes, refreshes cache, and sets up change listeners', async () => {
     // arrange a couple of docs for refreshCache
     (dm.getAllInCollection as sinon.SinonStub).resolves([
-      { _id: 'u1', uniqueIdentifier: 'a', attributes: { x: 1 } },
+      { id: 'u1', uniqueIdentifier: 'a', attributes: { x: 1 } },
     ]);
 
     await expect(UserManager.init()).resolves.toBeUndefined();
@@ -61,8 +61,8 @@ describe('UserManager (unit)', () => {
 
   it('refreshCache: clears and repopulates cache with id transform', async () => {
     (dm.getAllInCollection as sinon.SinonStub).resolves([
-      { _id: 'x1', uniqueIdentifier: 'uid-1', attributes: { a: 1 } },
-      { _id: 'x2', uniqueIdentifier: 'uid-2', attributes: { b: 2 } },
+      { id: 'x1', uniqueIdentifier: 'uid-1', attributes: { a: 1 } },
+      { id: 'x2', uniqueIdentifier: 'uid-2', attributes: { b: 2 } },
     ]);
 
     await TestingUserManager.refreshCache();

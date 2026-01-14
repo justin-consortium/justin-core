@@ -61,20 +61,9 @@ const refreshCache = async (): Promise<void> => {
   _checkInitialization();
   _users.clear();
   const userDocs = (await dm.getAllInCollection<JUser>(USERS)) || [];
-  userDocs.forEach((user: any) => {
-    const jUser: JUser = transformUserDocument(user);
+  userDocs.forEach((jUser: any) => {
     _users.set(jUser.id, jUser);
   });
-};
-
-/**
- * Transforms a document to use `id` instead of `_id`.
- * @param {any} doc - The raw document from the database.
- * @returns {any} The transformed document.
- */
-const transformUserDocument = (doc: any): JUser => {
-  const { _id, ...rest } = doc;
-  return { id: _id?.toString(), ...rest } as JUser;
 };
 
 /**
@@ -82,13 +71,11 @@ const transformUserDocument = (doc: any): JUser => {
  * @private
  */
 const setupChangeListeners = (): void => {
-  clm.addChangeListener(USERS, CollectionChangeType.INSERT, (user: JUser) => {
-    const jUser: JUser = transformUserDocument(user);
+  clm.addChangeListener(USERS, CollectionChangeType.INSERT, (jUser: JUser) => {
     _users.set(jUser.id, jUser);
   });
 
-  clm.addChangeListener(USERS, CollectionChangeType.UPDATE, (user: JUser) => {
-    const jUser: JUser = transformUserDocument(user);
+  clm.addChangeListener(USERS, CollectionChangeType.UPDATE, (jUser: JUser) => {
     _users.set(jUser.id, jUser);
   });
 
@@ -415,7 +402,6 @@ export const TestingUserManager = {
   ...UserManager,
   updateUserById,
   deleteUserById,
-  transformUserDocument,
   _checkInitialization,
   refreshCache,
   isIdentifierUnique,
