@@ -1,7 +1,13 @@
 import DataManager from '../data-manager/data-manager';
 import { ChangeListenerManager } from '../data-manager/change-listener.manager';
-import { USERS } from '../data-manager/data-manager.constants';
-import { JUser, NewUserRecord } from './user.type';
+import { USERS, USER_PROTECTED_ATTRIBUTES } from '../data-manager/data-manager.constants';
+import type {
+  JUser,
+  JUserProtectedAttributes,
+  JUserProtectedRecord,
+  JUserWithProtectedAttributes,
+  NewUserRecord,
+} from './user.type';
 import { handleDbError } from '../data-manager/data-manager.helpers';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import { createLogger } from '../logger/logger';
@@ -11,12 +17,20 @@ const Log = createLogger({
     source: 'user-manager',
   },
 });
+
 /**
  * @type {Map<string, JUser>} _users - In-memory cache for user data.
  * This Map enables quick lookups, insertions, and deletions by `id`.
  * @private
  */
 const _users: Map<string, JUser> = new Map();
+
+/**
+ * @type {Map<string, JUserProtectedAttributes>} _protectedByUserId - In-memory cache for protected user attributes.
+ * IMPORTANT: This Map uses the SAME key string as `_users` (the user's DB-assigned `id`) to minimize divergence risk.
+ * @private
+ */
+const _protectedByUserId: Map<string, JUserProtectedAttributes> = new Map();
 
 const dm = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();
@@ -37,8 +51,17 @@ const init = async (): Promise<void> => {
     { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
   ]);
 
+  // ensure USER_PROTECTED_ATTRIBUTES exists and has a unique index on userId (idempotent, DB-agnostic)
+  await dm.ensureStore(USER_PROTECTED_ATTRIBUTES);
+  await dm.ensureIndexes(USER_PROTECTED_ATTRIBUTES, [
+    { name: 'uniq_user_protected_user_id', key: { userId: 1 }, unique: true },
+  ]);
+
   await refreshCache();
+  await refreshProtectedCache();
+
   setupChangeListeners();
+  setupProtectedChangeListeners();
 };
 
 /**
@@ -50,6 +73,11 @@ const shutdown = () => {
   clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
   clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
   clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
+
+  clm.removeChangeListener(USER_PROTECTED_ATTRIBUTES, CollectionChangeType.INSERT);
+  clm.removeChangeListener(USER_PROTECTED_ATTRIBUTES, CollectionChangeType.UPDATE);
+
+  // PROPOSAL: we will need to worry about DELETE if accepted
 };
 
 /**
@@ -63,6 +91,24 @@ const refreshCache = async (): Promise<void> => {
   const userDocs = (await dm.getAllInCollection<JUser>(USERS)) || [];
   userDocs.forEach((jUser: any) => {
     _users.set(jUser.id, jUser);
+  });
+};
+
+/**
+ * Loads all protected user attributes from the database into the in-memory cache.
+ *
+ * @returns {Promise<void>} Resolves when protected attributes are loaded into the cache.
+ */
+const refreshProtectedCache = async (): Promise<void> => {
+  _checkInitialization();
+  _protectedByUserId.clear();
+
+  const protectedDocs =
+    (await dm.getAllInCollection<JUserProtectedRecord>(USER_PROTECTED_ATTRIBUTES)) || [];
+
+  protectedDocs.forEach((doc: any) => {
+    if (!doc?.userId) return;
+    _protectedByUserId.set(doc.userId, doc.protectedAttributes || {});
   });
 };
 
@@ -81,7 +127,34 @@ const setupChangeListeners = (): void => {
 
   clm.addChangeListener(USERS, CollectionChangeType.DELETE, (userId: string) => {
     _users.delete(userId);
+    _protectedByUserId.delete(userId);
   });
+};
+
+/**
+ * Sets up change listeners for protected user attribute changes.
+ * @private
+ */
+const setupProtectedChangeListeners = (): void => {
+  clm.addChangeListener(
+    USER_PROTECTED_ATTRIBUTES,
+    CollectionChangeType.INSERT,
+    (doc: JUserProtectedRecord) => {
+      if (!doc?.userId) return;
+      _protectedByUserId.set(doc.userId, doc.protectedAttributes || {});
+    },
+  );
+
+  clm.addChangeListener(
+    USER_PROTECTED_ATTRIBUTES,
+    CollectionChangeType.UPDATE,
+    (doc: JUserProtectedRecord) => {
+      if (!doc?.userId) return;
+      _protectedByUserId.set(doc.userId, doc.protectedAttributes || {});
+    },
+  );
+
+  // TODO: Delete change listener
 };
 
 /**
@@ -94,6 +167,88 @@ const setupChangeListeners = (): void => {
 const _checkInitialization = (): void => {
   if (!dm.getInitializationStatus()) {
     throw new Error('UserManager has not been initialized');
+  }
+};
+
+// NOTE: was unsure if should throw error or return bool - pattern is error but
+// I feel calling function should make that call
+const _validatePlainObject = (value: unknown, label: string): void => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be a non-null object and must not be an array.`);
+  }
+};
+
+const _getProtectedAttributesByUserId = (userId: string): JUserProtectedAttributes => {
+  return _protectedByUserId.get(userId) || {};
+};
+
+const _findProtectedRecordByUserId = async (
+  userId: string,
+): Promise<JUserProtectedRecord | null> => {
+  _checkInitialization();
+
+  const matches =
+    (await dm.findItemsInCollection<JUserProtectedRecord>(USER_PROTECTED_ATTRIBUTES, { userId })) ||
+    [];
+  if (!matches.length) return null;
+  return matches[0] || null;
+};
+
+const _createProtectedAttributesRecord = async (
+  userId: string,
+  protectedAttributes: JUserProtectedAttributes,
+): Promise<void> => {
+  _checkInitialization();
+
+  if (!userId) return;
+
+  if (
+    !protectedAttributes ||
+    typeof protectedAttributes !== 'object' ||
+    Array.isArray(protectedAttributes) ||
+    Object.keys(protectedAttributes).length === 0
+  ) {
+    return; // nothing to persist
+  }
+
+  try {
+    const inserted = (await dm.addItemToCollection(USER_PROTECTED_ATTRIBUTES, {
+      userId,
+      protectedAttributes,
+    })) as JUserProtectedRecord | null;
+
+    if (!inserted) {
+      Log.warn(`Failed to create protected attributes record for userId=${userId}.`);
+      return;
+    }
+
+    _protectedByUserId.set(userId, inserted.protectedAttributes || {});
+  } catch (error) {
+    Log.warn(`Failed to create protected attributes record for userId=${userId}.`, error);
+  }
+};
+
+/**
+ * Deletes a user's protected attributes record + cache cleanup (best-effort).
+ *
+ * This should NOT block user deletion if it fails.
+ *
+ * @private
+ */
+const _deleteProtectedAttributesRecordByUserId = async (userId: string): Promise<void> => {
+  _checkInitialization();
+
+  if (!userId) return;
+
+  _protectedByUserId.delete(userId);
+
+  try {
+    const existing = await _findProtectedRecordByUserId(userId);
+    if (!existing) return;
+
+    await dm.removeItemFromCollection(USER_PROTECTED_ATTRIBUTES, existing.id);
+  } catch (error) {
+    Log.warn(`Failed to delete protected attributes for userId=${userId}.`, error);
   }
 };
 
@@ -118,7 +273,7 @@ const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
     return null;
   }
 
-  const userDataCheck = await isIdentifierUnique(user['uniqueIdentifier']);
+  const userDataCheck = await isIdentifierUnique(user.uniqueIdentifier);
 
   if (!userDataCheck) {
     Log.warn(
@@ -128,11 +283,17 @@ const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
   }
 
   try {
-    const { uniqueIdentifier, initialAttributes } = user;
+    const { uniqueIdentifier, initialAttributes, protectedAttributes } = user;
     const convertedUser: object = { uniqueIdentifier, attributes: initialAttributes };
     const addedUser = (await dm.addItemToCollection(USERS, convertedUser)) as JUser;
+
     _users.set(addedUser.id, addedUser);
     Log.info(`Added user: ${user.uniqueIdentifier}. `);
+
+    if (protectedAttributes) {
+      await _createProtectedAttributesRecord(addedUser.id, protectedAttributes);
+    }
+
     return addedUser;
   } catch (error) {
     return handleDbError('Failed to add users:', 'addUser', error);
@@ -191,6 +352,79 @@ const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
   );
 };
 
+const getUserWithProtectedAttributesByUserId = (
+  userId: string,
+): JUserWithProtectedAttributes | null => {
+  _checkInitialization();
+
+  const user = _users.get(userId) || null;
+  if (!user) return null;
+
+  const protectedAttributes = _protectedByUserId.get(userId) || {};
+
+  return {
+    ...user,
+    protectedAttributes,
+  };
+};
+
+const getProtectedAttributesByUserId = (userId: string): JUserProtectedAttributes => {
+  _checkInitialization();
+  return _getProtectedAttributesByUserId(userId);
+};
+
+const updateProtectedAttributesByUserId = async (
+  userId: string,
+  protectedAttributesToUpdate: JUserProtectedAttributes,
+): Promise<JUserProtectedAttributes> => {
+  _checkInitialization();
+  _validatePlainObject(protectedAttributesToUpdate, 'protectedAttributesToUpdate');
+
+  const user = _users.get(userId) || null;
+  if (!user) {
+    throw new Error(`User with id (${userId}) not found.`);
+  }
+
+  const existingRecord = await _findProtectedRecordByUserId(userId);
+  if (!existingRecord) {
+    throw new Error(`Protected attributes record for userId (${userId}) not found.`);
+  }
+
+  const current = _protectedByUserId.get(userId) || {};
+  const merged = { ...current, ...protectedAttributesToUpdate };
+
+  const updated = (await dm.updateItemByIdInCollection(
+    USER_PROTECTED_ATTRIBUTES,
+    existingRecord.id,
+    { protectedAttributes: merged },
+  )) as JUserProtectedRecord | null;
+
+  if (!updated) {
+    throw new Error(`Failed to update protected attributes for userId (${userId}).`);
+  }
+
+  _protectedByUserId.set(userId, updated.protectedAttributes || {});
+  return updated.protectedAttributes || {};
+};
+
+const deleteProtectedAttributesByUserId = async (userId: string): Promise<boolean> => {
+  _checkInitialization();
+
+  const existingRecord = await _findProtectedRecordByUserId(userId);
+  if (!existingRecord) {
+    _protectedByUserId.delete(userId);
+    return true;
+  }
+
+  const deleted = await dm.removeItemFromCollection(USER_PROTECTED_ATTRIBUTES, existingRecord.id);
+
+  if (deleted) {
+    _protectedByUserId.delete(userId);
+  }
+
+  return deleted;
+};
+
 /**
  * Update the properties of a user by uniqueIdentifier
  * @param {string} userUniqueIdentifier - the uniqueIdentifier value.
@@ -204,6 +438,8 @@ const updateUserByUniqueIdentifier = async (
   userUniqueIdentifier: string,
   attributesToUpdate: Record<string, any>,
 ): Promise<JUser | null> => {
+  _checkInitialization();
+
   if (!userUniqueIdentifier || typeof userUniqueIdentifier !== 'string') {
     const msg = `Invalid uniqueIdentifier: ${userUniqueIdentifier}`;
     throw new Error(msg);
@@ -248,16 +484,21 @@ const updateUserByUniqueIdentifier = async (
 const updateUserById = async (userId: string, attributesToUpdate: object): Promise<JUser> => {
   _checkInitialization();
 
-  const existingUser: JUser | null = _users.get(userId) as JUser;
+  const existingUser: JUser | null = (_users.get(userId) as JUser) || null;
+  if (!existingUser) {
+    throw new Error(`User not found in cache for id: ${userId}`);
+  }
 
   const mergedAttributes = { ...existingUser.attributes, ...attributesToUpdate };
 
   const updatedUser = (await dm.updateItemByIdInCollection(USERS, userId, {
     attributes: mergedAttributes,
   })) as JUser;
+
   if (!updatedUser) {
     throw new Error(`Failed to update user: ${userId}`);
   }
+
   _users.set(updatedUser.id, updatedUser);
   return updatedUser;
 };
@@ -313,7 +554,10 @@ const modifyUserUniqueIdentifier = async (
 const deleteUserById = async (userId: string): Promise<boolean> => {
   _checkInitialization();
   const result = await dm.removeItemFromCollection(USERS, userId);
-  if (result) _users.delete(userId);
+  if (result) {
+    _users.delete(userId);
+    await _deleteProtectedAttributesRecordByUserId(userId);
+  }
   return result;
 };
 
@@ -324,13 +568,13 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
  * @returns {Promise<boolean>} Resolves to true if deletion was successful, false otherwise.
  */
 const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
-  const theUser: JUser | null = await getUserByUniqueIdentifier(uniqueIdentifier);
-  const userId = theUser?.id as any;
-  const result = await deleteUserById(userId);
-  if (result) _users.delete(userId);
-  return result;
-};
+  _checkInitialization();
 
+  const theUser: JUser | null = getUserByUniqueIdentifier(uniqueIdentifier);
+  if (!theUser) return false;
+
+  return await deleteUserById(theUser.id);
+};
 
 /**
  * Deletes all users from the database and clears the in-memory cache.
@@ -341,6 +585,9 @@ const deleteAllUsers = async (): Promise<void> => {
   _checkInitialization();
   await dm.clearCollection(USERS);
   _users.clear();
+
+  await dm.clearCollection(USER_PROTECTED_ATTRIBUTES);
+  _protectedByUserId.clear();
 };
 
 /**
@@ -349,8 +596,9 @@ const deleteAllUsers = async (): Promise<void> => {
  * @returns {Promise<boolean>} Resolves with a boolean indicating if the identifier is unique.
  * If the unique identifier is new, it returns true; otherwise, it returns false.
  */
-
 const isIdentifierUnique = async (userUniqueIdentifier: string): Promise<boolean> => {
+  _checkInitialization();
+
   if (
     !userUniqueIdentifier ||
     typeof userUniqueIdentifier !== 'string' ||
@@ -385,6 +633,10 @@ export const UserManager = {
   addUsers,
   getAllUsers,
   getUserByUniqueIdentifier,
+  getUserWithProtectedAttributesByUserId,
+  getProtectedAttributesByUserId,
+  updateProtectedAttributesByUserId,
+  deleteProtectedAttributesByUserId,
   updateUserByUniqueIdentifier,
   modifyUserUniqueIdentifier,
   deleteUserByUniqueIdentifier,
@@ -404,7 +656,11 @@ export const TestingUserManager = {
   deleteUserById,
   _checkInitialization,
   refreshCache,
+  refreshProtectedCache,
   isIdentifierUnique,
   setupChangeListeners,
+  setupProtectedChangeListeners,
+  _findProtectedRecordByUserId,
   _users, // Exposes the in-memory cache for testing purposes
+  _protectedByUserId, // Exposes protected attributes cache for testing purposes
 };
