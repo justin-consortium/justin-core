@@ -24,7 +24,6 @@ const Log = createLogger({
  * @private
  */
 const _users: Map<string, JUser> = new Map();
-
 /**
  * @type {Map<string, JUserProtectedAttributes>} _protectedByUserId - In-memory cache for protected user attributes.
  * IMPORTANT: This Map uses the SAME key string as `_users` (the user's DB-assigned `id`) to minimize divergence risk.
@@ -45,13 +44,11 @@ const clm = ChangeListenerManager.getInstance();
 const init = async (): Promise<void> => {
   await dm.init();
 
-  // ensure USERS exists and has a unique index on uniqueIdentifier (idempotent, DB-agnostic)
   await dm.ensureStore(USERS);
   await dm.ensureIndexes(USERS, [
     { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
   ]);
 
-  // ensure USER_PROTECTED_ATTRIBUTES exists and has a unique index on userId (idempotent, DB-agnostic)
   await dm.ensureStore(USER_PROTECTED_ATTRIBUTES);
   await dm.ensureIndexes(USER_PROTECTED_ATTRIBUTES, [
     { name: 'uniq_user_protected_user_id', key: { userId: 1 }, unique: true },
@@ -341,6 +338,11 @@ const getAllUsers = (): JUser[] => {
   return Array.from(_users.values());
 };
 
+const getUserById = (userId: string): JUser | null => {
+  _checkInitialization();
+  return _users.get(userId) || null;
+};
+
 /**
  * Retrieves a user by their unique identifier from the cache.
  * @returns {JUser | null} The user with the specified unique identifier, or null if not found.
@@ -357,7 +359,7 @@ const getUserWithProtectedAttributesByUserId = (
 ): JUserWithProtectedAttributes | null => {
   _checkInitialization();
 
-  const user = _users.get(userId) || null;
+  const user = getUserById(userId);
   if (!user) return null;
 
   const protectedAttributes = _protectedByUserId.get(userId) || {};
@@ -380,7 +382,7 @@ const updateProtectedAttributesByUserId = async (
   _checkInitialization();
   _validatePlainObject(protectedAttributesToUpdate, 'protectedAttributesToUpdate');
 
-  const user = _users.get(userId) || null;
+  const user = getUserById(userId);
   if (!user) {
     throw new Error(`User with id (${userId}) not found.`);
   }
@@ -425,6 +427,7 @@ const deleteProtectedAttributesByUserId = async (userId: string): Promise<boolea
   return deleted;
 };
 
+// TODO: we should really be using the db assigned id for a lot of these calls and lookups
 /**
  * Update the properties of a user by uniqueIdentifier
  * @param {string} userUniqueIdentifier - the uniqueIdentifier value.
@@ -460,8 +463,7 @@ const updateUserByUniqueIdentifier = async (
     throw new Error(msg);
   }
 
-  const theUser: JUser = (await getUserByUniqueIdentifier(userUniqueIdentifier)) as JUser;
-
+  const theUser = getUserByUniqueIdentifier(userUniqueIdentifier);
   if (!theUser) {
     const msg = `User with uniqueIdentifier (${userUniqueIdentifier}) not found.`;
     throw new Error(msg);
@@ -484,7 +486,7 @@ const updateUserByUniqueIdentifier = async (
 const updateUserById = async (userId: string, attributesToUpdate: object): Promise<JUser> => {
   _checkInitialization();
 
-  const existingUser: JUser | null = (_users.get(userId) as JUser) || null;
+  const existingUser = getUserById(userId);
   if (!existingUser) {
     throw new Error(`User not found in cache for id: ${userId}`);
   }
@@ -570,7 +572,7 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
 const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
   _checkInitialization();
 
-  const theUser: JUser | null = getUserByUniqueIdentifier(uniqueIdentifier);
+  const theUser = getUserByUniqueIdentifier(uniqueIdentifier);
   if (!theUser) return false;
 
   return await deleteUserById(theUser.id);
@@ -608,10 +610,7 @@ const isIdentifierUnique = async (userUniqueIdentifier: string): Promise<boolean
     throw new Error(msg);
   }
 
-  const existingUser: JUser | null = (await getUserByUniqueIdentifier(
-    userUniqueIdentifier,
-  )) as JUser;
-
+  const existingUser = getUserByUniqueIdentifier(userUniqueIdentifier);
   if (existingUser) {
     const msg = `User with unique identifier (${userUniqueIdentifier}) already exists.`;
     Log.debug(msg);
@@ -632,13 +631,16 @@ export const UserManager = {
   addUser,
   addUsers,
   getAllUsers,
+  getUserById,
   getUserByUniqueIdentifier,
   getUserWithProtectedAttributesByUserId,
   getProtectedAttributesByUserId,
   updateProtectedAttributesByUserId,
   deleteProtectedAttributesByUserId,
+  updateUserById,
   updateUserByUniqueIdentifier,
   modifyUserUniqueIdentifier,
+  deleteUserById,
   deleteUserByUniqueIdentifier,
   deleteAllUsers,
   shutdown,
@@ -652,8 +654,6 @@ export const UserManager = {
  */
 export const TestingUserManager = {
   ...UserManager,
-  updateUserById,
-  deleteUserById,
   _checkInitialization,
   refreshCache,
   refreshProtectedCache,
