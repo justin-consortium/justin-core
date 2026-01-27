@@ -12,12 +12,43 @@ const Log = createLogger({
     source: 'data-manager',
   },
 });
+
+/**
+ * Minimal database adapter contract used by {@link DataManager}.
+ *
+ * This keeps DataManager database-agnostic while letting TypeScript
+ * type-check calls against the active adapter.
+ */
+type DataManagerAdapter = {
+  init: (...args: any[]) => Promise<void>;
+  close: () => Promise<void>;
+
+  ensureStore: (storeName: string, options?: any) => Promise<void>;
+  ensureIndexes: (storeName: string, indexes: any[]) => Promise<void>;
+
+  getCollectionChangeReadable: (collectionName: string, changeType: CollectionChangeType) => Readable;
+
+  findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
+  findItemsInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object[]>;
+  findFirstInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object | null>;
+
+  addItemToCollection: (collectionName: string, item: object) => Promise<string>;
+  updateItemInCollection: (collectionName: string, id: string, item: object) => Promise<object | null>;
+  getAllInCollection: (collectionName: string) => Promise<object[]>;
+  removeItemFromCollection: (collectionName: string, id: string) => Promise<boolean>;
+  clearCollection: (collectionName: string) => Promise<boolean>;
+  isCollectionEmpty: (collectionName: string) => Promise<boolean>;
+};
+
 /**
  * Manages database operations and collection change listeners.
  */
 class DataManager extends EventEmitter {
   protected static instance: DataManager | null = null;
-  private db = MongoDBManager;
+
+  // NOTE: typed against an adapter contract (DB-agnostic)
+  private db: DataManagerAdapter = MongoDBManager;
+
   private changeListenerManager = ChangeListenerManager.getInstance();
   private isInitialized = false;
   private initializedAt: Date | null = null;
@@ -131,11 +162,14 @@ class DataManager extends EventEmitter {
    * @param {object} item - The item to add to the collection.
    * @returns {Promise<object | null>} Resolves with the added item, or `null` if an error occurs.
    */
-  public async addItemToCollection(collectionName: string, item: object): Promise<object | null> {
+  public async addItemToCollection<T extends object>(
+    collectionName: string,
+    item: T,
+  ): Promise<(T & { id: string }) | null> {
     try {
       this.checkInitialization();
       const id = await this.db.addItemToCollection(collectionName, item);
-      const newItem = { id, ...item };
+      const newItem = { id, ...item } as T & { id: string };
 
       if (collectionName === USERS) {
         this.emit('userAdded', newItem);
@@ -150,6 +184,7 @@ class DataManager extends EventEmitter {
       );
     }
   }
+
 
   /**
    * Updates an item in a collection by ID and emits an event.
@@ -283,16 +318,15 @@ class DataManager extends EventEmitter {
    * Finds items by criteria in a specified collection.
    * @template T - The expected type of the item in the collection.
    * @param {string} collectionName - The name of the collection.
-   * @param {object} criteria - An object containing the key-value pair to search for. An empty object will return all items.
-   *                            If `null`, it will return `null`.
-   * @returns {Promise<T[] | null>} Resolves with the found item of type `T` or `null` if not found or on error.
+   * @param {object} criteria - An object containing the key-value pair to search for.
+   * @returns {Promise<T[] | null>} Resolves with items or `null` on error.
    */
   public async findItemsInCollection<T>(
     collectionName: string,
     criteria: Record<string, any>,
   ): Promise<T[] | null> {
     if (!criteria || !collectionName) {
-      return null; // Return null if criteria is null
+      return null;
     }
 
     try {
@@ -301,7 +335,7 @@ class DataManager extends EventEmitter {
       return itemList as T[] | null;
     } catch (error) {
       return handleDbError(
-        `Failed to find items by criteria: ${criteria} in collection: ${collectionName}`,
+        `Failed to find items by criteria in collection: ${collectionName}`,
         'findItemsInCollection',
         error,
       ) as null;
@@ -310,7 +344,6 @@ class DataManager extends EventEmitter {
 
   /**
    * Provides a change stream for a specific collection and change type.
-   * This method is used by the ChangeListenerManager to abstract away database-specific logic.
    * @param {string} collectionName - The name of the collection to monitor.
    * @param {CollectionChangeType} changeType - The type of change to monitor.
    * @returns {Readable} A readable stream of change events.
