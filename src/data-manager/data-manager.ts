@@ -22,11 +22,16 @@ const Log = createLogger({
 type DataManagerAdapter = {
   init: (...args: any[]) => Promise<void>;
   close: () => Promise<void>;
+
   ensureStore: (storeName: string, options?: any) => Promise<void>;
   ensureIndexes: (storeName: string, indexes: any[]) => Promise<void>;
+
   getCollectionChangeReadable: (collectionName: string, changeType: CollectionChangeType) => Readable;
+
   findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
   findItemsInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object[]>;
+  findFirstInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object | null>;
+
   addItemToCollection: (collectionName: string, item: object) => Promise<string>;
   updateItemInCollection: (collectionName: string, id: string, item: object) => Promise<object | null>;
   getAllInCollection: (collectionName: string) => Promise<object[]>;
@@ -303,6 +308,34 @@ class DataManager extends EventEmitter {
       return handleDbError(
         `Failed to find item by ID in collection: ${collectionName}`,
         'findItemByIdInCollection',
+        error,
+      ) as null;
+    }
+  }
+
+  /**
+   * Finds items by criteria in a specified collection.
+   * @template T - The expected type of the item in the collection.
+   * @param {string} collectionName - The name of the collection.
+   * @param {object} criteria - An object containing the key-value pair to search for.
+   * @returns {Promise<T[] | null>} Resolves with items or `null` on error.
+   */
+  public async findItemsInCollection<T>(
+    collectionName: string,
+    criteria: Record<string, any>,
+  ): Promise<T[] | null> {
+    if (!criteria || !collectionName) {
+      return null;
+    }
+
+    try {
+      this.checkInitialization();
+      const itemList = await this.db.findItemsInCollection(collectionName, criteria);
+      return itemList as T[] | null;
+    } catch (error) {
+      return handleDbError(
+        `Failed to find items by criteria in collection: ${collectionName}`,
+        'findItemsInCollection',
         error,
       ) as null;
     }
