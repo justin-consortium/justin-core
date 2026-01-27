@@ -49,7 +49,9 @@ describe('DataManager (integration)', () => {
     expect(created!.id).toEqual(expect.any(String));
     expect(created).toMatchObject({ name: 'Alice', role: 'admin' });
 
-    const all = await dm.getAllInCollection<typeof created>(USERS);
+    type CreatedUser = { id: string; name: string; role: string };
+    const all = await dm.getAllInCollection<CreatedUser>(USERS);
+
     expect(all).not.toBeNull();
     expect(all!.length).toBeGreaterThan(0);
   });
@@ -60,8 +62,9 @@ describe('DataManager (integration)', () => {
       role: 'user',
     });
 
-    const insertedAny = inserted as any;
-    const id = typeof insertedAny?.id === 'string' ? insertedAny.id : (insertedAny?.id as any)?.id;
+    expect(inserted).not.toBeNull();
+
+    const id = inserted!.id;
 
     const updated = await dm.updateItemByIdInCollection(USERS, id, {
       role: 'power-user',
@@ -75,7 +78,10 @@ describe('DataManager (integration)', () => {
   it('can clear a collection and check emptiness', async () => {
     await dm.ensureStore('logs');
 
-    await dm.addItemToCollection('logs', { msg: 'first' });
+    const created = await dm.addItemToCollection('logs', { msg: 'first' });
+    expect(created).not.toBeNull();
+    expect(created!.id).toEqual(expect.any(String));
+
     const notEmpty = await dm.isCollectionEmpty('logs');
     expect(notEmpty).toBe(false);
 

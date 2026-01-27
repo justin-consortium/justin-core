@@ -61,7 +61,9 @@ describe('DataManager (unit)', () => {
     const dm = DataManager.getInstance();
 
     await expect(dm.ensureStore('things')).rejects.toThrow('DataManager has not been initialized');
-    await expect(dm.ensureIndexes('things', [])).rejects.toThrow('DataManager has not been initialized');
+    await expect(dm.ensureIndexes('things', [])).rejects.toThrow(
+      'DataManager has not been initialized',
+    );
   });
 
   it('ensures store and indexes after init', async () => {
@@ -103,7 +105,10 @@ describe('DataManager (unit)', () => {
 
     const res = await dm.addItemToCollection(USERS, { name: 'Ada' });
 
+    expect(res).not.toBeNull();
     expect(res).toEqual({ id: 'new-id-1', name: 'Ada' });
+    expect(res!.id).toBe('new-id-1');
+
     expect(dmSandbox.mongo.addItemToCollection.calledWith(USERS, { name: 'Ada' })).toBe(true);
 
     sinon.assert.calledOnce(onUserAdded);
@@ -117,7 +122,7 @@ describe('DataManager (unit)', () => {
     const boom = new Error('fail-add');
     dmSandbox.mongo.addItemToCollection.rejects(boom);
 
-    await expect(dm.addItemToCollection('things', { x: 1 })).rejects.toBe(boom);
+    await expect(dm.addItemToCollection<any>('things', { x: 1 })).rejects.toBe(boom);
 
     expect(dmSandbox.handleDbErrorSpy.calledOnce).toBe(true);
 
@@ -287,7 +292,9 @@ describe('DataManager (unit)', () => {
     await dm.init(DBType.MONGO);
 
     dmSandbox.mongo.findItemByIdInCollection.resolves({ id: 't1', v: 1 });
-    await expect(dm.findItemByIdInCollection<{ id: string; v: number }>('things', 't1')).resolves.toEqual({
+    await expect(
+      dm.findItemByIdInCollection<{ id: string; v: number }>('things', 't1'),
+    ).resolves.toEqual({
       id: 't1',
       v: 1,
     });
