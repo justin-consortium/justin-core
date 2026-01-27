@@ -165,11 +165,11 @@ class DataManager extends EventEmitter {
   public async addItemToCollection<T extends object>(
     collectionName: string,
     item: T,
-  ): Promise<(T & { id: string }) | null> {
+  ): Promise<(T & { id: string }) | null>{
     try {
       this.checkInitialization();
       const id = await this.db.addItemToCollection(collectionName, item);
-      const newItem = { id, ...item } as T & { id: string };
+      const newItem = { id, ...item };
 
       if (collectionName === USERS) {
         this.emit('userAdded', newItem);
@@ -184,7 +184,6 @@ class DataManager extends EventEmitter {
       );
     }
   }
-
 
   /**
    * Updates an item in a collection by ID and emits an event.
