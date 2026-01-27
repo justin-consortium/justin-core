@@ -22,16 +22,11 @@ const Log = createLogger({
 type DataManagerAdapter = {
   init: (...args: any[]) => Promise<void>;
   close: () => Promise<void>;
-
   ensureStore: (storeName: string, options?: any) => Promise<void>;
   ensureIndexes: (storeName: string, indexes: any[]) => Promise<void>;
-
   getCollectionChangeReadable: (collectionName: string, changeType: CollectionChangeType) => Readable;
-
   findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
   findItemsInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object[]>;
-  findFirstInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object | null>;
-
   addItemToCollection: (collectionName: string, item: object) => Promise<string>;
   updateItemInCollection: (collectionName: string, id: string, item: object) => Promise<object | null>;
   getAllInCollection: (collectionName: string) => Promise<object[]>;
