@@ -30,7 +30,6 @@ type DataManagerAdapter = {
 
   findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
   findItemsInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object[]>;
-  findFirstInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object | null>;
 
   addItemToCollection: (collectionName: string, item: object) => Promise<string>;
   updateItemInCollection: (collectionName: string, id: string, item: object) => Promise<object | null>;
