@@ -45,14 +45,11 @@ describe('DataManager (integration)', () => {
       role: 'admin',
     });
 
-    const createdAny = created as any;
-    const createdId =
-      typeof createdAny?.id === 'string' ? createdAny.id : (createdAny?.id as any)?.id;
+    expect(created).not.toBeNull();
+    expect(created!.id).toEqual(expect.any(String));
+    expect(created).toMatchObject({ name: 'Alice', role: 'admin' });
 
-    expect(createdId).toBeTruthy();
-    expect(createdAny).toMatchObject({ name: 'Alice', role: 'admin' });
-
-    const all = await dm.getAllInCollection<typeof createdAny>(USERS);
+    const all = await dm.getAllInCollection<typeof created>(USERS);
     expect(all).not.toBeNull();
     expect(all!.length).toBeGreaterThan(0);
   });

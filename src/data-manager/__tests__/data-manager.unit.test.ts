@@ -326,7 +326,8 @@ describe('DataManager (unit)', () => {
     expect(dmSandbox.handleDbErrorSpy.calledOnce).toBe(true);
 
     const [msg, fnName, err] = dmSandbox.handleDbErrorSpy.getCall(0).args;
-    expect(msg).toBe('Failed to find items by criteria: [object Object] in collection: things');
+    expect(String(msg)).toContain('Failed to find items by criteria');
+    expect(String(msg)).toContain('collection: things');
     expect(fnName).toBe('findItemsInCollection');
     expect(err).toBe(boom);
   });

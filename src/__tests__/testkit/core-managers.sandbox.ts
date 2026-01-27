@@ -5,6 +5,26 @@ import DataManager from '../../data-manager/data-manager';
 import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
 import * as HelpersModule from '../../data-manager/data-manager.helpers';
 
+/**
+ * Error shape thrown by the `handleDbError` stub in {@link makeCoreManagersSandbox}.
+ * Includes the original db message passed to `handleDbError` as `dbMessage`.
+ */
+export type DbErrorWithMessage = Error & { dbMessage: string };
+
+/**
+ * Type guard for errors thrown by the `handleDbError` stub.
+ */
+export function isDbErrorWithMessage(err: unknown): err is DbErrorWithMessage {
+  return err instanceof Error && typeof (err as any).dbMessage === 'string';
+}
+
+/**
+ * Convenience accessor for the dbMessage (returns undefined if not present).
+ */
+export function getDbMessage(err: unknown): string | undefined {
+  return isDbErrorWithMessage(err) ? err.dbMessage : undefined;
+}
+
 export type CoreManagersSandbox = {
   /**
    * The underlying Sinon sandbox. Prefer using `.restore()` on the returned object.
@@ -23,6 +43,7 @@ export type CoreManagersSandbox = {
 
   /**
    * Stubbed handleDbError that always throws the underlying error (or a new Error).
+   * The thrown error will include `dbMessage` (the first arg passed to handleDbError).
    */
   handleDbErrorStub: SinonStub;
 
@@ -96,7 +117,7 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
         error instanceof Error ? error : new Error(String(error ?? msg));
 
       // Useful for assertions if tests want it.
-      (err as any).dbMessage = msg;
+      (err as DbErrorWithMessage).dbMessage = msg;
 
       throw err;
     });

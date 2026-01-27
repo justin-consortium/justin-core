@@ -2,7 +2,7 @@ import { Readable } from 'stream';
 
 export type Obj = Record<string, unknown>;
 
-export function makeStream<T = Obj>(): Readable {
+export function makeStream(): Readable {
   return new Readable({
     objectMode: true,
     read() {

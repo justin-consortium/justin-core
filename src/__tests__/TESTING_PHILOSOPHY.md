@@ -155,6 +155,12 @@ Add a helper when:
 
 Do **not** add helpers that obscure behavior.
 
+Avoid helpers that assert behavior.
+- Helpers should prepare inputs or infrastructure, 
+not define what “success” means. If a helper performs 
+assertions, the test reader can no longer see which behaviors 
+are important for that test case.
+
 ---
 
 ## Final Rule
