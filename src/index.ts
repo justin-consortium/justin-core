@@ -25,3 +25,10 @@ export type {
   EmitFn,
   LoggerConfig,
 } from './logger';
+
+
+/**
+ * Lifecycle
+ */
+export { shutdownCore } from './lifecycle';
+export type { ShutdownCoreOptions } from './lifecycle';
