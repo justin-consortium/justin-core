@@ -11,6 +11,17 @@ const Log = createLogger({
 });
 
 /**
+ * A readable stream that may optionally expose an adapter-specific cleanup hook.
+ *
+ * Some adapters (e.g., Mongo change streams) need an explicit close step to avoid
+ * leaving underlying resources open. When present, `cleanup()` should close those
+ * resources. If absent, callers should fall back to `stream.destroy()`.
+ */
+type ReadableWithCleanup = Readable & {
+  cleanup?: () => Promise<void> | void;
+};
+
+/**
  * Manages change listeners for database collections.
  *
  * The `ChangeListenerManager` allows registering, removing, and managing
@@ -22,7 +33,7 @@ class ChangeListenerManager extends EventEmitter {
   private changeListeners: Map<
     string,
     {
-      stream: Readable;
+      stream: ReadableWithCleanup;
       collectionName: string;
       changeType: CollectionChangeType;
       cleanup: () => void;
@@ -72,7 +83,10 @@ class ChangeListenerManager extends EventEmitter {
       return;
     }
 
-    const stream = DataManager.getInstance().getChangeStream(collectionName, changeType);
+    const stream = DataManager.getInstance().getChangeStream(
+      collectionName,
+      changeType,
+    ) as ReadableWithCleanup;
 
     const listener = (data: T) => {
       callback(data);
@@ -114,10 +128,31 @@ class ChangeListenerManager extends EventEmitter {
     }
 
     const { stream, cleanup } = this.changeListeners.get(key)!;
-    cleanup();
-    stream.destroy();
-    this.changeListeners.delete(key);
 
+    // Remove listeners we attached.
+    cleanup();
+
+    /**
+     * Some adapters attach a `cleanup()` method to the readable stream to close
+     * underlying resources (e.g., MongoDB change streams). If present, we call it
+     * best-effort before destroying the stream.
+     */
+    const maybeCleanup = stream.cleanup;
+
+    if (maybeCleanup) {
+      Promise.resolve()
+        .then(() => maybeCleanup())
+        .catch(() => {
+          /* swallow */
+        })
+        .finally(() => {
+          stream.destroy();
+        });
+    } else {
+      stream.destroy();
+    }
+
+    this.changeListeners.delete(key);
     Log.info(`Change listener removed for ${key}.`);
   }
 
@@ -129,10 +164,27 @@ class ChangeListenerManager extends EventEmitter {
    */
   public clearChangeListeners(): void {
     for (const { stream, cleanup, collectionName, changeType } of this.changeListeners.values()) {
+      // Remove listeners we attached.
       cleanup();
-      stream.destroy();
+
+      const maybeCleanup = stream.cleanup;
+
+      if (maybeCleanup) {
+        Promise.resolve()
+          .then(() => maybeCleanup())
+          .catch(() => {
+            /* swallow */
+          })
+          .finally(() => {
+            stream.destroy();
+          });
+      } else {
+        stream.destroy();
+      }
+
       Log.info(`Change listener for ${collectionName}:${changeType} removed.`);
     }
+
     this.changeListeners.clear();
     Log.info(`All custom change listeners removed.`);
   }
