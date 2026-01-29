@@ -100,18 +100,20 @@ const _checkInitialization = (): void => {
 /**
  * Adds one user to the Users collection in a single operation.
  * @param {object} user - The user object to add.
- * @returns {Promise<JUser | null>} Resolves with the added user or null if the operation fails.
- * @throws {Error} If no user is provided or if the user fails validation.
+ * @returns {Promise<JUser | null>} Resolves with the added user or null if validation fails.
+ * @throws {Error} If database operation failed.
  */
 const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
   _checkInitialization();
 
+  // TODO: consider throwing to align with the contract described in the comment
   if (!user || typeof user !== 'object' || Array.isArray(user)) {
     const msg = `Invalid user data: ${JSON.stringify(user)}. It must be a non-null object and should not be an array.`;
     Log.warn(msg);
     return null;
   }
 
+  // TODO: consider throwing to align with the contract described in the comment
   if (!user.uniqueIdentifier) {
     const msg = `UniqueIdentifier is missing`;
     Log.warn(msg);
@@ -120,6 +122,7 @@ const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
 
   const userDataCheck = await isIdentifierUnique(user['uniqueIdentifier']);
 
+  // TODO: consider throwing to align with the contract described in the comment
   if (!userDataCheck) {
     Log.warn(
       `User's unique identifier already exists. Skipping insertion: ${user.uniqueIdentifier}. `,
