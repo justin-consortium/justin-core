@@ -113,8 +113,7 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
       const msg = String(message);
       const error = maybeError ?? maybeMethod;
 
-      const err =
-        error instanceof Error ? error : new Error(String(error ?? msg));
+      const err = error instanceof Error ? error : new Error(String(error ?? msg));
 
       // Useful for assertions if tests want it.
       (err as DbErrorWithMessage).dbMessage = msg;

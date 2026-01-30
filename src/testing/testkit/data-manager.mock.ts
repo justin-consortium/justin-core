@@ -82,12 +82,6 @@ function installDataManagerSingleton(dm: DataManagerMock) {
   };
 }
 
-
-
 export type { DataManagerMock };
 
-export {
-  mockDataManager,
-  createDataManagerMock,
-  installDataManagerSingleton,
-};
+export { mockDataManager, createDataManagerMock, installDataManagerSingleton };

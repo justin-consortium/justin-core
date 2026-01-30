@@ -70,7 +70,9 @@ describe('DataManager (unit)', () => {
     await dm.init(DBType.MONGO);
 
     await expect(dm.ensureStore('things', { validator: { ok: true } })).resolves.toBeUndefined();
-    expect(dmSandbox.mongo.ensureStore.calledWith('things', { validator: { ok: true } })).toBe(true);
+    expect(dmSandbox.mongo.ensureStore.calledWith('things', { validator: { ok: true } })).toBe(
+      true,
+    );
 
     const indexes = [{ name: 'i1', key: { a: 1 }, unique: true }];
     await expect(dm.ensureIndexes('things', indexes)).resolves.toBeUndefined();

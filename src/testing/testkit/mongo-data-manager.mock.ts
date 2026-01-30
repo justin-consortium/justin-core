@@ -90,8 +90,6 @@ function makeFakeMongo(): FakeMongo {
   return { collection, db, client };
 }
 
-
-
 export type { MongoManagerMock, FakeMongo, FakeCollection, FakeDb, FakeClient };
 
 export { createMongoManagerMock, makeFakeMongo };

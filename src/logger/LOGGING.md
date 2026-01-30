@@ -1,8 +1,8 @@
-# Logging in the @just-in/* ecosystem
+# Logging in the @just-in/\* ecosystem
 
 Justin’s logger is designed to be:
 
-- **Framework-agnostic** — usable from any `@just-in/*` package *or your own app code*.
+- **Framework-agnostic** — usable from any `@just-in/*` package _or your own app code_.
 - **Configurable** — global defaults plus per-logger (“scoped”) overrides.
 - **Transport-agnostic** — defaults to console output, but you can plug in your own emitter.
 
@@ -68,7 +68,7 @@ Justin has two concepts that work together:
 You set global defaults once (typically at app start):
 
 - minimum log level
-- global context (merged into every log line - 
+- global context (merged into every log line -
   typically app level information)
 - global emitter (defaults to console logging)
 - optional callback
@@ -189,7 +189,7 @@ configureLogger({
   },
   // Optional: a post-emit hook (tests, metrics).
   callback: (entry) => {
-    // e.g. increment counters by severity, 
+    // e.g. increment counters by severity,
     // write to a database certain logs,
     // trigger an alert, etc
   },
@@ -206,7 +206,7 @@ configureLogger({
 
 ### Adding custom severities
 
-You can extend severity levels beyond `BaseSeverity` *if* you also provide rankings.
+You can extend severity levels beyond `BaseSeverity` _if_ you also provide rankings.
 
 Example idea:
 
@@ -240,10 +240,10 @@ configureLogger<MySeverity>({
 - **Use stable scoped context** (`source`, `subsystem`) in `createLogger({ context: ... })`.
 - **Use `fields` for per-event data** (ids, counts, durations).
 - **Log at the right level**:
-    - `DEBUG` for diagnostics
-    - `INFO` for normal lifecycle milestones
-    - `WARNING` for recoverable issues or invalid input
-    - `ERROR` for failures that require attention
+  - `DEBUG` for diagnostics
+  - `INFO` for normal lifecycle milestones
+  - `WARNING` for recoverable issues or invalid input
+  - `ERROR` for failures that require attention
 
 ### Don’t
 

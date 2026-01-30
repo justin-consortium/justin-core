@@ -52,8 +52,7 @@ describe('@just-in/core system / sanity tests', () => {
       UserManager.shutdown();
       await dm.close();
       await repl.stop();
-    } catch {
-    }
+    } catch {}
 
     logs.restore();
     sb.restore();

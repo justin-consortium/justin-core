@@ -26,13 +26,23 @@ type DataManagerAdapter = {
   ensureStore: (storeName: string, options?: any) => Promise<void>;
   ensureIndexes: (storeName: string, indexes: any[]) => Promise<void>;
 
-  getCollectionChangeReadable: (collectionName: string, changeType: CollectionChangeType) => Readable;
+  getCollectionChangeReadable: (
+    collectionName: string,
+    changeType: CollectionChangeType,
+  ) => Readable;
 
   findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
-  findItemsInCollection: (collectionName: string, criteria: Record<string, any>) => Promise<object[]>;
+  findItemsInCollection: (
+    collectionName: string,
+    criteria: Record<string, any>,
+  ) => Promise<object[]>;
 
   addItemToCollection: (collectionName: string, item: object) => Promise<string>;
-  updateItemInCollection: (collectionName: string, id: string, item: object) => Promise<object | null>;
+  updateItemInCollection: (
+    collectionName: string,
+    id: string,
+    item: object,
+  ) => Promise<object | null>;
   getAllInCollection: (collectionName: string) => Promise<object[]>;
   removeItemFromCollection: (collectionName: string, id: string) => Promise<boolean>;
   clearCollection: (collectionName: string) => Promise<boolean>;
@@ -164,7 +174,7 @@ class DataManager extends EventEmitter {
   public async addItemToCollection<T extends object>(
     collectionName: string,
     item: T,
-  ): Promise<(T & { id: string }) | null>{
+  ): Promise<(T & { id: string }) | null> {
     try {
       this.checkInitialization();
       const id = await this.db.addItemToCollection(collectionName, item);

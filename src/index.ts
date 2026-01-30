@@ -26,7 +26,6 @@ export type {
   LoggerConfig,
 } from './logger';
 
-
 /**
  * Lifecycle
  */

@@ -331,7 +331,6 @@ const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<b
   return result;
 };
 
-
 /**
  * Deletes all users from the database and clears the in-memory cache.
  *
