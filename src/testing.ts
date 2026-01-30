@@ -1,5 +1,3 @@
-// src/testing.ts
-
 /**
  * Test utilities for @just-in/core.
  *
