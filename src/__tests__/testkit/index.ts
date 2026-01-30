@@ -25,3 +25,5 @@ export type {
   FakeDb,
   FakeClient,
 } from './mongo-data-manager.mock';
+
+export { waitForMongoReady } from './mongo-memory';

@@ -5,6 +5,17 @@ import { USERS } from '../data-manager.constants';
 import { resetSingleton, expectLog } from '../../__tests__/helpers';
 import { mockDataManager, loggerSpies } from '../../__tests__/testkit';
 
+/**
+ * ChangeListenerManager calls `stream.cleanup?.()` asynchronously (best-effort)
+ * before destroying the stream.
+ *
+ * These helpers let tests wait for that microtask chain to finish.
+ */
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await new Promise((r) => setImmediate(r));
+}
+
 describe('ChangeListenerManager (unit)', () => {
   let sb: SinonSandbox;
   let manager: ChangeListenerManager;
@@ -111,7 +122,7 @@ describe('ChangeListenerManager (unit)', () => {
 
     const emitted: any[] = [];
     const eventName = `${USERS}-${CollectionChangeType.INSERT}`;
-    manager.on(eventName, (payload) => emitted.push(payload));
+    manager.on(eventName, (payload: any) => emitted.push(payload));
 
     const payload = { id: 'u5' };
     const stream = dm.getStream(USERS, CollectionChangeType.INSERT);
@@ -143,7 +154,7 @@ describe('ChangeListenerManager (unit)', () => {
   });
 
   it('warns when removing a non-existent listener', () => {
-    mockDataManager();
+    const dm = mockDataManager();
     const logs = loggerSpies();
 
     manager.removeChangeListener(USERS, CollectionChangeType.DELETE);
@@ -151,5 +162,48 @@ describe('ChangeListenerManager (unit)', () => {
     expectLog(logs.last(), { severity: 'WARNING', messageSubstr: 'No change listener registered' });
 
     logs.restore();
+    dm.restore();
+  });
+
+  it('calls stream.cleanup() (if present) when removing a listener, then destroys the stream', async () => {
+    const dm = mockDataManager();
+
+    const cb = sb.stub();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
+
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT) as any;
+
+    const cleanupStub = sb.stub().resolves();
+    stream.cleanup = cleanupStub;
+
+    manager.removeChangeListener(USERS, CollectionChangeType.INSERT);
+
+    await flushMicrotasks();
+
+    sinon.assert.calledOnce(cleanupStub);
+    expect(stream.destroyed ?? false).toBe(true);
+
+    dm.restore();
+  });
+
+  it('still destroys the stream even if stream.cleanup() rejects', async () => {
+    const dm = mockDataManager();
+
+    const cb = sb.stub();
+    manager.addChangeListener(USERS, CollectionChangeType.INSERT, cb);
+
+    const stream = dm.getStream(USERS, CollectionChangeType.INSERT) as any;
+
+    const cleanupStub = sb.stub().rejects(new Error('cleanup-failed'));
+    stream.cleanup = cleanupStub;
+
+    manager.removeChangeListener(USERS, CollectionChangeType.INSERT);
+
+    await flushMicrotasks();
+
+    sinon.assert.calledOnce(cleanupStub);
+    expect(stream.destroyed ?? false).toBe(true);
+
+    dm.restore();
   });
 });
