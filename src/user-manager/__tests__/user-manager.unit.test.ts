@@ -1,5 +1,5 @@
 import sinon from 'sinon';
-import { makeCoreManagersSandbox, type CoreManagersSandbox } from '../../__tests__/testkit';
+import { makeCoreManagersSandbox, type CoreManagersSandbox } from '../../testing';
 import DataManager from '../../data-manager/data-manager';
 import { USERS } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';

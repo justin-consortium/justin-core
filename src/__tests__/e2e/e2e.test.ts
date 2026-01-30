@@ -12,7 +12,7 @@ import sinon from 'sinon';
 
 import DataManager, { DBType, USERS, UserManager, shutdownCore } from '../../index';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
-import { loggerSpies } from '../testkit/logger.spies';
+import { loggerSpies } from '../../testing/testkit/logger.spies';
 
 jest.setTimeout(120_000);
 

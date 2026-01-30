@@ -7,5 +7,5 @@
  * ⚠️ Intended for test environments only.
  */
 
-export * from './__tests__/helpers';
-export * from './__tests__/testkit';
+export * from './helpers';
+export * from './testkit';

@@ -1,4 +1,4 @@
-import { CapturedEmit } from "../testkit/logger.sandbox";
+import { CapturedEmit } from "src/__tests__/testkit/logger.sandbox";
 
 export function expectLog(
   log: CapturedEmit | undefined,

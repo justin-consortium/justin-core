@@ -7,9 +7,8 @@ import { CollectionChangeType } from '../../data-manager.type';
 import * as Helpers from '../../data-manager.helpers';
 import * as MongoHelpers from '../mongo.helpers';
 import { MongoDBManager, TestingMongoDBManager } from '../mongo-data-manager';
-import { loggerSpies, makeFakeMongo } from '../../../__tests__/testkit';
-import type { FakeMongo } from '../../../__tests__/testkit';
-import { expectLog } from '../../../__tests__/helpers';
+import { loggerSpies, makeFakeMongo, expectLog } from '../../../testing';
+import type { FakeMongo } from '../../../testing';
 
 describe('MongoDBManager (unit)', () => {
   let sb: SinonSandbox;
@@ -118,7 +117,7 @@ describe('MongoDBManager (unit)', () => {
         validator: { x: 1 },
       });
 
-      const warnings = logs.captured.filter((c) => c.entry.severity === 'WARNING');
+      const warnings = logs.captured.filter((c: { entry: { severity: string; }; }) => c.entry.severity === 'WARNING');
       expect(warnings.length).toBeGreaterThan(0);
     });
   });

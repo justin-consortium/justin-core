@@ -3,8 +3,7 @@ import sinon, { SinonSandbox } from 'sinon';
 import DataManager from '../data-manager';
 import { DBType, USERS } from '../data-manager.constants';
 import { CollectionChangeType } from '../data-manager.type';
-import { resetSingleton } from '../../__tests__/helpers';
-import { makeDataManagerSandbox } from '../../__tests__/testkit';
+import { resetSingleton, makeDataManagerSandbox } from '../../testing';
 
 describe('DataManager (unit)', () => {
   let sb: SinonSandbox;

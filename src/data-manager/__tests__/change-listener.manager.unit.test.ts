@@ -2,8 +2,7 @@ import sinon, { SinonSandbox } from 'sinon';
 import { ChangeListenerManager } from '../change-listener.manager';
 import { CollectionChangeType } from '../data-manager.type';
 import { USERS } from '../data-manager.constants';
-import { resetSingleton, expectLog } from '../../__tests__/helpers';
-import { mockDataManager, loggerSpies } from '../../__tests__/testkit';
+import { resetSingleton, expectLog, mockDataManager, loggerSpies } from '../../testing';
 
 /**
  * ChangeListenerManager calls `stream.cleanup?.()` asynchronously (best-effort)

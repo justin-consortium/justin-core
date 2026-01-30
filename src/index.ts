@@ -1,6 +1,6 @@
 import DataManager from './data-manager/data-manager';
 
-export default DataManager;
+export { DataManager };
 
 export { ChangeListenerManager } from './data-manager/change-listener.manager';
 

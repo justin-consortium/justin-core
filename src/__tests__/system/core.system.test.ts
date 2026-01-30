@@ -16,7 +16,7 @@ import DataManager from '../../data-manager/data-manager';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
 import { UserManager, TestingUserManager } from '../../user-manager/user-manager';
 import { DBType, USERS } from '../../data-manager/data-manager.constants';
-import { waitForMongoReady, loggerSpies } from '../testkit';
+import { waitForMongoReady, loggerSpies } from '../../testing/';
 
 describe('@just-in/core system / sanity tests', () => {
   let repl: MongoMemoryReplSet;

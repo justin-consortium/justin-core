@@ -1,6 +1,5 @@
 import { handleDbError } from '../data-manager.helpers';
-import { loggerSpies } from '../../__tests__/testkit';
-import { expectLog } from '../../__tests__/helpers';
+import { loggerSpies, expectLog } from '../../testing';
 
 describe('DataManager Helpers', () => {
   describe('handleDbError (unit)', () => {

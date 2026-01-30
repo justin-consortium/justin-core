@@ -2,8 +2,7 @@ import * as mongoDB from 'mongodb';
 import sinon, { SinonSandbox } from 'sinon';
 import { NO_ID } from '../../data-manager.constants';
 import { toObjectId, transformId, asIndexKey, normalizeIndexKey } from '../mongo.helpers';
-import { loggerSpies } from '../../../__tests__/testkit';
-import { expectLog } from '../../../__tests__/helpers';
+import { loggerSpies, expectLog } from '../../../testing';
 
 describe('mongo.helpers (unit)', () => {
   let sb: SinonSandbox;
