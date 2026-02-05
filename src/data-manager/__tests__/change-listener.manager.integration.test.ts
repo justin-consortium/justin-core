@@ -1,8 +1,7 @@
 import sinon from 'sinon';
 import { ChangeListenerManager } from '../change-listener.manager';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import { push, resetSingleton } from '../../__tests__/helpers';
-import { mockDataManager, loggerSpies } from '../../__tests__/testkit';
+import { push, resetSingleton, mockDataManager, loggerSpies } from '../../testing';
 
 describe('ChangeListenerManager (integration)', () => {
   let manager: ChangeListenerManager;

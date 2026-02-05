@@ -28,7 +28,9 @@ describe('createLogger', () => {
       .stub(globalFns, 'getGlobalLogContext')
       .returns({ globalKey: 'globalVal' });
     getGlobalMinLogLevelStub = sb.stub(globalFns, 'getGlobalMinLogLevel').returns('DEBUG');
-    getGlobalSeverityRankingStub = sb.stub(globalFns, 'getGlobalSeverityRanking').returns(undefined);
+    getGlobalSeverityRankingStub = sb
+      .stub(globalFns, 'getGlobalSeverityRanking')
+      .returns(undefined);
     defaultEmitStub = sb.stub(globalFns, 'defaultEmit');
   });
 

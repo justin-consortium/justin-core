@@ -7,9 +7,8 @@ import { CollectionChangeType } from '../../data-manager.type';
 import * as Helpers from '../../data-manager.helpers';
 import * as MongoHelpers from '../mongo.helpers';
 import { MongoDBManager, TestingMongoDBManager } from '../mongo-data-manager';
-import { loggerSpies, makeFakeMongo } from '../../../__tests__/testkit';
-import type { FakeMongo } from '../../../__tests__/testkit';
-import { expectLog } from '../../../__tests__/helpers';
+import { loggerSpies, makeFakeMongo, expectLog } from '../../../testing';
+import type { FakeMongo } from '../../../testing';
 
 describe('MongoDBManager (unit)', () => {
   let sb: SinonSandbox;
@@ -118,7 +117,9 @@ describe('MongoDBManager (unit)', () => {
         validator: { x: 1 },
       });
 
-      const warnings = logs.captured.filter((c) => c.entry.severity === 'WARNING');
+      const warnings = logs.captured.filter(
+        (c: { entry: { severity: string } }) => c.entry.severity === 'WARNING',
+      );
       expect(warnings.length).toBeGreaterThan(0);
     });
   });
@@ -369,7 +370,10 @@ describe('MongoDBManager (unit)', () => {
       const emitter = new EventEmitter();
       (mongoFakes.collection.watch as SinonStub).returns(emitter as any);
 
-      const readable = MongoDBManager.getCollectionChangeReadable('users', CollectionChangeType.DELETE);
+      const readable = MongoDBManager.getCollectionChangeReadable(
+        'users',
+        CollectionChangeType.DELETE,
+      );
 
       emitter.emit('change', {
         documentKey: { _id: new mongoDB.ObjectId('64b5fcf45a9930c381d2f111') },
@@ -386,7 +390,10 @@ describe('MongoDBManager (unit)', () => {
       (mongoFakes.collection.watch as SinonStub).returns(emitter as any);
       transformIdStub.returns({ id: '123', name: 'foo' });
 
-      const readable = MongoDBManager.getCollectionChangeReadable('users', CollectionChangeType.INSERT);
+      const readable = MongoDBManager.getCollectionChangeReadable(
+        'users',
+        CollectionChangeType.INSERT,
+      );
 
       emitter.emit('change', {
         fullDocument: { _id: '123', name: 'foo' },
@@ -401,7 +408,10 @@ describe('MongoDBManager (unit)', () => {
       const emitter = new EventEmitter();
       (mongoFakes.collection.watch as SinonStub).returns(emitter as any);
 
-      const readable = MongoDBManager.getCollectionChangeReadable('users', CollectionChangeType.INSERT);
+      const readable = MongoDBManager.getCollectionChangeReadable(
+        'users',
+        CollectionChangeType.INSERT,
+      );
 
       readable.on('error', () => {
         expectLog(logs.last(), { severity: 'ERROR', messageSubstr: 'Change stream error' });

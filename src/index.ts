@@ -1,6 +1,6 @@
 import DataManager from './data-manager/data-manager';
 
-export default DataManager;
+export { DataManager };
 
 export { ChangeListenerManager } from './data-manager/change-listener.manager';
 
@@ -25,3 +25,9 @@ export type {
   EmitFn,
   LoggerConfig,
 } from './logger';
+
+/**
+ * Lifecycle
+ */
+export { shutdownCore } from './lifecycle';
+export type { ShutdownCoreOptions } from './lifecycle';

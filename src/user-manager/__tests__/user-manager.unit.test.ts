@@ -1,5 +1,5 @@
 import sinon from 'sinon';
-import { makeCoreManagersSandbox, type CoreManagersSandbox } from '../../__tests__/testkit';
+import { makeCoreManagersSandbox, type CoreManagersSandbox } from '../../testing';
 import DataManager from '../../data-manager/data-manager';
 import { USERS } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
@@ -234,33 +234,28 @@ describe('UserManager (unit)', () => {
       attributes: { a: 1, b: 2, c: 3 },
     });
 
-    sinon.assert.calledWith(
-      dm.updateItemByIdInCollection as sinon.SinonStub,
-      USERS,
-      'u1',
-      { attributes: { a: 1, b: 2, c: 3 } },
-    );
+    sinon.assert.calledWith(dm.updateItemByIdInCollection as sinon.SinonStub, USERS, 'u1', {
+      attributes: { a: 1, b: 2, c: 3 },
+    });
 
     expect(TestingUserManager._users.get('u1')).toEqual(updated);
   });
 
   it('updateUserByUniqueIdentifier validates inputs and reroutes to updateUserById', async () => {
     // invalid args
-    await expect(
-      TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 }),
-    ).rejects.toThrow('Invalid uniqueIdentifier: ');
+    await expect(TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 })).rejects.toThrow(
+      'Invalid uniqueIdentifier: ',
+    );
 
     await expect(
       TestingUserManager.updateUserByUniqueIdentifier('u', {
         uniqueIdentifier: 'nope',
       } as any),
-    ).rejects.toThrow(
-      'Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier',
-    );
+    ).rejects.toThrow('Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier');
 
-    await expect(
-      TestingUserManager.updateUserByUniqueIdentifier('u', {} as any),
-    ).rejects.toThrow('Invalid updateData');
+    await expect(TestingUserManager.updateUserByUniqueIdentifier('u', {} as any)).rejects.toThrow(
+      'Invalid updateData',
+    );
 
     // not found
     await expect(
@@ -273,9 +268,9 @@ describe('UserManager (unit)', () => {
       'uniqueIdentifier must be a non-empty string.',
     );
 
-    await expect(
-      TestingUserManager.modifyUserUniqueIdentifier('missing', 'new'),
-    ).rejects.toThrow('User with uniqueIdentifier (missing) not found.');
+    await expect(TestingUserManager.modifyUserUniqueIdentifier('missing', 'new')).rejects.toThrow(
+      'User with uniqueIdentifier (missing) not found.',
+    );
 
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', {

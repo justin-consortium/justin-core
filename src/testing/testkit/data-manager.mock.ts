@@ -1,6 +1,6 @@
 import sinon from 'sinon';
 import DataManager from '../../data-manager/data-manager';
-import { makeStream } from '../../__tests__/helpers/streams';
+import { makeStream } from '../../testing';
 
 type Key = string; // `${collection}:${type}`
 
@@ -82,12 +82,6 @@ function installDataManagerSingleton(dm: DataManagerMock) {
   };
 }
 
-
-
 export type { DataManagerMock };
 
-export {
-  mockDataManager,
-  createDataManagerMock,
-  installDataManagerSingleton,
-};
+export { mockDataManager, createDataManagerMock, installDataManagerSingleton };

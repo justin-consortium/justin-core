@@ -64,7 +64,6 @@ export interface LoggerEntry<T extends string = BaseSeverity> {
   fields?: Record<string, unknown>;
 }
 
-
 /**
  * Function signature for emitters (console, remote, etc.).
  *

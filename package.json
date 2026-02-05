@@ -30,9 +30,9 @@
       "types": "./dist/index.d.ts"
     },
     "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js",
-      "require": "./dist/testing.cjs"
+      "import": "./dist/testing/index.js",
+      "require": "./dist/testing/index.js",
+      "types": "./dist/testing/index.d.ts"
     }
   },
   "publishConfig": {
@@ -52,6 +52,7 @@
     "test:unit": "yarn build && jest --config=jest.unit.config.js -i --verbose --passWithNoTests --runInBand --detectOpenHandles",
     "test:integration": "yarn build && jest --config=jest.integration.config.js --verbose --passWithNoTests --runInBand --detectOpenHandles",
     "test:system": "yarn build && jest --config=jest.system.config.js --verbose --passWithNoTests --runInBand --detectOpenHandles",
+    "test:e2e": "yarn build && jest --config=jest.e2e.config.js --verbose --passWithNoTests --runInBand --detectOpenHandles",
     "test": "yarn test:unit && yarn test:integration",
     "test:coverage": "yarn test:unit && yarn test:integration --coverage"
   },

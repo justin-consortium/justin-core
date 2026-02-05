@@ -3,8 +3,7 @@ import sinon, { SinonSandbox } from 'sinon';
 import DataManager from '../data-manager';
 import { DBType, USERS } from '../data-manager.constants';
 import { CollectionChangeType } from '../data-manager.type';
-import { resetSingleton } from '../../__tests__/helpers';
-import { makeDataManagerSandbox } from '../../__tests__/testkit';
+import { resetSingleton, makeDataManagerSandbox } from '../../testing';
 
 describe('DataManager (unit)', () => {
   let sb: SinonSandbox;
@@ -71,7 +70,9 @@ describe('DataManager (unit)', () => {
     await dm.init(DBType.MONGO);
 
     await expect(dm.ensureStore('things', { validator: { ok: true } })).resolves.toBeUndefined();
-    expect(dmSandbox.mongo.ensureStore.calledWith('things', { validator: { ok: true } })).toBe(true);
+    expect(dmSandbox.mongo.ensureStore.calledWith('things', { validator: { ok: true } })).toBe(
+      true,
+    );
 
     const indexes = [{ name: 'i1', key: { a: 1 }, unique: true }];
     await expect(dm.ensureIndexes('things', indexes)).resolves.toBeUndefined();

@@ -25,6 +25,7 @@ Tests here must be **especially explicit** about side effects and contracts.
 Do **not** construct fake managers manually.
 
 Instead:
+
 - use the real singleton
 - stub its methods via Sinon
 
@@ -63,6 +64,7 @@ afterEach(() => {
 ```
 
 Provides:
+
 - stubbed Mongo adapter
 - stubbed ChangeListenerManager hooks
 - `handleDbError` spy

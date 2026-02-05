@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2019",
-    "module": "CommonJS",
+    "module": "NodeNext",
     "declaration": true,             // emit .d.ts files
     "declarationMap": true,          // allows editors step from d.ts back to ts
     "rootDir": "./src",
@@ -9,7 +9,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "node",
+    "moduleResolution": "nodenext",
     "sourceMap": true                // allows for better debugging of your dist
   },
   "include": ["src/**/*"],

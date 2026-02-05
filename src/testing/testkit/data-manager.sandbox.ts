@@ -1,7 +1,7 @@
-import sinon from "sinon";
+import sinon from 'sinon';
 // eslint-disable-next-line no-duplicate-imports
-import type {SinonSandbox, SinonSpy, SinonStub} from "sinon";
-import {ChangeListenerManager as CLM} from "../../data-manager/change-listener.manager";
+import type { SinonSandbox, SinonSpy, SinonStub } from 'sinon';
+import { ChangeListenerManager as CLM } from '../../data-manager/change-listener.manager';
 import { MongoDBManager as mongoFns } from '../../data-manager/mongo/mongo-data-manager';
 import * as Helpers from '../../data-manager/data-manager.helpers';
 
