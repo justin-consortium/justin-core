@@ -1,5 +1,5 @@
-export { withFakeTimers, advance, flushMicrotasks } from './clock';
-export { makeStream, push, end } from './streams';
-export { resetSingleton } from './reset-singleton';
-export { expectLog } from './assertions';
+export * from './clock';
+export * from './streams';
+export * from './reset-singleton';
+export * from './assertions';
 export * from './factories';
