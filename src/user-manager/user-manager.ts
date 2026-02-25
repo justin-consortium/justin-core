@@ -60,7 +60,7 @@ const shutdown = () => {
 const refreshCache = async (): Promise<void> => {
   _checkInitialization();
   _users.clear();
-  const userDocs = (await dm.getAllInCollection<JUser>(USERS)) || [];
+  const userDocs = await dm.getAllInCollection<JUser>(USERS);
   userDocs.forEach((jUser: any) => {
     _users.set(jUser.id, jUser);
   });
@@ -129,7 +129,10 @@ const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
 
   try {
     const { uniqueIdentifier, initialAttributes } = user;
-    const convertedUser: object = { uniqueIdentifier, attributes: initialAttributes };
+    const convertedUser: object = {
+      uniqueIdentifier,
+      ...(initialAttributes ?? {}),
+    };
     const addedUser = (await dm.addItemToCollection(USERS, convertedUser)) as JUser;
     _users.set(addedUser.id, addedUser);
     Log.info(`Added user: ${user.uniqueIdentifier}. `);
@@ -142,10 +145,10 @@ const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
 /**
  * Adds multiple users to the Users collection in a single operation.
  * @param {NewUserRecord[]} users - An array of user objects to add.
- * @returns {Promise<(JUser | null)[]>} Resolves with the added users or null if the operation fails.
- * @throws {Error} If no users are provided or if any user fails validation.
+ * @returns {Promise<JUser[]>} Resolves with the successfully added users (may be empty).
+ * @throws {Error} If no users are provided.
  */
-const addUsers = async (users: NewUserRecord[]): Promise<(JUser | null)[]> => {
+const addUsers = async (users: NewUserRecord[]): Promise<JUser[]> => {
   if (!Array.isArray(users) || users.length === 0) {
     throw new Error('No users provided for insertion.');
   }
@@ -159,14 +162,16 @@ const addUsers = async (users: NewUserRecord[]): Promise<(JUser | null)[]> => {
         addedUsers.push(addedUser);
       }
     }
+
     if (addedUsers.length > 0) {
       Log.info(`${addedUsers.length} user(s) added successfully.`);
     } else {
       Log.info('No new users were added.');
     }
+
     return addedUsers;
   } catch (error) {
-    return handleDbError('Failed to add users:', 'addUsers', error);
+    return handleDbError('Failed to add users:', 'addUsers', error) as any;
   }
 };
 
@@ -250,10 +255,13 @@ const updateUserById = async (userId: string, attributesToUpdate: object): Promi
 
   const existingUser: JUser | null = _users.get(userId) as JUser;
 
-  const mergedAttributes = { ...existingUser.attributes, ...attributesToUpdate };
+  const mergedAttributes = { ...existingUser, ...attributesToUpdate };
+
+  // Ensure reserved fields are not accidentally overwritten
+  const { id, uniqueIdentifier, ...dataToUpdate } = mergedAttributes as any;
 
   const updatedUser = (await dm.updateItemByIdInCollection(USERS, userId, {
-    attributes: mergedAttributes,
+    ...dataToUpdate,
   })) as JUser;
   if (!updatedUser) {
     throw new Error(`Failed to update user: ${userId}`);
@@ -359,9 +367,9 @@ const isIdentifierUnique = async (userUniqueIdentifier: string): Promise<boolean
     throw new Error(msg);
   }
 
-  const existingUser: JUser | null = (await getUserByUniqueIdentifier(
+  const existingUser: JUser | null = getUserByUniqueIdentifier(
     userUniqueIdentifier,
-  )) as JUser;
+  ) as JUser;
 
   if (existingUser) {
     const msg = `User with unique identifier (${userUniqueIdentifier}) already exists.`;

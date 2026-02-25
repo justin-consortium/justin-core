@@ -24,7 +24,7 @@ describe('UserManager (unit)', () => {
   it('init: initializes DM, ensures store/indexes, refreshes cache, and sets up change listeners', async () => {
     // arrange a couple of docs for refreshCache
     (dm.getAllInCollection as sinon.SinonStub).resolves([
-      { id: 'u1', uniqueIdentifier: 'a', attributes: { x: 1 } },
+      { id: 'u1', uniqueIdentifier: 'a', x: 1 },
     ]);
 
     await expect(UserManager.init()).resolves.toBeUndefined();
@@ -61,8 +61,8 @@ describe('UserManager (unit)', () => {
 
   it('refreshCache: clears and repopulates cache with id transform', async () => {
     (dm.getAllInCollection as sinon.SinonStub).resolves([
-      { id: 'x1', uniqueIdentifier: 'uid-1', attributes: { a: 1 } },
-      { id: 'x2', uniqueIdentifier: 'uid-2', attributes: { b: 2 } },
+      { id: 'x1', uniqueIdentifier: 'uid-1', a: 1 },
+      { id: 'x2', uniqueIdentifier: 'uid-2', b: 2 },
     ]);
 
     await TestingUserManager.refreshCache();
@@ -71,12 +71,12 @@ describe('UserManager (unit)', () => {
     expect(TestingUserManager._users.get('x1')).toEqual({
       id: 'x1',
       uniqueIdentifier: 'uid-1',
-      attributes: { a: 1 },
+      a: 1,
     });
     expect(TestingUserManager._users.get('x2')).toEqual({
       id: 'x2',
       uniqueIdentifier: 'uid-2',
-      attributes: { b: 2 },
+      b: 2,
     });
     sinon.assert.calledWith(dm.getAllInCollection as sinon.SinonStub, USERS);
   });
@@ -93,7 +93,6 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'dup',
-      attributes: {},
     } as any);
     await expect(
       UserManager.addUser({ uniqueIdentifier: 'dup', initialAttributes: {} }),
@@ -103,7 +102,7 @@ describe('UserManager (unit)', () => {
     (dm.addItemToCollection as sinon.SinonStub).resolves({
       id: 'n1',
       uniqueIdentifier: 'new',
-      attributes: { foo: 1 },
+      foo: 1,
     });
 
     const out = await UserManager.addUser({
@@ -114,11 +113,11 @@ describe('UserManager (unit)', () => {
     expect(out).toEqual({
       id: 'n1',
       uniqueIdentifier: 'new',
-      attributes: { foo: 1 },
+      foo: 1,
     });
     sinon.assert.calledWith(dm.addItemToCollection as sinon.SinonStub, USERS, {
       uniqueIdentifier: 'new',
-      attributes: { foo: 1 },
+      foo: 1,
     });
     expect(TestingUserManager._users.get('n1')).toEqual(out);
   });
@@ -151,7 +150,6 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('dupid', {
       id: 'dupid',
       uniqueIdentifier: 'dup',
-      attributes: {},
     } as any);
 
     (dm.addItemToCollection as sinon.SinonStub)
@@ -159,13 +157,11 @@ describe('UserManager (unit)', () => {
       .resolves({
         id: 'u1',
         uniqueIdentifier: 'a',
-        attributes: {},
       })
       .onSecondCall()
       .resolves({
         id: 'u2',
         uniqueIdentifier: 'b',
-        attributes: {},
       });
 
     const res = await UserManager.addUsers([
@@ -175,8 +171,8 @@ describe('UserManager (unit)', () => {
     ]);
 
     expect(res).toEqual([
-      { id: 'u1', uniqueIdentifier: 'a', attributes: {} },
-      { id: 'u2', uniqueIdentifier: 'b', attributes: {} },
+      { id: 'u1', uniqueIdentifier: 'a' },
+      { id: 'u2', uniqueIdentifier: 'b' },
     ]);
   });
 
@@ -185,12 +181,9 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('x', {
       id: 'x',
       uniqueIdentifier: 'u',
-      attributes: {},
     } as any);
 
-    expect(TestingUserManager.getAllUsers()).toEqual([
-      { id: 'x', uniqueIdentifier: 'u', attributes: {} },
-    ]);
+    expect(TestingUserManager.getAllUsers()).toEqual([{ id: 'x', uniqueIdentifier: 'u' }]);
   });
 
   it('getUserByUniqueIdentifier finds a user or null', () => {
@@ -198,29 +191,30 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('a', {
       id: 'a',
       uniqueIdentifier: 'u1',
-      attributes: {},
     } as any);
 
     expect(TestingUserManager.getUserByUniqueIdentifier('u1')).toEqual({
       id: 'a',
       uniqueIdentifier: 'u1',
-      attributes: {},
     });
     expect(TestingUserManager.getUserByUniqueIdentifier('nope')).toBeNull();
   });
 
-  it('updateUserById merges attributes, writes via DM, updates cache', async () => {
+  it('updateUserById merges data, writes via DM, updates cache', async () => {
     TestingUserManager._users.clear();
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'a',
-      attributes: { a: 1, b: 1 },
+      a: 1,
+      b: 1,
     } as any);
 
     (dm.updateItemByIdInCollection as sinon.SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'a',
-      attributes: { a: 1, b: 2, c: 3 },
+      a: 1,
+      b: 2,
+      c: 3,
     });
 
     const updated = await TestingUserManager.updateUserById('u1', {
@@ -231,11 +225,15 @@ describe('UserManager (unit)', () => {
     expect(updated).toEqual({
       id: 'u1',
       uniqueIdentifier: 'a',
-      attributes: { a: 1, b: 2, c: 3 },
+      a: 1,
+      b: 2,
+      c: 3,
     });
 
     sinon.assert.calledWith(dm.updateItemByIdInCollection as sinon.SinonStub, USERS, 'u1', {
-      attributes: { a: 1, b: 2, c: 3 },
+      a: 1,
+      b: 2,
+      c: 3,
     });
 
     expect(TestingUserManager._users.get('u1')).toEqual(updated);
@@ -276,19 +274,16 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'same',
-      attributes: {},
     } as any);
 
     await expect(TestingUserManager.modifyUserUniqueIdentifier('same', 'same')).resolves.toEqual({
       id: 'u1',
       uniqueIdentifier: 'same',
-      attributes: {},
     });
 
     (dm.updateItemByIdInCollection as sinon.SinonStub).resolves({
       id: 'u1',
       uniqueIdentifier: 'new',
-      attributes: {},
     });
 
     const updated = await TestingUserManager.modifyUserUniqueIdentifier('same', 'new');
@@ -296,7 +291,6 @@ describe('UserManager (unit)', () => {
     expect(updated).toEqual({
       id: 'u1',
       uniqueIdentifier: 'new',
-      attributes: {},
     });
     sinon.assert.calledWith(dm.updateItemByIdInCollection as sinon.SinonStub, USERS, 'u1', {
       uniqueIdentifier: 'new',
@@ -308,7 +302,6 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'a',
-      attributes: {},
     } as any);
 
     (dm.removeItemFromCollection as sinon.SinonStub).resolves(true);
@@ -324,7 +317,6 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'uid-1',
-      attributes: {},
     } as any);
 
     (dm.removeItemFromCollection as sinon.SinonStub).resolves(true);
@@ -336,7 +328,7 @@ describe('UserManager (unit)', () => {
 
   it('deleteAllUsers clears DB and cache', async () => {
     TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', { id: 'u1' } as any);
+    TestingUserManager._users.set('u1', { id: 'u1', uniqueIdentifier: 'x' } as any);
 
     await expect(TestingUserManager.deleteAllUsers()).resolves.toBeUndefined();
 
@@ -356,7 +348,6 @@ describe('UserManager (unit)', () => {
     TestingUserManager._users.set('u1', {
       id: 'u1',
       uniqueIdentifier: 'exists',
-      attributes: {},
     } as any);
 
     await expect(TestingUserManager.isIdentifierUnique('exists')).resolves.toBe(false);
