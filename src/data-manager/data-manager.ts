@@ -252,18 +252,19 @@ class DataManager extends EventEmitter {
   /**
    * Retrieves all items from a collection.
    * @param {string} collectionName - The name of the collection.
-   * @returns {Promise<T[] | null>} Resolves with items or `null` on error.
+   * @returns {Promise<T[] | []>} Resolves with items or empty array on error.
    */
-  public async getAllInCollection<T>(collectionName: string): Promise<T[] | null> {
+  public async getAllInCollection<T>(collectionName: string): Promise<T[] | []> {
     try {
       this.checkInitialization();
-      return (await this.db.getAllInCollection(collectionName)) as T[] | null;
+      return (await this.db.getAllInCollection(collectionName)) as T[] | [];
     } catch (error) {
-      return handleDbError(
+      handleDbError(
         `Failed to retrieve items from collection: ${collectionName}`,
         'getAllInCollection',
         error,
       );
+      return []
     }
   }
 
@@ -327,26 +328,27 @@ class DataManager extends EventEmitter {
    * @template T - The expected type of the item in the collection.
    * @param {string} collectionName - The name of the collection.
    * @param {object} criteria - An object containing the key-value pair to search for.
-   * @returns {Promise<T[] | null>} Resolves with items or `null` on error.
+   * @returns {Promise<T[] | []>} Resolves with items or empty array on error.
    */
   public async findItemsInCollection<T>(
     collectionName: string,
     criteria: Record<string, any>,
-  ): Promise<T[] | null> {
+  ): Promise<T[]> {
     if (!criteria || !collectionName) {
-      return null;
+      return [];
     }
 
     try {
       this.checkInitialization();
       const itemList = await this.db.findItemsInCollection(collectionName, criteria);
-      return itemList as T[] | null;
+      return itemList as T[];
     } catch (error) {
-      return handleDbError(
+      handleDbError(
         `Failed to find items by criteria in collection: ${collectionName}`,
         'findItemsInCollection',
         error,
-      ) as null;
+      );
+      return [];
     }
   }
 

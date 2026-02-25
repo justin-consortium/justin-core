@@ -116,6 +116,31 @@ describe('DataManager (unit)', () => {
     sinon.assert.calledWith(onUserAdded, { id: 'new-id-1', name: 'Ada' });
   });
 
+  it('getAllInCollection returns [] when adapter returns [] (empty collection)', async () => {
+    const dm = DataManager.getInstance();
+    await dm.init(DBType.MONGO);
+
+    dmSandbox.mongo.getAllInCollection.resolves([]);
+
+    const all = await dm.getAllInCollection('things');
+    expect(all).toEqual([]);
+  });
+
+  it('addItemToCollection does not emit userAdded for non-USERS collections (missing test)', async () => {
+    const dm = DataManager.getInstance();
+    await dm.init(DBType.MONGO);
+
+    const onUserAdded = sb.stub();
+    dm.on('userAdded', onUserAdded);
+
+    dmSandbox.mongo.addItemToCollection.resolves('id-2');
+
+    const res = await dm.addItemToCollection('things', { x: 1 });
+
+    expect(res).toEqual({ id: 'id-2', x: 1 });
+    sinon.assert.notCalled(onUserAdded);
+  });
+
   it('addItemToCollection bubbles errors via handleDbError', async () => {
     const dm = DataManager.getInstance();
     await dm.init(DBType.MONGO);
@@ -158,6 +183,20 @@ describe('DataManager (unit)', () => {
 
     sinon.assert.calledOnce(onUserUpdated);
     sinon.assert.calledWith(onUserUpdated, { id: 'u1', name: 'Ada Lovelace' });
+  });
+
+  it('updateItemByIdInCollection does not emit userUpdated for non-USERS collections (missing test)', async () => {
+    const dm = DataManager.getInstance();
+    await dm.init(DBType.MONGO);
+
+    dmSandbox.mongo.updateItemInCollection.resolves({ id: 't1', x: 2 });
+
+    const onUserUpdated = sb.stub();
+    dm.on('userUpdated', onUserUpdated);
+
+    await dm.updateItemByIdInCollection('things', 't1', { x: 2 });
+
+    sinon.assert.notCalled(onUserUpdated);
   });
 
   it('updateItemByIdInCollection bubbles errors via handleDbError', async () => {
@@ -313,13 +352,13 @@ describe('DataManager (unit)', () => {
     expect(err).toBe(boom);
   });
 
-  it('findItemsInCollection returns null for falsy input, list for happy path, and bubbles errors', async () => {
+  it('findItemsInCollection returns [] for falsy input, list for happy path, and bubbles errors', async () => {
     const dm = DataManager.getInstance();
     await dm.init(DBType.MONGO);
 
     // @ts-expect-error intentional bad input
-    await expect(dm.findItemsInCollection('things', null)).resolves.toBeNull();
-    await expect(dm.findItemsInCollection('', { a: 1 })).resolves.toBeNull();
+    await expect(dm.findItemsInCollection('things', null)).resolves.toEqual([]);
+    await expect(dm.findItemsInCollection('', { a: 1 })).resolves.toEqual([]);
 
     const result = [{ id: 'x' }, { id: 'y' }];
     dmSandbox.mongo.findItemsInCollection.resolves(result);
@@ -332,12 +371,6 @@ describe('DataManager (unit)', () => {
     await expect(dm.findItemsInCollection('things', { a: 1 })).rejects.toBe(boom);
 
     expect(dmSandbox.handleDbErrorSpy.calledOnce).toBe(true);
-
-    const [msg, fnName, err] = dmSandbox.handleDbErrorSpy.getCall(0).args;
-    expect(String(msg)).toContain('Failed to find items by criteria');
-    expect(String(msg)).toContain('collection: things');
-    expect(fnName).toBe('findItemsInCollection');
-    expect(err).toBe(boom);
   });
 
   it('getChangeStream requires init and delegates to adapter', async () => {

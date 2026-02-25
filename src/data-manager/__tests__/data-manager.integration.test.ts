@@ -37,9 +37,15 @@ describe('DataManager (integration)', () => {
     sb.restore();
   });
 
-  it('can ensure a store and insert + read items', async () => {
+  beforeEach(async () => {
     await dm.ensureStore(USERS);
+    await dm.ensureStore('logs');
 
+    await dm.clearCollection(USERS);
+    await dm.clearCollection('logs');
+  });
+
+  it('can ensure a store and insert + read items', async () => {
     const created = await dm.addItemToCollection(USERS, {
       name: 'Alice',
       role: 'admin',
@@ -52,8 +58,8 @@ describe('DataManager (integration)', () => {
     type CreatedUser = { id: string; name: string; role: string };
     const all = await dm.getAllInCollection<CreatedUser>(USERS);
 
-    expect(all).not.toBeNull();
-    expect(all!.length).toBeGreaterThan(0);
+    expect(all.length).toBe(1);
+    expect(all[0]).toMatchObject({ name: 'Alice', role: 'admin' });
   });
 
   it('can update and delete items by id through the DataManager', async () => {
@@ -73,22 +79,26 @@ describe('DataManager (integration)', () => {
 
     const removed = await dm.removeItemFromCollection(USERS, id);
     expect(removed).toBe(true);
+
+    const all = await dm.getAllInCollection(USERS);
+    expect(all.length).toBe(0);
   });
 
   it('can clear a collection and check emptiness', async () => {
-    await dm.ensureStore('logs');
-
     const created = await dm.addItemToCollection('logs', { msg: 'first' });
     expect(created).not.toBeNull();
     expect(created!.id).toEqual(expect.any(String));
 
-    const notEmpty = await dm.isCollectionEmpty('logs');
-    expect(notEmpty).toBe(false);
+    const isEmptyBefore = await dm.isCollectionEmpty('logs');
+    expect(isEmptyBefore).toBe(false);
 
     await dm.clearCollection('logs');
 
-    const isEmpty = await dm.isCollectionEmpty('logs');
-    expect(isEmpty).toBe(true);
+    const isEmptyAfter = await dm.isCollectionEmpty('logs');
+    expect(isEmptyAfter).toBe(true);
+
+    const all = await dm.getAllInCollection('logs');
+    expect(all.length).toBe(0);
   });
 
   it('calls change listener manager on close', async () => {
@@ -97,7 +107,7 @@ describe('DataManager (integration)', () => {
 
     await dm.close();
 
-    expect(clearSpy.called).toBe(true);
+    expect(clearSpy.calledOnce).toBe(true);
 
     await dm.init();
   });
