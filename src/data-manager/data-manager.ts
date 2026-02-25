@@ -259,12 +259,11 @@ class DataManager extends EventEmitter {
       this.checkInitialization();
       return (await this.db.getAllInCollection(collectionName)) as T[] | [];
     } catch (error) {
-      handleDbError(
+      return handleDbError(
         `Failed to retrieve items from collection: ${collectionName}`,
         'getAllInCollection',
         error,
       );
-      return []
     }
   }
 
@@ -343,12 +342,11 @@ class DataManager extends EventEmitter {
       const itemList = await this.db.findItemsInCollection(collectionName, criteria);
       return itemList as T[];
     } catch (error) {
-      handleDbError(
+      return handleDbError(
         `Failed to find items by criteria in collection: ${collectionName}`,
         'findItemsInCollection',
         error,
       );
-      return [];
     }
   }
 
