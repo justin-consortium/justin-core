@@ -1,6 +1,6 @@
 import type { JUser, NewUserRecord } from '../../user-manager/user.type';
 
-export function makeUser(overrides: Partial<JUser> = {}): JUser {
+export function makeTestJUser(overrides: Partial<JUser> = {}): JUser {
   const id = overrides.id ?? 'u1';
   const uniqueIdentifier = overrides.uniqueIdentifier ?? id;
 
@@ -13,7 +13,7 @@ export function makeUser(overrides: Partial<JUser> = {}): JUser {
   } as JUser;
 }
 
-export function makeNewUserRecord(overrides: Partial<NewUserRecord> = {}): NewUserRecord {
+export function makeTestNewUserRecord(overrides: Partial<NewUserRecord> = {}): NewUserRecord {
   return {
     uniqueIdentifier: overrides.uniqueIdentifier ?? 'u1',
     initialAttributes: overrides.initialAttributes ?? {},
