@@ -1,6 +1,6 @@
 import DataManager from '../data-manager/data-manager';
 import { ChangeListenerManager } from '../data-manager/change-listener.manager';
-import { USERS } from '../data-manager/data-manager.constants';
+import { USERS, PROTECTED_ATTRIBUTES } from '../data-manager/data-manager.constants';
 import { JUser, NewUserRecord } from './user.type';
 import { handleDbError } from '../data-manager/data-manager.helpers';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
@@ -35,6 +35,15 @@ const init = async (): Promise<void> => {
   await dm.ensureStore(USERS);
   await dm.ensureIndexes(USERS, [
     { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
+  ]);
+
+  await dm.ensureStore(PROTECTED_ATTRIBUTES);
+  await dm.ensureIndexes(PROTECTED_ATTRIBUTES, [
+    {
+      name: 'uniq_protected_attributes_identifier_namespace',
+      key: { uniqueIdentifier: 1, namespace: 1 },
+      unique: true,
+    },
   ]);
 
   await refreshCache();

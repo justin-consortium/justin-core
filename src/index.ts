@@ -4,7 +4,7 @@ export { DataManager };
 
 export { ChangeListenerManager } from './data-manager/change-listener.manager';
 
-export { USERS, DBType, NO_ID } from './data-manager/data-manager.constants';
+export { USERS, PROTECTED_ATTRIBUTES, DBType, NO_ID } from './data-manager/data-manager.constants';
 export { CollectionChangeType } from './data-manager/data-manager.type';
 
 /**
