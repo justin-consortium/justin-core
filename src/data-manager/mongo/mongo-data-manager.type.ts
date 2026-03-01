@@ -12,84 +12,81 @@ export type InsertedOrUpatedDocRecord = {
   updateDescription?: object;
 };
 
-// types used for defining data manager module/methods
+// types used for defining manager module/methods
 export type MongoManagerModule = {
-  addOneItem: (collection: string, item: object) => Promise<DBInsertionItemSuccessResult | DBInsertItemIssueResult>;
-  addMultipleItems: (collection: string, items: object[]) => Promise<DBInsertItemsSuccessResult | DBInsertItemsIssueResult>;
-  getOneItem: (collection: string, id: string) => Promise<DBGetItemSuccessResult | DBGetItemIssueResult>;
-  findItems: (collection: string, query: object) => Promise<DBFindItemsSuccessResult | DBFindItemsIssueResult>;
-  updateOneItem: (collection: string, id: string, update: object) => Promise<DBUpdateItemSuccessResult | DBUpdateItemIssueResult>;
-  updateItems: (collection: string, query: object, update: object) => Promise<DBUpdateItemsSuccessResult | DBUpdateItemsIssueResult>;
-  removeOneItem: (collection: string, id: string) => Promise<DBDeleteSuccessResult | DBDeleteIssueResult>;
-  removeItems: (collection: string, query: object) => Promise<DBDeleteSuccessResult | DBDeleteIssueResult>;
+  addOneItem<T = string>(collection: string, item: object): Promise<DBInsertItemSuccessResult<T> | DBInsertItemIssueResult>;
+  addMultipleItems<T = (string | null)[]>(collection: string, items: object[]): Promise<DBInsertItemsSuccessResult<T> | DBInsertItemsIssueResult<T>>;
+  getOneItem<T = unknown>(collection: string, id: string): Promise<DBGetItemSuccessResult<T> | DBGetItemIssueResult>;
+  findItems<T = unknown[]>(collection: string, query: object): Promise<DBFindItemsSuccessResult<T> | DBFindItemsIssueResult>;
+  updateOneItem<T = unknown>(collection: string, id: string, update: object): Promise<DBUpdateItemSuccessResult<T> | DBUpdateItemIssueResult<T>>;
+  updateItems<T = unknown[]>(collection: string, query: object, update: object): Promise<DBUpdateItemsSuccessResult<T> | DBUpdateItemsIssueResult<T>>;
+  removeOneItem(collection: string, id: string): Promise<DBDeleteSuccessResult | DBDeleteIssueResult>;
+  removeItems(collection: string, query: object): Promise<DBDeleteSuccessResult | DBDeleteIssueResult>;
   
   // Allow any other property/method
   [key: string]: unknown;
 };
 
-export type DBSuccessResult = {
+export type DBSuccessResult<T = unknown> = {
   success: true;
-  data: unknown;
+  data: T;
 };
 
-export type DBIssueResult = {
+export type DBIssueResult<T = unknown> = {
   success: false;
   issueType: string;
   message: string;
+  data?: T;
 };
 
-export type DBInsertionItemSuccessResult = DBSuccessResult & {
-  data: string;
-};
+export type DBInsertItemSuccessResult<T = string> = DBSuccessResult<T>;
 
 export type DBInsertItemIssueResult = DBIssueResult;
 
-export type DBInsertItemsSuccessResult = DBSuccessResult & {
-  data: string[];
+export type DBInsertItemsSuccessResult<T = string[]> = DBSuccessResult<T> & {
+  insertedCount: number;
   insertedIndexIdMap: Record<number, string>;
 };
 
 export type insertErrorInfo = {index: number, code: string, message: string};
 
-export type DBInsertItemsIssueResult = DBIssueResult & {
-  data: (string | null)[];
+export type DBInsertItemsIssueResult<T = (string | null)[]> = DBIssueResult & {
+  data: T;
   insertedCount: number;
   insertedIndexIdMap: Record<number, string>;
   errors: insertErrorInfo[];
 };
 
-export type DBGetItemSuccessResult = DBSuccessResult;
+export type DBGetItemSuccessResult<T> = DBSuccessResult<T>;
 
 export type DBGetItemIssueResult = DBIssueResult;
 
-export type DBFindItemsSuccessResult = DBSuccessResult & {
-  data: unknown[];
-};
+export type DBFindItemsSuccessResult<T = unknown[]> = DBSuccessResult<T>;
 
 export type DBFindItemsIssueResult = DBIssueResult;
 
-export type DBUpdateItemSuccessResult = DBSuccessResult & {
+export type DBUpdateItemSuccessResult<T = unknown> = DBSuccessResult<T> & {
   matchedCount: number;
   modifiedCount: number;
   upsertedCount: number;
   upsertedId: null | string;
 };
 
-export type DBUpdateItemIssueResult = DBIssueResult & {
+export type DBUpdateItemIssueResult<T = unknown> = DBIssueResult<T> & {
   matchedCount: number;
   modifiedCount: number;
   upsertedCount: number;
   upsertedId: null | string;
 };
 
-type DBUpdateItemsSuccessResult = DBSuccessResult & {
+type DBUpdateItemsSuccessResult<T = unknown[]> = DBSuccessResult<T> & {
   matchedCount: number;
   modifiedCount: number;
   upsertedCount: number;
   upsertedIds: (null | string)[];
 };
 
-export type DBUpdateItemsIssueResult = DBIssueResult & {
+export type DBUpdateItemsIssueResult<T = unknown[]> = DBIssueResult<T> & {
   matchedCount: number;
   modifiedCount: number;
   upsertedCount: number;

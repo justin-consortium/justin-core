@@ -2,7 +2,7 @@ import * as mongoDB from 'mongodb';
 import { Readable } from 'stream';
 import { CollectionChangeType } from '../data-manager.type';
 import { NO_ID } from '../data-manager.constants';
-import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId, MongoManagerModule, DBInsertionItemSuccessResult, DBInsertItemIssueResult, DBInsertItemsIssueResult, DBInsertItemsSuccessResult } from './mongo-data-manager.type';
+import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId, MongoManagerModule, DBInsertItemSuccessResult, DBInsertItemIssueResult, DBInsertItemsIssueResult, DBInsertItemsSuccessResult } from './mongo-data-manager.type';
 import { handleDbError } from '../data-manager.helpers';
 import { toObjectId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
@@ -520,7 +520,7 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   }
 };
 
-const addOneItem = async (collection: string, item: object): Promise<DBInsertionItemSuccessResult | DBInsertItemIssueResult> => {
+const addOneItem = async (collection: string, item: object): Promise<DBInsertItemSuccessResult | DBInsertItemIssueResult> => {
   return {    
     success: true,
     data: "fake-id",
