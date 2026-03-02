@@ -252,6 +252,174 @@ const deleteAllProtectedAttributesByUserId = async (userId: string): Promise<voi
   _protectedAttributes.delete(uniqueIdentifier);
 };
 
+const getProtectedAttributesByNamespace = (
+  userId: string,
+  namespaces: string[],
+): ProtectedAttributesRecord[] => {
+  _checkInitialization();
+
+  if (!userId || typeof userId !== 'string') {
+    return [];
+  }
+
+  if (!Array.isArray(namespaces) || namespaces.length === 0) {
+    return [];
+  }
+
+  const user = _users.get(userId);
+  if (!user) {
+    return [];
+  }
+
+  const uniqueIdentifier = user.uniqueIdentifier;
+  const byNamespace = _protectedAttributes.get(uniqueIdentifier);
+  if (!byNamespace) {
+    return [];
+  }
+
+  const cleanedNamespaces = namespaces
+    .filter((ns) => typeof ns === 'string')
+    .map((ns) => ns.trim())
+    .filter((ns) => ns.length > 0);
+
+  const results: ProtectedAttributesRecord[] = [];
+  for (const ns of cleanedNamespaces) {
+    const doc = byNamespace.get(ns);
+    if (doc) {
+      results.push(doc);
+    }
+  }
+
+  return results;
+};
+
+
+const addProtectedAttributesToUser = async (
+  userId: string,
+  namespace: string,
+  protectedAttributes: Record<string, any>,
+): Promise<ProtectedAttributesRecord | null> => {
+  _checkInitialization();
+
+  if (!userId || typeof userId !== 'string') {
+    return null;
+  }
+
+  if (!namespace || typeof namespace !== 'string' || namespace.trim() === '') {
+    return null;
+  }
+
+  if (!protectedAttributes || typeof protectedAttributes !== 'object' || Array.isArray(protectedAttributes)) {
+    return null;
+  }
+
+  const user = _users.get(userId);
+  if (!user) {
+    return null;
+  }
+
+  const uniqueIdentifier = user.uniqueIdentifier;
+  const cleanedNamespace = namespace.trim();
+
+  const existing = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+    namespace: cleanedNamespace,
+  });
+
+  if (existing.length > 0) {
+    return null;
+  }
+
+  const created = (await dm.addItemToCollection(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+    namespace: cleanedNamespace,
+    ...protectedAttributes,
+  })) as ProtectedAttributesRecord;
+
+  const byNamespace =
+    _protectedAttributes.get(uniqueIdentifier) ?? new Map<string, ProtectedAttributesRecord>();
+  byNamespace.set(cleanedNamespace, created);
+  _protectedAttributes.set(uniqueIdentifier, byNamespace);
+
+  return created;
+};
+
+const updateProtectedAttributesToUser = async (
+  userId: string,
+  namespace: string,
+  attributesToUpdate: Record<string, any>,
+): Promise<ProtectedAttributesRecord | null> => {
+  _checkInitialization();
+
+  if (!userId || typeof userId !== 'string') {
+    return null;
+  }
+
+  if (!namespace || typeof namespace !== 'string' || namespace.trim() === '') {
+    return null;
+  }
+
+  if (!attributesToUpdate || typeof attributesToUpdate !== 'object' || Array.isArray(attributesToUpdate)) {
+    return null;
+  }
+
+  if ('id' in attributesToUpdate || 'uniqueIdentifier' in attributesToUpdate || 'namespace' in attributesToUpdate) {
+    throw new Error('Cannot update reserved protected-attributes fields (id, uniqueIdentifier, namespace).');
+  }
+
+  const user = _users.get(userId);
+  if (!user) {
+    return null;
+  }
+
+  const uniqueIdentifier = user.uniqueIdentifier;
+  const cleanedNamespace = namespace.trim();
+
+  const existing = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+    namespace: cleanedNamespace,
+  });
+
+  if (existing.length === 0) {
+    const created = (await dm.addItemToCollection(PROTECTED_ATTRIBUTES, {
+      uniqueIdentifier,
+      namespace: cleanedNamespace,
+      ...attributesToUpdate,
+    })) as ProtectedAttributesRecord;
+
+    const byNamespace =
+      _protectedAttributes.get(uniqueIdentifier) ?? new Map<string, ProtectedAttributesRecord>();
+    byNamespace.set(cleanedNamespace, created);
+    _protectedAttributes.set(uniqueIdentifier, byNamespace);
+
+    return created;
+  }
+
+  const doc = existing[0] as any;
+  const docId = doc?.id;
+  if (!docId) {
+    throw new Error('ProtectedAttributesRecord is missing id.');
+  }
+
+  const merged = {
+    ...doc,
+    ...attributesToUpdate,
+  };
+
+  const { id, uniqueIdentifier: _uid, namespace: _ns, ...dataToUpdate } = merged as any;
+
+  const updated = (await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, docId, {
+    ...dataToUpdate,
+  })) as ProtectedAttributesRecord;
+
+  const byNamespace =
+    _protectedAttributes.get(uniqueIdentifier) ?? new Map<string, ProtectedAttributesRecord>();
+  byNamespace.set(cleanedNamespace, updated);
+  _protectedAttributes.set(uniqueIdentifier, byNamespace);
+
+  return updated;
+};
+
 const deleteProtectedAttributesByNamespace = async (
   userId: string,
   namespace: string,
