@@ -204,7 +204,7 @@ export type DBIssueResult<T = unknown> = {
 
 export type DBAddItemSuccessResult<T = string> = DBSuccessResult<T>;
 
-export type DBAddItemIssueResult = DBIssueResult;
+export type DBAddItemIssueResult<T=undefined> = DBIssueResult<T>;
 
 export type DBAddItemsSuccessResult<T = string[]> = DBSuccessResult<T> & {
   insertedCount: number;
@@ -222,11 +222,11 @@ export type DBAddItemsIssueResult<T = (string | null)[]> = DBIssueResult & {
 
 export type DBGetItemSuccessResult<T> = DBSuccessResult<T>;
 
-export type DBGetItemIssueResult = DBIssueResult;
+export type DBGetItemIssueResult<T=undefined>  = DBIssueResult<T>;
 
 export type DBFindItemsSuccessResult<T = unknown[]> = DBSuccessResult<T>;
 
-export type DBFindItemsIssueResult = DBIssueResult;
+export type DBFindItemsIssueResult<T=undefined> = DBIssueResult<T>;
 
 export type DBUpdateItemSuccessResult<T = unknown> = DBSuccessResult<T> & {
   matchedCount: number;
@@ -256,11 +256,11 @@ export type DBUpdateItemsIssueResult<T = unknown[]> = DBIssueResult<T> & {
   upsertedIds: null | string;
 };
 
-export type DBRemoveSuccessResult = DBSuccessResult & {
+export type DBRemoveSuccessResult<T=undefined> = DBSuccessResult<T> & {
   deletedCount: number;
 };
 
-export type DBRemoveIssueResult = DBIssueResult & {
+export type DBRemoveIssueResult<T=undefined> = DBIssueResult<T> & {
   deletedCount: number;
 };
 
