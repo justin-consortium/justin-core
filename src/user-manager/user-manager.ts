@@ -1,7 +1,7 @@
 import DataManager from '../data-manager/data-manager';
 import { ChangeListenerManager } from '../data-manager/change-listener.manager';
 import { USERS, PROTECTED_ATTRIBUTES } from '../data-manager/data-manager.constants';
-import { JUser, NewUserRecord } from './user.type';
+import { JUser, NewUserRecord, ProtectedAttributesRecord } from './user.type';
 import { handleDbError } from '../data-manager/data-manager.helpers';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import { createLogger } from '../logger/logger';
@@ -17,6 +17,26 @@ const Log = createLogger({
  * @private
  */
 const _users: Map<string, JUser> = new Map();
+
+/**
+ * Reverse lookup for users by uniqueIdentifier.
+ *
+ * Key: uniqueIdentifier
+ * Value: userId
+ *
+ * @private
+ */
+const _userIdByUniqueIdentifier: Map<string, string> = new Map();
+
+/**
+ * In-memory cache for protected attributes.
+ *
+ * Outer key: uniqueIdentifier
+ * Inner key: namespace
+ *
+ * @private
+ */
+const _protectedAttributes: Map<string, Map<string, ProtectedAttributesRecord>> = new Map();
 
 const dm = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();
@@ -47,7 +67,10 @@ const init = async (): Promise<void> => {
   ]);
 
   await refreshCache();
+  await refreshProtectedAttributesCache();
+
   setupChangeListeners();
+  setupProtectedAttributesChangeListeners();
 };
 
 /**
@@ -59,6 +82,10 @@ const shutdown = () => {
   clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
   clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
   clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
+
+  clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.INSERT);
+  clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.UPDATE);
+  clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.DELETE);
 };
 
 /**
@@ -69,9 +96,36 @@ const shutdown = () => {
 const refreshCache = async (): Promise<void> => {
   _checkInitialization();
   _users.clear();
+  _userIdByUniqueIdentifier.clear();
+
   const userDocs = await dm.getAllInCollection<JUser>(USERS);
   userDocs.forEach((jUser: any) => {
     _users.set(jUser.id, jUser);
+
+    if (jUser?.uniqueIdentifier) {
+      _userIdByUniqueIdentifier.set(jUser.uniqueIdentifier, jUser.id);
+    }
+  });
+};
+
+/**
+ * Loads all protected attributes documents from the database into the in-memory cache.
+ *
+ * @returns {Promise<void>} Resolves when protected attributes are loaded into the cache.
+ */
+const refreshProtectedAttributesCache = async (): Promise<void> => {
+  _checkInitialization();
+  _protectedAttributes.clear();
+
+  const docs = await dm.getAllInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES);
+  docs.forEach((doc: ProtectedAttributesRecord) => {
+    if (!doc?.uniqueIdentifier || !doc?.namespace) return;
+
+    const byNamespace =
+      _protectedAttributes.get(doc.uniqueIdentifier) ??
+      new Map<string, ProtectedAttributesRecord>();
+    byNamespace.set(doc.namespace, doc);
+    _protectedAttributes.set(doc.uniqueIdentifier, byNamespace);
   });
 };
 
@@ -82,14 +136,79 @@ const refreshCache = async (): Promise<void> => {
 const setupChangeListeners = (): void => {
   clm.addChangeListener(USERS, CollectionChangeType.INSERT, (jUser: JUser) => {
     _users.set(jUser.id, jUser);
+    if (jUser?.uniqueIdentifier) {
+      _userIdByUniqueIdentifier.set(jUser.uniqueIdentifier, jUser.id);
+    }
   });
 
   clm.addChangeListener(USERS, CollectionChangeType.UPDATE, (jUser: JUser) => {
     _users.set(jUser.id, jUser);
+    if (jUser?.uniqueIdentifier) {
+      _userIdByUniqueIdentifier.set(jUser.uniqueIdentifier, jUser.id);
+    }
   });
 
   clm.addChangeListener(USERS, CollectionChangeType.DELETE, (userId: string) => {
+    const existingUser = _users.get(userId) as any;
+    const uniqueIdentifier = existingUser?.uniqueIdentifier;
+
     _users.delete(userId);
+
+    if (uniqueIdentifier) {
+      _userIdByUniqueIdentifier.delete(uniqueIdentifier);
+      _protectedAttributes.delete(uniqueIdentifier);
+    }
+  });
+};
+
+/**
+ * Sets up change listeners for protected-attributes database changes.
+ * @private
+ */
+const setupProtectedAttributesChangeListeners = (): void => {
+  clm.addChangeListener(
+    PROTECTED_ATTRIBUTES,
+    CollectionChangeType.INSERT,
+    (doc: ProtectedAttributesRecord) => {
+      if (!doc?.uniqueIdentifier || !doc?.namespace) return;
+
+      const byNamespace =
+        _protectedAttributes.get(doc.uniqueIdentifier) ??
+        new Map<string, ProtectedAttributesRecord>();
+      byNamespace.set(doc.namespace, doc);
+      _protectedAttributes.set(doc.uniqueIdentifier, byNamespace);
+    },
+  );
+
+  clm.addChangeListener(
+    PROTECTED_ATTRIBUTES,
+    CollectionChangeType.UPDATE,
+    (doc: ProtectedAttributesRecord) => {
+      if (!doc?.uniqueIdentifier || !doc?.namespace) return;
+
+      const byNamespace =
+        _protectedAttributes.get(doc.uniqueIdentifier) ??
+        new Map<string, ProtectedAttributesRecord>();
+      byNamespace.set(doc.namespace, doc);
+      _protectedAttributes.set(doc.uniqueIdentifier, byNamespace);
+    },
+  );
+
+  clm.addChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.DELETE, (docId: string) => {
+    // ChangeListenerManager currently passes only the id for deletes (same as USERS).
+    for (const [uniqueIdentifier, byNamespace] of _protectedAttributes.entries()) {
+      for (const [namespace, doc] of byNamespace.entries()) {
+        if ((doc as any)?.id === docId) {
+          byNamespace.delete(namespace);
+          if (byNamespace.size === 0) {
+            _protectedAttributes.delete(uniqueIdentifier);
+          } else {
+            _protectedAttributes.set(uniqueIdentifier, byNamespace);
+          }
+          return;
+        }
+      }
+    }
   });
 };
 
@@ -104,6 +223,84 @@ const _checkInitialization = (): void => {
   if (!dm.getInitializationStatus()) {
     throw new Error('UserManager has not been initialized');
   }
+};
+
+const deleteAllProtectedAttributesByUserId = async (userId: string): Promise<void> => {
+  _checkInitialization();
+
+  if (!userId || typeof userId !== 'string') {
+    return;
+  }
+
+  const user = _users.get(userId);
+  if (!user) {
+    return;
+  }
+
+  const uniqueIdentifier = user.uniqueIdentifier;
+
+  const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+  });
+
+  for (const doc of docs) {
+    if ((doc as any)?.id) {
+      await dm.removeItemFromCollection(PROTECTED_ATTRIBUTES, (doc as any).id);
+    }
+  }
+
+  _protectedAttributes.delete(uniqueIdentifier);
+};
+
+const deleteProtectedAttributesByNamespace = async (
+  userId: string,
+  namespace: string,
+): Promise<boolean> => {
+  _checkInitialization();
+
+  if (!userId || typeof userId !== 'string') {
+    return false;
+  }
+
+  if (!namespace || typeof namespace !== 'string') {
+    return false;
+  }
+
+  const user = _users.get(userId);
+  if (!user) {
+    return false;
+  }
+
+  const uniqueIdentifier = user.uniqueIdentifier;
+
+  const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+    namespace,
+  });
+
+  let deletedAny = false;
+
+  for (const doc of docs) {
+    if ((doc as any)?.id) {
+      const deleted = await dm.removeItemFromCollection(PROTECTED_ATTRIBUTES, (doc as any).id);
+      deletedAny = deletedAny || Boolean(deleted);
+    }
+  }
+
+  if (deletedAny) {
+    const byNamespace = _protectedAttributes.get(uniqueIdentifier);
+    if (byNamespace) {
+      byNamespace.delete(namespace);
+
+      if (byNamespace.size === 0) {
+        _protectedAttributes.delete(uniqueIdentifier);
+      } else {
+        _protectedAttributes.set(uniqueIdentifier, byNamespace);
+      }
+    }
+  }
+
+  return deletedAny;
 };
 
 /**
@@ -143,7 +340,12 @@ const addUser = async (user: NewUserRecord): Promise<JUser | null> => {
       ...(initialAttributes ?? {}),
     };
     const addedUser = (await dm.addItemToCollection(USERS, convertedUser)) as JUser;
+
     _users.set(addedUser.id, addedUser);
+    if (addedUser?.uniqueIdentifier) {
+      _userIdByUniqueIdentifier.set(addedUser.uniqueIdentifier, addedUser.id);
+    }
+
     Log.info(`Added user: ${user.uniqueIdentifier}. `);
     return addedUser;
   } catch (error) {
@@ -195,14 +397,26 @@ const getAllUsers = (): JUser[] => {
 };
 
 /**
+ * Retrieves a user by their id from the cache.
+ *
+ * @returns {JUser | null} The user with the specified id, or null if not found.
+ */
+const getUserById = (userId: string): JUser | null => {
+  _checkInitialization();
+  return (_users.get(userId) as JUser) ?? null;
+};
+
+/**
  * Retrieves a user by their unique identifier from the cache.
  * @returns {JUser | null} The user with the specified unique identifier, or null if not found.
  */
 const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
   _checkInitialization();
-  return (
-    Array.from(_users.values()).find((user) => user.uniqueIdentifier === uniqueIdentifier) || null
-  );
+
+  const userId = _userIdByUniqueIdentifier.get(uniqueIdentifier);
+  if (!userId) return null;
+
+  return (_users.get(userId) as JUser) ?? null;
 };
 
 /**
@@ -210,46 +424,20 @@ const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
  * @param {string} userUniqueIdentifier - the uniqueIdentifier value.
  * @param {object} attributesToUpdate - the data to update.
  * @returns {Promise<JUser | null>} Resolves with the updated JUser or `null` on error.
- * @throws {Error} If trying to update the uniqueIdentifier field directly.
- * If the user with the given uniqueIdentifier does not exist.
- * If the update operation fails.
  */
 const updateUserByUniqueIdentifier = async (
   userUniqueIdentifier: string,
   attributesToUpdate: Record<string, any>,
 ): Promise<JUser | null> => {
-  if (!userUniqueIdentifier || typeof userUniqueIdentifier !== 'string') {
-    const msg = `Invalid uniqueIdentifier: ${userUniqueIdentifier}`;
-    throw new Error(msg);
+  if ('uniqueIdentifier' in (attributesToUpdate as any)) {
+    throw new Error('Cannot update uniqueIdentifier.');
   }
 
-  if ('uniqueIdentifier' in attributesToUpdate) {
-    const msg = `Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier. Use modifyUserUniqueIdentifier instead.`;
-    throw new Error(msg);
-  }
-
-  if (
-    !attributesToUpdate ||
-    typeof attributesToUpdate !== 'object' ||
-    Object.keys(attributesToUpdate).length === 0 ||
-    Array.isArray(attributesToUpdate)
-  ) {
-    const msg = `Invalid updateData: ${JSON.stringify(attributesToUpdate)}. It must be a non-null and non-empty object and should not be an array.`;
-    throw new Error(msg);
-  }
-
-  const theUser: JUser = (await getUserByUniqueIdentifier(userUniqueIdentifier)) as JUser;
-
+  const theUser: JUser | null = getUserByUniqueIdentifier(userUniqueIdentifier);
   if (!theUser) {
-    const msg = `User with uniqueIdentifier (${userUniqueIdentifier}) not found.`;
-    throw new Error(msg);
+    throw new Error(`User with uniqueIdentifier (${userUniqueIdentifier}) not found.`);
   }
-
-  const { id, uniqueIdentifier, ...dataToUpdate } = attributesToUpdate as { [key: string]: any };
-
-  const updatedUser: JUser | null = await updateUserById(theUser.id, dataToUpdate);
-
-  return updatedUser;
+  return updateUserById(theUser.id, attributesToUpdate);
 };
 
 /**
@@ -261,6 +449,10 @@ const updateUserByUniqueIdentifier = async (
  */
 const updateUserById = async (userId: string, attributesToUpdate: object): Promise<JUser> => {
   _checkInitialization();
+
+  if ('uniqueIdentifier' in (attributesToUpdate as any)) {
+    throw new Error('Cannot update uniqueIdentifier.');
+  }
 
   const existingUser: JUser | null = _users.get(userId) as JUser;
 
@@ -275,49 +467,12 @@ const updateUserById = async (userId: string, attributesToUpdate: object): Promi
   if (!updatedUser) {
     throw new Error(`Failed to update user: ${userId}`);
   }
-  _users.set(updatedUser.id, updatedUser);
-  return updatedUser;
-};
-
-/**
- * Change a user's uniqueIdentifier to a new value.
- * @param {string} currentUniqueIdentifier - The user's current uniqueIdentifier.
- * @param {string} newUniqueIdentifier - The new uniqueIdentifier to set.
- * @returns {Promise<JUser>} Resolves with the updated JUser.
- */
-const modifyUserUniqueIdentifier = async (
-  currentUniqueIdentifier: string,
-  newUniqueIdentifier: string,
-): Promise<JUser> => {
-  _checkInitialization();
-
-  if (
-    !newUniqueIdentifier ||
-    typeof newUniqueIdentifier !== 'string' ||
-    newUniqueIdentifier.trim() === ''
-  ) {
-    throw new Error('uniqueIdentifier must be a non-empty string.');
-  }
-
-  const theUser: JUser | null = getUserByUniqueIdentifier(currentUniqueIdentifier);
-
-  if (!theUser) {
-    throw new Error(`User with uniqueIdentifier (${currentUniqueIdentifier}) not found.`);
-  }
-
-  if (theUser.uniqueIdentifier === newUniqueIdentifier) {
-    return theUser; // no-op
-  }
-
-  const updatedUser = (await dm.updateItemByIdInCollection(USERS, theUser.id, {
-    uniqueIdentifier: newUniqueIdentifier,
-  })) as JUser;
-
-  if (!updatedUser) {
-    throw new Error(`Failed to update uniqueIdentifier for user: ${theUser.id}`);
-  }
 
   _users.set(updatedUser.id, updatedUser);
+  if (updatedUser?.uniqueIdentifier) {
+    _userIdByUniqueIdentifier.set(updatedUser.uniqueIdentifier, updatedUser.id);
+  }
+
   return updatedUser;
 };
 
@@ -329,8 +484,21 @@ const modifyUserUniqueIdentifier = async (
  */
 const deleteUserById = async (userId: string): Promise<boolean> => {
   _checkInitialization();
+
   const result = await dm.removeItemFromCollection(USERS, userId);
-  if (result) _users.delete(userId);
+  if (result) {
+    const existingUser = _users.get(userId) as any;
+    const uniqueIdentifier = existingUser?.uniqueIdentifier;
+
+    _users.delete(userId);
+
+    await deleteAllProtectedAttributesByUserId(userId);
+
+    if (uniqueIdentifier) {
+      _userIdByUniqueIdentifier.delete(uniqueIdentifier);
+    }
+  }
+
   return result;
 };
 
@@ -341,11 +509,12 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
  * @returns {Promise<boolean>} Resolves to true if deletion was successful, false otherwise.
  */
 const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
-  const theUser: JUser | null = await getUserByUniqueIdentifier(uniqueIdentifier);
-  const userId = theUser?.id as any;
-  const result = await deleteUserById(userId);
-  if (result) _users.delete(userId);
-  return result;
+  const theUser: JUser | null = getUserByUniqueIdentifier(uniqueIdentifier);
+  if (!theUser) {
+    return false;
+  }
+
+  return await deleteUserById(theUser.id);
 };
 
 /**
@@ -355,8 +524,13 @@ const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<b
  */
 const deleteAllUsers = async (): Promise<void> => {
   _checkInitialization();
+
   await dm.clearCollection(USERS);
+  await dm.clearCollection(PROTECTED_ATTRIBUTES);
+
   _users.clear();
+  _userIdByUniqueIdentifier.clear();
+  _protectedAttributes.clear();
 };
 
 /**
@@ -365,7 +539,6 @@ const deleteAllUsers = async (): Promise<void> => {
  * @returns {Promise<boolean>} Resolves with a boolean indicating if the identifier is unique.
  * If the unique identifier is new, it returns true; otherwise, it returns false.
  */
-
 const isIdentifierUnique = async (userUniqueIdentifier: string): Promise<boolean> => {
   if (
     !userUniqueIdentifier ||
@@ -376,11 +549,8 @@ const isIdentifierUnique = async (userUniqueIdentifier: string): Promise<boolean
     throw new Error(msg);
   }
 
-  const existingUser: JUser | null = getUserByUniqueIdentifier(
-    userUniqueIdentifier,
-  ) as JUser;
-
-  if (existingUser) {
+  const existingUserId = _userIdByUniqueIdentifier.get(userUniqueIdentifier);
+  if (existingUserId) {
     const msg = `User with unique identifier (${userUniqueIdentifier}) already exists.`;
     Log.debug(msg);
     return false;
@@ -400,10 +570,13 @@ export const UserManager = {
   addUser,
   addUsers,
   getAllUsers,
+  getUserById,
   getUserByUniqueIdentifier,
+  updateUserById,
   updateUserByUniqueIdentifier,
-  modifyUserUniqueIdentifier,
+  deleteUserById,
   deleteUserByUniqueIdentifier,
+  deleteProtectedAttributesByNamespace,
   deleteAllUsers,
   shutdown,
 };
@@ -416,11 +589,13 @@ export const UserManager = {
  */
 export const TestingUserManager = {
   ...UserManager,
-  updateUserById,
-  deleteUserById,
   _checkInitialization,
   refreshCache,
+  refreshProtectedAttributesCache,
   isIdentifierUnique,
   setupChangeListeners,
+  setupProtectedAttributesChangeListeners,
   _users, // Exposes the in-memory cache for testing purposes
+  _userIdByUniqueIdentifier, // Exposes the reverse lookup cache for testing purposes
+  _protectedAttributes, // Exposes the in-memory cache for testing purposes
 };

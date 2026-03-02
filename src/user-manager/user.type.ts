@@ -25,3 +25,14 @@ export type NewUserRecord<
   uniqueIdentifier: string;
   initialAttributes?: Omit<TUserData, keyof BaseJUser>;
 };
+
+
+export type BaseProtectedAttributes = {
+  id: string;
+  uniqueIdentifier: string;
+  namespace: string;
+};
+
+export type ProtectedAttributesRecord<
+  TProtectedData extends Record<string, any> = Record<string, any>,
+> = BaseProtectedAttributes & TProtectedData;
