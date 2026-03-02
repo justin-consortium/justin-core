@@ -2,13 +2,11 @@ import * as mongoDB from 'mongodb';
 import { Readable } from 'stream';
 import { CollectionChangeType } from '../data-manager.type';
 import { NO_ID } from '../data-manager.constants';
-import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId, MongoManagerModule, DBInsertItemSuccessResult, DBInsertItemIssueResult, DBInsertItemsIssueResult, DBInsertItemsSuccessResult } from './mongo-data-manager.type';
+import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId, DBAddItemSuccessResult, DBAddItemIssueResult, DBAddItemsIssueResult, DBAddItemsSuccessResult, MongoManagerExperimentalContract } from './mongo-data-manager.type';
 import { handleDbError } from '../data-manager.helpers';
 import { toObjectId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
 import { createLogger } from '../../logger';
-
-import type {}
 
 const Log = createLogger({
   context: {
@@ -520,21 +518,27 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   }
 };
 
-const addOneItem = async (collection: string, item: object): Promise<DBInsertItemSuccessResult | DBInsertItemIssueResult> => {
+const addOneItem = async <T = string>(collection: string, item: object): Promise<DBAddItemSuccessResult<T> | DBAddItemIssueResult> => {
   return {    
     success: true,
-    data: "fake-id",
+    data: "fake-id" as T,
   };
 };
 
-const addMultipleItems = async (collection: string, items: object[]): Promise<DBInsertItemsSuccessResult | DBInsertItemsIssueResult> => {
-  return {
-    success: true,
-    data: items.map((_, index) => `fake-id-${index}`),
-    insertedIndexIdMap: items.reduce<Record<number, string>>((acc, _, index) => {
+const addMultipleItems = async <T = (string | null)[]>(collection: string, items: object[]): Promise<DBAddItemsSuccessResult<T> | DBAddItemsIssueResult<T>> => {
+  
+  const insertedIndexIdMap: Record<number, string> = items.reduce<Record<number, string>>((acc, _, index) => {
       acc[index] = `fake-id-${index}`;
       return acc;
-    }, {} as Record<number, string>),
+    }, {} as Record<number, string>);
+
+  const insertedCount = items.length;
+  
+  return {
+    success: true,
+    data: items.map((_, index) => `fake-id-${index}`) as T,
+    insertedCount,
+    insertedIndexIdMap
   };
 };
 
@@ -572,4 +576,4 @@ export const MongoDBManagerExperimental = {
   removeItemFromCollection,
   clearCollection,
   isCollectionEmpty,
-} satisfies MongoManagerModule;
+} satisfies MongoManagerExperimentalContract;

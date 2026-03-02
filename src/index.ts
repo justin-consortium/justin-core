@@ -31,3 +31,10 @@ export type {
  */
 export { shutdownCore } from './lifecycle';
 export type { ShutdownCoreOptions } from './lifecycle';
+
+
+// TODO: remove after testing docs. Only for testing typedoc comments.
+export type { MongoManagerContract } from './data-manager/mongo/mongo-data-manager.type';
+export type { DataManagerContract } from './data-manager/data-manager.type';
+export type {UserManagerContract } from './user-manager/user-manager.type';
+export type { MongoManagerExperimentalContract } from './data-manager/mongo/mongo-data-manager.type';
