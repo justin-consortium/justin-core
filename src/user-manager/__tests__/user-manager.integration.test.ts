@@ -1,31 +1,31 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import sinon from 'sinon';
-import DataManager from '../../data-manager/data-manager';
+import * as mongoDB from 'mongodb';
+import { loggerSpies, waitForMongoReady } from '../../testing';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
-import { USERS } from '../../data-manager/data-manager.constants';
-import { loggerSpies } from '../../testing';
-import { UserManager, TestingUserManager } from '../user-manager';
-import type { JUser } from '../user.type';
+import DataManager from '../../data-manager/data-manager';
+import { UserManager } from '../../user-manager/user-manager';
+import { PROTECTED_ATTRIBUTES, USERS } from '../../data-manager/data-manager.constants';
 
 describe('UserManager (integration)', () => {
   let repl: MongoMemoryReplSet;
   let uri: string;
-  let dm: DataManager;
   let logs: ReturnType<typeof loggerSpies>;
-  let sb: sinon.SinonSandbox;
 
   beforeAll(async () => {
-    sb = sinon.createSandbox();
     logs = loggerSpies();
 
-    repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    repl = await MongoMemoryReplSet.create({
+      replSet: { count: 1 },
+    });
+
     uri = repl.getUri();
+    await waitForMongoReady(uri);
 
-    const realInit = MongoDBManager.init.bind(MongoDBManager);
-    sb.stub(MongoDBManager, 'init').callsFake(() => realInit(uri, 'user-manager-int-test'));
+    // Ensure the Mongo adapter is pointed at the in-memory replset for this test run.
+    await MongoDBManager.init(uri, 'test-db');
 
-    dm = DataManager.getInstance();
-    await dm.init();
+    // Mark DataManager as initialized for this test run.
+    await DataManager.getInstance().init();
 
     await UserManager.init();
   });
@@ -33,212 +33,175 @@ describe('UserManager (integration)', () => {
   afterAll(async () => {
     try {
       UserManager.shutdown();
-    } catch {}
-
-    await dm.close();
-    await repl.stop();
-
-    logs.restore();
-    sb.restore();
+      await DataManager.getInstance().close();
+      await MongoDBManager.close();
+    } finally {
+      await repl.stop();
+      logs.restore();
+    }
   });
 
   beforeEach(async () => {
-    // reset DB + cache between tests
-    await dm.ensureStore(USERS);
-    await dm.clearCollection(USERS);
-
-    TestingUserManager._users.clear();
-    await TestingUserManager.refreshCache();
+    await UserManager.deleteAllUsers();
   });
 
-  it('init: ensures USERS + unique index, refreshes cache, and sets up listeners (smoke)', async () => {
-    // init already called in beforeAll, but this is idempotent
-    await expect(UserManager.init()).resolves.toBeUndefined();
-
-    // with an empty DB, cache should be empty after refreshCache
-    expect(TestingUserManager._users.size).toBe(0);
-  });
-
-  it('addUser: inserts a flattened user record and caches it', async () => {
-    const created = await UserManager.addUser({
-      uniqueIdentifier: 'u-1',
-      initialAttributes: { name: 'Alice', role: 'admin', nested: { ok: true } },
+  it('create → update user → add protected → update protected → delete user', async () => {
+    const created = await UserManager.createUser({
+      uniqueIdentifier: 'test-1',
+      attributes: {
+        preferredWakeUpTime: '07:00',
+        preferredBedtime: '22:30',
+      },
+      protectedAttributes: [
+        {
+          namespace: 'pii',
+          protectedAttributes: {
+            email: 'test-1@example.com',
+            phoneNumber: '555-000-0001',
+          },
+        },
+        {
+          namespace: 'fitbit',
+          protectedAttributes: { accessToken: 'tok_abc', refreshToken: 'ref_abc' },
+        },
+      ],
     });
 
     expect(created).not.toBeNull();
-    expect(created!.id).toEqual(expect.any(String));
+    expect(created?.id).toEqual(expect.any(String));
     expect(created).toMatchObject({
-      uniqueIdentifier: 'u-1',
-      name: 'Alice',
-      role: 'admin',
-      nested: { ok: true },
+      uniqueIdentifier: 'test-1',
+      preferredWakeUpTime: '07:00',
+      preferredBedtime: '22:30',
     });
 
-    // cache
-    expect(TestingUserManager._users.get(created!.id)).toEqual(created);
+    const userId = created!.id;
 
-    // DB read-back
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all.length).toBe(1);
-    expect(all[0]).toMatchObject({
-      uniqueIdentifier: 'u-1',
-      name: 'Alice',
-      role: 'admin',
+    const initialProtected = UserManager.getProtectedAttributesByNamespaces(userId, ['pii', 'fitbit']);
+    expect(initialProtected.length).toBe(2);
+
+    const pii = initialProtected.find((d) => d.namespace === 'pii');
+    const fitbit = initialProtected.find((d) => d.namespace === 'fitbit');
+
+    expect(pii).toBeTruthy();
+    expect(pii).toMatchObject({
+      uniqueIdentifier: 'test-1',
+      namespace: 'pii',
+      protectedAttributes: {
+        email: 'test-1@example.com',
+        phoneNumber: '555-000-0001',
+      },
     });
-    // No attributes field anymore; this catches regressions.
-    expect((all[0] as any).attributes).toBeUndefined();
+
+    expect(fitbit).toBeTruthy();
+    expect(fitbit).toMatchObject({
+      uniqueIdentifier: 'test-1',
+      namespace: 'fitbit',
+      protectedAttributes: { accessToken: 'tok_abc', refreshToken: 'ref_abc' },
+    });
+
+    const updatedUser = await UserManager.updateUserById(userId, {
+      preferredWakeUpTime: '06:30',
+    });
+
+    expect(updatedUser).toMatchObject({
+      id: userId,
+      uniqueIdentifier: 'test-1',
+      preferredWakeUpTime: '06:30',
+      preferredBedtime: '22:30',
+    });
+
+    const addedCalendar = await UserManager.addProtectedAttributesForUser(userId, 'calendar', {
+      provider: 'google',
+      refreshToken: 'cal_ref_1',
+    });
+
+    expect(addedCalendar).not.toBeNull();
+    expect(addedCalendar).toMatchObject({
+      uniqueIdentifier: 'test-1',
+      namespace: 'calendar',
+      protectedAttributes: { provider: 'google', refreshToken: 'cal_ref_1' },
+    });
+
+    const addedCalendarAgain = await UserManager.addProtectedAttributesForUser(userId, 'calendar', {
+      refreshToken: 'should_not_insert',
+    });
+    expect(addedCalendarAgain).toBeNull();
+
+    const updatedFitbit = await UserManager.updateProtectedAttributesForUser(userId, 'fitbit', {
+      accessToken: 'tok_NEW',
+      refreshToken: 'ref_NEW',
+    });
+
+    expect(updatedFitbit).not.toBeNull();
+    expect(updatedFitbit).toMatchObject({
+      uniqueIdentifier: 'test-1',
+      namespace: 'fitbit',
+      protectedAttributes: { accessToken: 'tok_NEW', refreshToken: 'ref_NEW' },
+    });
+
+    const fitbitAfter = UserManager.getProtectedAttributesByNamespaces(userId, ['fitbit'])[0];
+    expect(fitbitAfter).toMatchObject({
+      namespace: 'fitbit',
+      protectedAttributes: { accessToken: 'tok_NEW', refreshToken: 'ref_NEW' },
+    });
+
+    const deleted = await UserManager.deleteUserById(userId);
+    expect(deleted).toBe(true);
+
+    expect(UserManager.getUserById(userId)).toBeNull();
+    expect(UserManager.getUserByUniqueIdentifier('test-1')).toBeNull();
+
+    // Verify cascade at the DB level.
+    const client = new mongoDB.MongoClient(uri);
+    await client.connect();
+    const db = client.db('test-db');
+
+    const usersDocs = await db.collection(USERS).find({ uniqueIdentifier: 'test-1' }).toArray();
+    const paDocs = await db
+      .collection(PROTECTED_ATTRIBUTES)
+      .find({ uniqueIdentifier: 'test-1' })
+      .toArray();
+
+    await client.close();
+
+    expect(usersDocs.length).toBe(0);
+    expect(paDocs.length).toBe(0);
   });
 
-  it('addUser: returns null for duplicate uniqueIdentifier (via cache uniqueness)', async () => {
-    const a = await UserManager.addUser({
-      uniqueIdentifier: 'dup',
-      initialAttributes: { a: 1 },
-    });
-    expect(a).not.toBeNull();
-
-    const b = await UserManager.addUser({
-      uniqueIdentifier: 'dup',
-      initialAttributes: { a: 2 },
-    });
-    expect(b).toBeNull();
-
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all.length).toBe(1);
-    expect(all[0]).toMatchObject({ uniqueIdentifier: 'dup', a: 1 });
-  });
-
-  it('addUsers: returns only successfully added users (skips duplicates)', async () => {
-    const res = await UserManager.addUsers([
-      { uniqueIdentifier: 'a', initialAttributes: { score: 1 } },
-      { uniqueIdentifier: 'a', initialAttributes: { score: 2 } }, // dup -> skipped
-      { uniqueIdentifier: 'b', initialAttributes: { score: 3 } },
-    ]);
-
-    expect(res.map((u) => u.uniqueIdentifier).sort()).toEqual(['a', 'b']);
-
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all.map((u) => u.uniqueIdentifier).sort()).toEqual(['a', 'b']);
-  });
-
-  it('getAllUsers + getUserByUniqueIdentifier read from cache', async () => {
-    await UserManager.addUser({
-      uniqueIdentifier: 'u-1',
-      initialAttributes: { name: 'Alice' },
-    });
-    await UserManager.addUser({
-      uniqueIdentifier: 'u-2',
-      initialAttributes: { name: 'Bob' },
+  it('reserved field invariants throw (updateUserById)', async () => {
+    const created = await UserManager.createUser({
+      uniqueIdentifier: 'test-2',
+      attributes: { preferredWakeUpTime: '07:15', preferredBedtime: '22:00' },
     });
 
-    const all = UserManager.getAllUsers();
-    expect(all.length).toBe(2);
-
-    const u1 = UserManager.getUserByUniqueIdentifier('u-1');
-    expect(u1).toMatchObject({ uniqueIdentifier: 'u-1', name: 'Alice' });
-
-    const missing = UserManager.getUserByUniqueIdentifier('nope');
-    expect(missing).toBeNull();
-  });
-
-  it('updateUserByUniqueIdentifier: updates fields and does not allow uniqueIdentifier overwrite', async () => {
-    const created = await UserManager.addUser({
-      uniqueIdentifier: 'u-1',
-      initialAttributes: { a: 1, b: 1 },
-    });
     expect(created).not.toBeNull();
 
-    const updated = await UserManager.updateUserByUniqueIdentifier('u-1', { b: 2, c: 3 });
-    expect(updated).not.toBeNull();
-
-    expect(updated).toMatchObject({
-      id: created!.id,
-      uniqueIdentifier: 'u-1',
-      a: 1,
-      b: 2,
-      c: 3,
-    });
-
-    // ensure it actually persisted
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all[0]).toMatchObject({ uniqueIdentifier: 'u-1', a: 1, b: 2, c: 3 });
-
-    // attempting to change uniqueIdentifier through updateUserByUniqueIdentifier should throw
     await expect(
-      UserManager.updateUserByUniqueIdentifier('u-1', { uniqueIdentifier: 'nope' } as any),
-    ).rejects.toThrow('Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier');
+      UserManager.updateUserById(created!.id, { uniqueIdentifier: 'test-999' } as any),
+    ).rejects.toThrow();
+
+    await expect(UserManager.updateUserById(created!.id, { id: 'nope' } as any)).rejects.toThrow();
   });
 
-  it('modifyUserUniqueIdentifier: updates uniqueIdentifier and cache', async () => {
-    const created = await UserManager.addUser({
-      uniqueIdentifier: 'old',
-      initialAttributes: { x: 1 },
+  it('protected attributes reject reserved fields', async () => {
+    const created = await UserManager.createUser({
+      uniqueIdentifier: 'test-3',
+      attributes: { preferredWakeUpTime: '06:45', preferredBedtime: '22:15' },
     });
+
     expect(created).not.toBeNull();
 
-    const updated = await UserManager.modifyUserUniqueIdentifier('old', 'new');
-    expect(updated).toMatchObject({
-      id: created!.id,
-      uniqueIdentifier: 'new',
-      x: 1,
-    });
+    await expect(
+      UserManager.updateProtectedAttributesForUser(created!.id, 'fitbit', {
+        namespace: 'evil',
+      } as any),
+    ).rejects.toThrow();
 
-    // cache lookup by new id works
-    const byNew = UserManager.getUserByUniqueIdentifier('new');
-    expect(byNew).toMatchObject({ id: created!.id, uniqueIdentifier: 'new' });
-
-    // old no longer exists
-    expect(UserManager.getUserByUniqueIdentifier('old')).toBeNull();
-
-    // DB read-back
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all[0]).toMatchObject({ uniqueIdentifier: 'new', x: 1 });
-  });
-
-  it('deleteUserByUniqueIdentifier: deletes from DB and cache', async () => {
-    const created = await UserManager.addUser({
-      uniqueIdentifier: 'u-1',
-      initialAttributes: { x: 1 },
-    });
-    expect(created).not.toBeNull();
-
-    const ok = await UserManager.deleteUserByUniqueIdentifier('u-1');
-    expect(ok).toBe(true);
-
-    expect(UserManager.getUserByUniqueIdentifier('u-1')).toBeNull();
-    expect(TestingUserManager._users.has(created!.id)).toBe(false);
-
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all).toEqual([]);
-  });
-
-  it('deleteAllUsers: clears DB and cache', async () => {
-    await UserManager.addUser({ uniqueIdentifier: 'a', initialAttributes: { x: 1 } });
-    await UserManager.addUser({ uniqueIdentifier: 'b', initialAttributes: { x: 2 } });
-
-    expect(UserManager.getAllUsers().length).toBe(2);
-
-    await expect(UserManager.deleteAllUsers()).resolves.toBeUndefined();
-
-    expect(UserManager.getAllUsers()).toEqual([]);
-    const all = await dm.getAllInCollection<JUser>(USERS);
-    expect(all).toEqual([]);
-  });
-
-  it('refreshCache: repopulates cache from DB', async () => {
-    // write directly via dm to simulate “cold start” / cache miss
-    const inserted = await dm.addItemToCollection(USERS, {
-      uniqueIdentifier: 'u-1',
-      name: 'Alice',
-    });
-    expect(inserted).not.toBeNull();
-
-    // cache is currently empty
-    TestingUserManager._users.clear();
-    expect(UserManager.getAllUsers()).toEqual([]);
-
-    await TestingUserManager.refreshCache();
-
-    const u1 = UserManager.getUserByUniqueIdentifier('u-1');
-    expect(u1).toMatchObject({ uniqueIdentifier: 'u-1', name: 'Alice' });
+    await expect(
+      UserManager.addProtectedAttributesForUser(created!.id, 'fitbit', {
+        uniqueIdentifier: 'evil',
+      } as any),
+    ).rejects.toThrow();
   });
 });
