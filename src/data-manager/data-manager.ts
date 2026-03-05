@@ -38,13 +38,14 @@ type DataManagerAdapter = {
   ) => Promise<object[]>;
 
   addItemToCollection: (collectionName: string, item: object) => Promise<string>;
+  addItemsToCollection?: (collectionName: string, items: object[]) => Promise<string[]>;
   updateItemInCollection: (
     collectionName: string,
     id: string,
     item: object,
   ) => Promise<object | null>;
   getAllInCollection: (collectionName: string) => Promise<object[]>;
-  removeItemFromCollection: (collectionName: string, id: string) => Promise<boolean>;
+  removeItemFromCollection: (collectionName: string, id: string) => Promise<number>;
   clearCollection: (collectionName: string) => Promise<boolean>;
   isCollectionEmpty: (collectionName: string) => Promise<boolean>;
 };
@@ -195,6 +196,60 @@ class DataManager extends EventEmitter {
   }
 
   /**
+   * Adds multiple items to a specified collection.
+   *
+   * If the underlying adapter supports bulk insert, this uses it.
+   * Otherwise, it falls back to inserting each item one-by-one.
+   *
+   * @param collectionName - The collection name.
+   * @param items - The items to insert.
+   * @returns Inserted items with `id` fields (may be empty).
+   */
+  public async addItemsToCollection<T extends object>(
+    collectionName: string,
+    items: T[],
+  ): Promise<Array<T & { id: string }>> {
+    try {
+      this.checkInitialization();
+
+      if (!Array.isArray(items) || items.length === 0) return [];
+
+      // Prefer adapter bulk insert if available.
+      if (typeof this.db.addItemsToCollection === 'function') {
+        const ids = await this.db.addItemsToCollection(collectionName, items);
+        const created = ids.map((id, idx) => ({ id, ...(items[idx] as any) })) as Array<
+          T & { id: string }
+        >;
+
+        if (collectionName === USERS) {
+          for (const item of created) {
+            this.emit('userAdded', item);
+          }
+        }
+
+        return created;
+      }
+
+      // Fallback: insert one-by-one.
+      const created: Array<T & { id: string }> = [];
+      for (const item of items) {
+        const out = await this.addItemToCollection(collectionName, item);
+        if (out) created.push(out);
+      }
+
+      return created;
+    } catch (error) {
+      return (
+        handleDbError(
+          `Failed to add items to collection: ${collectionName}`,
+          'addItemsToCollection',
+          error,
+        ) ?? []
+      );
+    }
+  }
+
+  /**
    * Updates an item in a collection by ID and emits an event.
    * @param {string} collectionName - The name of the collection.
    * @param {string} id - The ID of the item to update.
@@ -227,14 +282,18 @@ class DataManager extends EventEmitter {
    * Removes an item from a collection by ID and emits an event.
    * @param {string} collectionName - The name of the collection.
    * @param {string} id - The ID of the item to remove.
-   * @returns {Promise<boolean>} Resolves with `true` if removed, `false` on error.
+   * @returns {Promise<number>} Resolves with 1 if deleted, 0 if not found, -1 if invalid id
    */
-  public async removeItemFromCollection(collectionName: string, id: string): Promise<boolean> {
+  public async removeItemFromCollection(collectionName: string, id: string): Promise<number> {
     try {
       this.checkInitialization();
       const result = await this.db.removeItemFromCollection(collectionName, id);
 
-      if (result && collectionName === USERS) {
+      if (result === -1){
+        throw new Error(`Failed to remove item from collection: ${collectionName}, id ${id} invalid`);
+      }
+
+      if (result > 0  && collectionName === USERS) {
         this.emit('userDeleted', id);
       }
       return result;

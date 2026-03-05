@@ -373,6 +373,46 @@ const addItemToCollection = async (collectionName: string, item: object): Promis
 };
 
 /**
+ * Inserts multiple items into a collection and returns the inserted ids.
+ *
+ * Any existing `id` or `_id` fields on the input objects are stripped before insertion.
+ *
+ * This is designed to support higher-level "bulk create" workflows while keeping
+ * MongoDB as the single source of truth for primary keys.
+ *
+ * @param collectionName - Target collection name.
+ * @param items - The objects to insert.
+ * @returns Inserted `_id` values as strings (may be empty).
+ */
+const addItemsToCollection = async (collectionName: string, items: object[]): Promise<string[]> => {
+  ensureInitialized();
+
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const filtered = items.map((item) => {
+    const { id, _id, ...rest } = item as WithId;
+    return rest;
+  });
+
+  try {
+    const result = await _db!.collection(collectionName).insertMany(filtered, { ordered: true });
+    const ids = Object.values(result.insertedIds).map((oid) => oid.toString());
+
+    Log.debug(`Items added to ${collectionName}`, {
+      count: ids.length,
+    });
+
+    return ids;
+  } catch (error) {
+    return handleDbError(
+      `Error inserting many items into ${collectionName}`,
+      'addItemsToCollection',
+      error,
+    );
+  }
+};
+
+/**
  * Updates an item by ID in a collection and returns the updated document.
  *
  * The update is applied as `$set` on the provided `item` object.
@@ -451,22 +491,22 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
  * @param id - String representation of the `_id`.
  * @returns `true` if the delete was acknowledged, `false` otherwise.
  */
-const removeItemFromCollection = async (collectionName: string, id: string): Promise<boolean> => {
+const removeItemFromCollection = async (collectionName: string, id: string): Promise<number> => {
   ensureInitialized();
   const objectId = toObjectId(id);
 
   // TODO: revisit the return value.
-  if (!objectId) return false;
+  if (!objectId) return -1;
 
   try {
-    const { acknowledged, deletedCount } = await _db!
+    const { deletedCount } = await _db!
       .collection(collectionName)
       .deleteOne({ _id: objectId });
     if (deletedCount == 0) {
       Log.warn(`No deletion made for item with id ${id} in ${collectionName}: not found.`);
     }
     // TODO: revisit the return value. If deleteCount is 0, should we return false?
-    return acknowledged;
+    return deletedCount;
   } catch (error) {
     return handleDbError(
       `Error removing item with id ${id} from ${collectionName}`,
@@ -542,6 +582,7 @@ export const MongoDBManager = {
   findItemByIdInCollection,
   findItemsInCollection,
   addItemToCollection,
+  addItemsToCollection,
   updateItemInCollection,
   getAllInCollection,
   removeItemFromCollection,

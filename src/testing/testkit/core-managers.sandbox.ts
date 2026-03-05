@@ -85,12 +85,13 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
   sb.stub(dm, 'ensureStore').resolves();
   sb.stub(dm, 'ensureIndexes').resolves();
   sb.stub(dm, 'getInitializationStatus').returns(true);
-
   sb.stub(dm, 'getAllInCollection').resolves([]);
   sb.stub(dm, 'addItemToCollection').resolves(null as any);
   sb.stub(dm, 'updateItemByIdInCollection').resolves(null as any);
   sb.stub(dm, 'removeItemFromCollection').resolves(false as any);
   sb.stub(dm, 'clearCollection').resolves();
+  sb.stub(dm, 'findItemByIdInCollection').resolves(null as any);
+  sb.stub(dm, 'findItemsInCollection').resolves([] as any);
 
   // ChangeListenerManager stubs
   sb.stub(clm, 'addChangeListener');
