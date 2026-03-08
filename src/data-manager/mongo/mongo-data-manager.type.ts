@@ -52,7 +52,7 @@ export type MongoManagerContract = {
   *
   * If the Node.js MongoDB driver throws a `MongoBulkWriteError`, the implementation processes the error and includes messages for each error in the `errors` array of the returned {@link DBAddItemIssueResult}.
    */
-  addMultipleItems<T = (string | null)[]>(collection: string, items: object[]): Promise<DBAddItemsSuccessResult<T> | DBAddItemsIssueResult<T>>;
+  addItems<T = (string | null)[]>(collection: string, items: object[]): Promise<DBAddItemsSuccessResult<T> | DBAddItemsIssueResult<T>>;
 
 
   /**
