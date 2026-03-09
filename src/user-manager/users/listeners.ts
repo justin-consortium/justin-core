@@ -2,7 +2,7 @@ import { ChangeListenerManager } from '../../data-manager/change-listener.manage
 import { USERS } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
 import { JUser } from '../types';
-import { deleteUserFromCache, upsertUserInCache } from './user-cache';
+import { deleteUserFromCache, upsertUserInCache } from './cache';
 import { createLogger } from '../../logger';
 
 const Log = createLogger({ context: { source: 'user-listeners' } });

@@ -11,7 +11,7 @@ import {
   refreshUsersCache,
   getUserByIdFromCache,
   getUserByUniqueIdentifierFromCache,
-} from './users/user-cache';
+} from './users/cache';
 import {
   clearProtectedAttributesCache,
   refreshProtectedAttributesCache,
@@ -26,7 +26,7 @@ import {
   updateUserById,
   updateUserByUniqueIdentifier,
   isIdentifierUnique,
-} from './users/user-crud';
+} from './users/crud';
 import {
   getProtectedAttributesByUniqueIdentifier,
   getAllProtectedAttributesByUniqueIdentifier,
@@ -38,7 +38,7 @@ import {
   deleteProtectedAttributeByUniqueIdentifier,
   deleteProtectedAttributesFromNamespaceByUniqueIdentifier,
 } from './protected-attributes/protected-attributes-crud';
-import { removeUserChangeListeners, setupUserChangeListeners } from './users/user-listeners';
+import { removeUserChangeListeners, setupUserChangeListeners } from './users/listeners';
 import {
   removeProtectedAttributesChangeListeners,
   setupProtectedAttributesChangeListeners,

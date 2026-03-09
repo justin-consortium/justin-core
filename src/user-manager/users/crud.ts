@@ -9,7 +9,7 @@ import {
   getUserByUniqueIdentifierFromCache,
   getUserIdByUniqueIdentifierFromCache,
   upsertUserInCache,
-} from './user-cache';
+} from './cache';
 
 const dm = DataManager.getInstance();
 
