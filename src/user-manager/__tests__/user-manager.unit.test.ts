@@ -5,7 +5,7 @@ import { PROTECTED_ATTRIBUTES, USERS } from '../../data-manager/data-manager.con
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
 import { UserManager, TestingUserManager } from '../index';
 import { __testing__usersCache } from '../users/cache';
-import { __testing__protectedAttributesCache } from '../protected-attributes/protected-attributes-cache';
+import { __testing__protectedAttributesCache } from '../protected-attributes/cache';
 
 describe('UserManager (unit)', () => {
   let cm: CoreManagersSandbox;

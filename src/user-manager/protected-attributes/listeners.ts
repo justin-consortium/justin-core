@@ -5,7 +5,7 @@ import { ProtectedAttributesRecord } from '../types';
 import {
   deleteProtectedAttributesDocByIdFromCache,
   upsertProtectedAttributesInCache,
-} from './protected-attributes-cache';
+} from './cache';
 import { createLogger } from '../../logger';
 
 const Log = createLogger({ context: { source: 'protected-attributes-listeners' } });

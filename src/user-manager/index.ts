@@ -16,7 +16,7 @@ import {
   clearProtectedAttributesCache,
   refreshProtectedAttributesCache,
   deleteProtectedAttributesByUniqueIdentifierFromCache,
-} from './protected-attributes/protected-attributes-cache';
+} from './protected-attributes/cache';
 import {
   createUserRecord,
   createUserRecords,
@@ -37,12 +37,12 @@ import {
   updateProtectedAttributesByUniqueIdentifier,
   deleteProtectedAttributeByUniqueIdentifier,
   deleteProtectedAttributesFromNamespaceByUniqueIdentifier,
-} from './protected-attributes/protected-attributes-crud';
+} from './protected-attributes/crud';
 import { removeUserChangeListeners, setupUserChangeListeners } from './users/listeners';
 import {
   removeProtectedAttributesChangeListeners,
   setupProtectedAttributesChangeListeners,
-} from './protected-attributes/protected-attributes-listeners';
+} from './protected-attributes/listeners';
 
 const Log = createLogger({
   context: {

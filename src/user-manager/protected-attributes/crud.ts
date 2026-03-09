@@ -15,7 +15,7 @@ import {
   getAllProtectedAttributesFromCache,
   getProtectedAttributesByNamespacesFromCache,
   upsertProtectedAttributesInCache,
-} from './protected-attributes-cache';
+} from './cache';
 
 const dm = DataManager.getInstance();
 
