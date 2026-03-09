@@ -1,5 +1,5 @@
 import sinon from 'sinon';
-import DataManager from '../../data-manager/data-manager';
+import DataManager from '../../data-manager';
 import { makeStream } from '../../testing';
 
 type Key = string; // `${collection}:${type}`

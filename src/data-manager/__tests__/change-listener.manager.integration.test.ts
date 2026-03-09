@@ -1,6 +1,6 @@
 import sinon from 'sinon';
 import { ChangeListenerManager } from '../change-listener.manager';
-import { CollectionChangeType } from '../../data-manager/data-manager.type';
+import { CollectionChangeType } from '../types';
 import { push, resetSingleton, mockDataManager, loggerSpies } from '../../testing';
 
 describe('ChangeListenerManager (integration)', () => {

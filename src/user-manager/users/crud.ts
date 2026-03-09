@@ -1,6 +1,6 @@
-import DataManager from '../../data-manager/data-manager';
-import { USERS } from '../../data-manager/data-manager.constants';
-import { handleDbError, checkInitialized } from '../../data-manager/data-manager.helpers';
+import DataManager from '../../data-manager';
+import { USERS } from '../../data-manager/constants';
+import { handleDbError, checkInitialized } from '../../data-manager/helpers';
 import type { JUser, NewUserRecord } from '../types';
 import { assertNoReservedKeys, isNonEmptyString, isPlainObject, omitKeys } from '../helpers';
 import {

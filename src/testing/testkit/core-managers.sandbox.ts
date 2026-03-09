@@ -1,9 +1,9 @@
 import sinon from 'sinon';
 // eslint-disable-next-line no-duplicate-imports
 import type { SinonSandbox, SinonStub } from 'sinon';
-import DataManager from '../../data-manager/data-manager';
+import DataManager from '../../data-manager';
 import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
-import * as HelpersModule from '../../data-manager/data-manager.helpers';
+import * as HelpersModule from '../../data-manager/helpers';
 
 /**
  * Error shape thrown by the `handleDbError` stub in {@link makeCoreManagersSandbox}.

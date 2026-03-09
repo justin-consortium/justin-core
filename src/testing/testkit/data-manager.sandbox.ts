@@ -3,7 +3,7 @@ import sinon from 'sinon';
 import type { SinonSandbox, SinonSpy, SinonStub } from 'sinon';
 import { ChangeListenerManager as CLM } from '../../data-manager/change-listener.manager';
 import { MongoDBManager as mongoFns } from '../../data-manager/mongo/mongo-data-manager';
-import * as Helpers from '../../data-manager/data-manager.helpers';
+import * as Helpers from '../../data-manager/helpers';
 
 type ClmMock = {
   addChangeListener: SinonStub;

@@ -1,9 +1,9 @@
 import { MongoDBManager } from './mongo/mongo-data-manager';
 import { EventEmitter } from 'events';
 import { ChangeListenerManager } from './change-listener.manager';
-import { CollectionChangeType, DataManagerAdapter } from './data-manager.type';
-import { DBType, USERS } from './data-manager.constants';
-import { handleDbError } from './data-manager.helpers';
+import { CollectionChangeType, DataManagerAdapter } from './types';
+import { DBType, USERS } from './constants';
+import { handleDbError } from './helpers';
 import { Readable } from 'stream';
 import { createLogger } from '../logger/logger';
 

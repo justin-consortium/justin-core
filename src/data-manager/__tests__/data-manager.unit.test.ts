@@ -1,8 +1,8 @@
 import { Readable } from 'stream';
 import sinon, { SinonSandbox } from 'sinon';
-import DataManager from '../data-manager';
-import { DBType, USERS } from '../data-manager.constants';
-import { CollectionChangeType } from '../data-manager.type';
+import DataManager from '../index';
+import { DBType, USERS } from '../constants';
+import { CollectionChangeType } from '../types';
 import { resetSingleton, makeDataManagerSandbox } from '../../testing';
 
 describe('DataManager (unit)', () => {

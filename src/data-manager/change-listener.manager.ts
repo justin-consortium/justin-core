@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
-import { CollectionChangeType } from '../data-manager/data-manager.type';
-import DataManager from '../data-manager/data-manager';
+import { CollectionChangeType } from './types';
+import DataManager from './';
 import { Readable } from 'stream';
 import { createLogger } from '../logger/logger';
 

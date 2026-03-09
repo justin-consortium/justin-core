@@ -1,6 +1,6 @@
 import * as mongoDB from 'mongodb';
 import sinon, { SinonSandbox } from 'sinon';
-import { NO_ID } from '../../data-manager.constants';
+import { NO_ID } from '../../constants';
 import { toObjectId, transformId, asIndexKey, normalizeIndexKey } from '../mongo.helpers';
 import { loggerSpies, expectLog } from '../../../testing';
 

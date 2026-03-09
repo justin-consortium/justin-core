@@ -1,5 +1,5 @@
 import * as mongoDB from 'mongodb';
-import { NO_ID } from '../data-manager.constants';
+import { NO_ID } from '../constants';
 import { createLogger } from '../../logger/logger';
 
 const Log = createLogger({

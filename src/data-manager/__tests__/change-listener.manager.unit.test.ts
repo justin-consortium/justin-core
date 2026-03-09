@@ -1,7 +1,7 @@
 import sinon, { SinonSandbox } from 'sinon';
 import { ChangeListenerManager } from '../change-listener.manager';
-import { CollectionChangeType } from '../data-manager.type';
-import { USERS } from '../data-manager.constants';
+import { CollectionChangeType } from '../types';
+import { USERS } from '../constants';
 import { resetSingleton, expectLog, mockDataManager, loggerSpies } from '../../testing';
 
 /**

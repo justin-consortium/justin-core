@@ -1,9 +1,9 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import sinon from 'sinon';
-import DataManager from '../data-manager';
+import DataManager from '../index';
 import { MongoDBManager } from '../mongo/mongo-data-manager';
 import { ChangeListenerManager } from '../change-listener.manager';
-import { USERS } from '../data-manager.constants';
+import { USERS } from '../constants';
 import { loggerSpies } from '../../testing';
 
 describe('DataManager (integration)', () => {

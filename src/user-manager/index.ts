@@ -1,8 +1,8 @@
-import DataManager from '../data-manager/data-manager';
+import DataManager from '../data-manager';
 import { ChangeListenerManager } from '../data-manager/change-listener.manager';
-import { checkInitialized } from '../data-manager/data-manager.helpers';
-import { PROTECTED_ATTRIBUTES, USERS } from '../data-manager/data-manager.constants';
-import { CollectionChangeType } from '../data-manager/data-manager.type';
+import { checkInitialized } from '../data-manager/helpers';
+import { PROTECTED_ATTRIBUTES, USERS } from '../data-manager/constants';
+import { CollectionChangeType } from '../data-manager/types';
 import { createLogger } from '../logger/logger';
 import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './types';
 import { isNonEmptyString } from './helpers';

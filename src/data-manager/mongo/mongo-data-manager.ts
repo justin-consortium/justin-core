@@ -1,9 +1,9 @@
 import * as mongoDB from 'mongodb';
 import { Readable } from 'stream';
-import { CollectionChangeType } from '../data-manager.type';
-import { NO_ID } from '../data-manager.constants';
+import { CollectionChangeType } from '../types';
+import { NO_ID } from '../constants';
 import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-data-manager.type';
-import { handleDbError } from '../data-manager.helpers';
+import { handleDbError } from '../helpers';
 import { stringToMongoId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
 import { createLogger } from '../../logger';

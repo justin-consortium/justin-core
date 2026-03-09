@@ -12,10 +12,10 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import sinon from 'sinon';
 
-import DataManager from '../../data-manager/data-manager';
+import DataManager from '../../data-manager';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
 import { UserManager, TestingUserManager } from '../../user-manager';
-import { DBType, USERS } from '../../data-manager/data-manager.constants';
+import { DBType, USERS } from '../../data-manager/constants';
 import { waitForMongoReady, loggerSpies } from '../../testing/';
 
 describe('@just-in/core system / sanity tests', () => {

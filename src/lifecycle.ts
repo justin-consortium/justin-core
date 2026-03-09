@@ -1,4 +1,4 @@
-import DataManager from './data-manager/data-manager';
+import DataManager from './data-manager';
 import { UserManager } from './user-manager';
 import { ChangeListenerManager } from './data-manager/change-listener.manager';
 

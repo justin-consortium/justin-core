@@ -1,4 +1,4 @@
-import { handleDbError } from '../data-manager.helpers';
+import { handleDbError } from '../helpers';
 import { loggerSpies, expectLog } from '../../testing';
 
 describe('DataManager Helpers', () => {
