@@ -1,4 +1,4 @@
-import { JUser } from '../user-manager/user.type';
+import { JUser } from '../user-manager/types';
 
 /**
  * Return a new object with `key` added.

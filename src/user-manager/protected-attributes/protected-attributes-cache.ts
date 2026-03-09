@@ -1,7 +1,7 @@
 import DataManager from '../../data-manager/data-manager';
 import { PROTECTED_ATTRIBUTES } from '../../data-manager/data-manager.constants';
 import { checkInitialized } from '../../data-manager/data-manager.helpers';
-import { ProtectedAttributesRecord } from '../user.type';
+import { ProtectedAttributesRecord } from '../types';
 import { isNonEmptyString } from '../helpers';
 
 const dm = DataManager.getInstance();

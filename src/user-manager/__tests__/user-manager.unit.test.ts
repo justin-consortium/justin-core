@@ -3,7 +3,7 @@ import { makeCoreManagersSandbox, type CoreManagersSandbox } from '../../testing
 import DataManager from '../../data-manager/data-manager';
 import { PROTECTED_ATTRIBUTES, USERS } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import { UserManager, TestingUserManager } from '../user-manager';
+import { UserManager, TestingUserManager } from '../index';
 import { __testing__usersCache } from '../users/user-cache';
 import { __testing__protectedAttributesCache } from '../protected-attributes/protected-attributes-cache';
 

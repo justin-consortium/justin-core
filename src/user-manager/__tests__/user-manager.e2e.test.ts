@@ -3,7 +3,7 @@ import sinon from 'sinon';
 
 import DataManager from '../../data-manager/data-manager';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
-import { UserManager, TestingUserManager } from '../user-manager';
+import { UserManager, TestingUserManager } from '../index';
 import { DBType, USERS, PROTECTED_ATTRIBUTES } from '../../data-manager/data-manager.constants';
 import { waitForMongoReady } from '../../testing';
 

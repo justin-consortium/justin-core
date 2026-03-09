@@ -4,7 +4,7 @@ import { checkInitialized } from '../data-manager/data-manager.helpers';
 import { PROTECTED_ATTRIBUTES, USERS } from '../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../data-manager/data-manager.type';
 import { createLogger } from '../logger/logger';
-import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './user.type';
+import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './types';
 import { isNonEmptyString } from './helpers';
 import {
   clearUsersCache,

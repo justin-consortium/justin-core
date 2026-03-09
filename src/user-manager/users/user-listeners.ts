@@ -1,7 +1,7 @@
 import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
 import { USERS } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import { JUser } from '../user.type';
+import { JUser } from '../types';
 import { deleteUserFromCache, upsertUserInCache } from './user-cache';
 import { createLogger } from '../../logger';
 

@@ -1,7 +1,7 @@
 import DataManager from '../../data-manager/data-manager';
 import { PROTECTED_ATTRIBUTES } from '../../data-manager/data-manager.constants';
 import { handleDbError, checkInitialized } from '../../data-manager/data-manager.helpers';
-import type { NamespacedAttributes, ProtectedAttributesRecord } from '../user.type';
+import type { NamespacedAttributes, ProtectedAttributesRecord } from '../types';
 import {
   assertNoReservedKeysDeep,
   isNonEmptyString,

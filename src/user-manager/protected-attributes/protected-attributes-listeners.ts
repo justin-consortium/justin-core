@@ -1,7 +1,7 @@
 import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
 import { PROTECTED_ATTRIBUTES } from '../../data-manager/data-manager.constants';
 import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import { ProtectedAttributesRecord } from '../user.type';
+import { ProtectedAttributesRecord } from '../types';
 import {
   deleteProtectedAttributesDocByIdFromCache,
   upsertProtectedAttributesInCache,

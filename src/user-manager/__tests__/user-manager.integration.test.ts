@@ -3,7 +3,7 @@ import * as mongoDB from 'mongodb';
 import { loggerSpies, waitForMongoReady } from '../../testing';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
 import DataManager from '../../data-manager/data-manager';
-import { UserManager } from '../../user-manager/user-manager';
+import { UserManager } from '../index';
 import { PROTECTED_ATTRIBUTES, USERS } from '../../data-manager/data-manager.constants';
 
 describe('UserManager (integration)', () => {

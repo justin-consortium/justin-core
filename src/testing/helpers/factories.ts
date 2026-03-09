@@ -1,4 +1,4 @@
-import type { JUser, NewUserRecord } from '../../user-manager/user.type';
+import type { JUser, NewUserRecord } from '../../user-manager/types';
 
 /**
  * Creates a test JUser with optional overrides.

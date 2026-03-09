@@ -1,7 +1,7 @@
 import DataManager from '../../data-manager/data-manager';
 import { USERS } from '../../data-manager/data-manager.constants';
 import { checkInitialized } from '../../data-manager/data-manager.helpers';
-import { JUser } from '../user.type';
+import { JUser } from '../types';
 import { isNonEmptyString } from '../helpers';
 
 const dm = DataManager.getInstance();

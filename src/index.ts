@@ -10,8 +10,8 @@ export { CollectionChangeType } from './data-manager/data-manager.type';
 /**
  * UserManager
  */
-export { UserManager } from './user-manager/user-manager';
-export type { JUser, NewUserRecord } from './user-manager/user.type';
+export { UserManager } from './user-manager';
+export type { JUser, NewUserRecord } from './user-manager/types';
 
 /**
  * Logging
