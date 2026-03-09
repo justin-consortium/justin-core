@@ -18,7 +18,7 @@ export type MongoManagerContract = {
   /**
    * Adds a single item to the specified collection in the database.
    *
-   * @template T The type of the item to insert.
+   * @template T The type of the return data within the result. Defaults to `string` if not specified.
    * @param {string} collection - The name of the collection to insert into.
    * @param {object} item - The item to add to the collection.
    * @returns {Promise<DBAddItemSuccessResult<T> | DBAddItemIssueResult>} Resolves with a success result containing the id of the matched document in the `data` property, or an issue result if issues are encountered.
@@ -35,7 +35,7 @@ export type MongoManagerContract = {
   /**
    * Adds multiple items to the specified collection in the database.
    *
-   * @template T The type of the items to insert.
+   * @template T The type of the return data within the result.
    * @param {string} collection - The name of the collection to insert into.
    * @param {object[]} items - The array of items to add to the collection.
   * @returns {Promise<DBAddItemsSuccessResult<T> | DBAddItemsIssueResult<T>>} Resolves with a success result containing the added item IDs in the `data` property, or an issue result if issues are encountered.
@@ -58,7 +58,7 @@ export type MongoManagerContract = {
   /**
    * Retrieves a single item from the specified collection by its ID.
    *
-   * @template T The type of the returned document.
+   * @template T The type of the return data within the result.
    * @param {string} collection - The name of the collection to query.
    * @param {string} id - The ID of the document to retrieve.
    * @returns {Promise<DBGetItemSuccessResult<T> | DBGetItemIssueResult>} Resolves with a success result containing the id of the matched document in the `data` property, or an issue result if no document is found.
@@ -77,7 +77,7 @@ export type MongoManagerContract = {
   /**
    * Finds items in the specified collection matching the given query.
    *
-   * @template T The type of the returned documents array.
+   * @template T The type of the return data within the result.
    * @param {string} collection - The name of the collection to query.
    * @param {object} query - The filter object to match documents.
    * @returns {Promise<DBFindItemsSuccessResult<T> | DBFindItemsIssueResult>} Resolves with a success result containing the matched documents in the `data` property (empty array if nothing matched), or an issue result if issues occurred.
@@ -96,7 +96,7 @@ export type MongoManagerContract = {
   /**
    * Updates a single item in the specified collection by its ID.
    *
-   * @template T The type of the updated document.
+   * @template T The type of the return data within the result.
    * @param {string} collection - The name of the collection to update.
    * @param {string} id - The ID of the document to update.
    * @param {Record<string, unknown>} update - The update object to apply.
@@ -119,7 +119,7 @@ export type MongoManagerContract = {
   /**
    * Updates multiple items in the specified collection matching the given query.
    *
-   * @template T The type of the updated documents array.
+   * @template T The type of the return data within the result.
    * @param {string} collection - The name of the collection to update.
    * @param {object} query - The filter object to match documents.
    * @param {Record<string, unknown>} update - The update object to apply.
