@@ -145,7 +145,7 @@ export type MongoManagerContract = {
    * @param {string} id - The ID of the document to remove.
    * @returns {Promise<DBRemoveSuccessResult | DBRemoveIssueResult>} Resolves with a success result if the operation was acknowledged, or an issue result if an error occurred.
    *
-   *   - For {@link DBRemoveSuccessResult}, the `data` property contains the removed document. Success means the operation was acknowledged (`acknowledged === true`).
+   *   - For {@link DBRemoveSuccessResult}, the `data` property is `undefined`.
    *   - For {@link DBRemoveIssueResult}, the `data` property is `undefined`.
    *
    * @throws {Error} If the input is erroneous or invalid (e.g., missing or malformed ID).
@@ -165,7 +165,7 @@ export type MongoManagerContract = {
    * @param {object} query - The filter object to match documents for removal.
    * @returns {Promise<DBRemoveSuccessResult | DBRemoveIssueResult>} Resolves with a success result if the operation was acknowledged, or an issue result if an error occurred.
    *
-   *   - For {@link DBRemoveSuccessResult}, the `data` property contains the removed documents. Success means the operation was acknowledged (`acknowledged === true`).
+   *   - For {@link DBRemoveSuccessResult}, the `data` property is `undefined`.
    *   - For {@link DBRemoveIssueResult}, the `data` property is `undefined`.
    *
    * @throws {Error} If the input is erroneous or invalid (e.g., missing or malformed query).
