@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { CollectionChangeType } from './types';
 import DataManager from './';
 import { Readable } from 'stream';
-import { createLogger } from '../logger/logger';
+import { createLogger } from '../logger';
 
 const Log = createLogger({
   context: {

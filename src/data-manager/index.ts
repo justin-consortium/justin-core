@@ -5,7 +5,7 @@ import { CollectionChangeType, DataManagerAdapter } from './types';
 import { DBType, USERS } from './constants';
 import { handleDbError } from './helpers';
 import { Readable } from 'stream';
-import { createLogger } from '../logger/logger';
+import { createLogger } from '../logger';
 
 const Log = createLogger({
   context: {

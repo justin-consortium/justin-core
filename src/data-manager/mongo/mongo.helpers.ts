@@ -1,6 +1,6 @@
 import * as mongoDB from 'mongodb';
 import { NO_ID } from '../constants';
-import { createLogger } from '../../logger/logger';
+import { createLogger } from '../../logger';
 
 const Log = createLogger({
   context: {
