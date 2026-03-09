@@ -50,17 +50,25 @@ function createDataManagerMock() {
     close: sinon.stub().resolves(),
     getInitializationStatus: sinon.stub().returns(true),
 
-    // CRUD-ish
+    // single-item CRUD
     addItemToCollection: sinon.stub(),
     updateItemByIdInCollection: sinon.stub(),
     removeItemFromCollection: sinon.stub(),
-    getAllInCollection: sinon.stub(),
-    clearCollection: sinon.stub().resolves(),
-    isCollectionEmpty: sinon.stub(),
     findItemByIdInCollection: sinon.stub(),
     findItemsInCollection: sinon.stub(),
 
-    // change streams (optional)
+    // bulk CRUD
+    addItemsToCollection: sinon.stub(),
+    updateItemsByIdInCollection: sinon.stub(),
+    removeItemsFromCollection: sinon.stub(),
+    findItemsByIdsInCollection: sinon.stub(),
+
+    // collection-level
+    getAllInCollection: sinon.stub(),
+    clearCollection: sinon.stub().resolves(),
+    isCollectionEmpty: sinon.stub(),
+
+    // change streams
     getChangeStream: sinon.stub(),
   };
 }

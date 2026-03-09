@@ -1,32 +1,21 @@
 import DataManager from '../../data-manager/data-manager';
 import { PROTECTED_ATTRIBUTES } from '../../data-manager/data-manager.constants';
+import { checkInitialized } from '../../data-manager/data-manager.helpers';
 import { ProtectedAttributesRecord } from '../user.type';
-import { cleanString } from '../validation';
+import { isNonEmptyString } from '../helpers';
 
 const dm = DataManager.getInstance();
 
+const _checkInitialization = (): void => {
+  checkInitialized(dm.getInitializationStatus(), 'UserManager');
+};
+
 /**
  * In-memory cache for protected attributes.
- *
- * Outer key: uniqueIdentifier
- * Inner key: namespace
- *
+ * Outer key: uniqueIdentifier / Inner key: namespace
  * @private
  */
 const _protectedAttributes: Map<string, Map<string, ProtectedAttributesRecord>> = new Map();
-
-/**
- * Ensures that the DataManager has been initialized before any cache
- * operation can proceed.
- *
- * @throws {Error} If DataManager is not initialized.
- * @private
- */
-const _checkInitialization = (): void => {
-  if (!dm.getInitializationStatus()) {
-    throw new Error('UserManager has not been initialized');
-  }
-};
 
 /**
  * Clears the protected attributes cache.
@@ -60,11 +49,13 @@ const refreshProtectedAttributesCache = async (): Promise<void> => {
 /**
  * Upserts a protected attributes document into the in-memory cache.
  *
+ * Note: intentionally does not call `_checkInitialization` — this is a pure
+ * cache mutation used as a side-effect after confirmed write operations where
+ * initialization has already been verified by the caller.
+ *
  * @param {ProtectedAttributesRecord} doc - The protected attributes record to cache.
  */
 const upsertProtectedAttributesInCache = (doc: ProtectedAttributesRecord): void => {
-  _checkInitialization();
-
   if (!doc?.uniqueIdentifier || !doc?.namespace) return;
 
   const byNamespace =
@@ -82,10 +73,9 @@ const upsertProtectedAttributesInCache = (doc: ProtectedAttributesRecord): void 
 const deleteProtectedAttributesByUniqueIdentifierFromCache = (uniqueIdentifier: string): void => {
   _checkInitialization();
 
-  const cleaned = cleanString(uniqueIdentifier);
-  if (!cleaned) return;
+  if (!isNonEmptyString(uniqueIdentifier)) return;
 
-  _protectedAttributes.delete(cleaned);
+  _protectedAttributes.delete(uniqueIdentifier);
 };
 
 /**
@@ -99,12 +89,11 @@ const deleteProtectedAttributesByUniqueIdentifierFromCache = (uniqueIdentifier: 
 const deleteProtectedAttributesDocByIdFromCache = (docId: string): boolean => {
   _checkInitialization();
 
-  const cleaned = cleanString(docId);
-  if (!cleaned) return false;
+  if (!isNonEmptyString(docId)) return false;
 
   for (const [uniqueIdentifier, byNamespace] of _protectedAttributes.entries()) {
     for (const [namespace, doc] of byNamespace.entries()) {
-      if ((doc as any)?.id === cleaned) {
+      if ((doc as any)?.id === docId) {
         byNamespace.delete(namespace);
 
         if (byNamespace.size === 0) {
@@ -122,6 +111,21 @@ const deleteProtectedAttributesDocByIdFromCache = (docId: string): boolean => {
 };
 
 /**
+ * Retrieves all protected attributes documents for a user from cache.
+ *
+ * @param {string} uniqueIdentifier - The uniqueIdentifier to look up.
+ * @returns {ProtectedAttributesRecord[]} All protected attributes records for the user.
+ */
+const getAllProtectedAttributesFromCache = (
+  uniqueIdentifier: string,
+): ProtectedAttributesRecord[] => {
+  const byNamespace = _protectedAttributes.get(uniqueIdentifier);
+  if (!byNamespace) return [];
+
+  return [...byNamespace.values()];
+};
+
+/**
  * Retrieves protected attributes documents for a user by namespaces from cache.
  *
  * @param {string} uniqueIdentifier - The uniqueIdentifier to look up.
@@ -132,31 +136,15 @@ const getProtectedAttributesByNamespacesFromCache = (
   uniqueIdentifier: string,
   namespaces: string[],
 ): ProtectedAttributesRecord[] => {
-  _checkInitialization();
+  if (!Array.isArray(namespaces) || namespaces.length === 0) return [];
 
-  const cleanedUniqueIdentifier = cleanString(uniqueIdentifier);
-  if (!cleanedUniqueIdentifier) return [];
-
-  if (!Array.isArray(namespaces) || namespaces.length === 0) {
-    return [];
-  }
-
-  const byNamespace = _protectedAttributes.get(cleanedUniqueIdentifier);
-  if (!byNamespace) {
-    return [];
-  }
-
-  const cleanedNamespaces = namespaces
-    .filter((ns) => typeof ns === 'string')
-    .map((ns) => ns.trim())
-    .filter((ns) => ns.length > 0);
+  const byNamespace = _protectedAttributes.get(uniqueIdentifier);
+  if (!byNamespace) return [];
 
   const results: ProtectedAttributesRecord[] = [];
-  for (const ns of cleanedNamespaces) {
+  for (const ns of namespaces) {
     const doc = byNamespace.get(ns);
-    if (doc) {
-      results.push(doc);
-    }
+    if (doc) results.push(doc);
   }
 
   return results;
@@ -168,12 +156,12 @@ export {
   upsertProtectedAttributesInCache,
   deleteProtectedAttributesByUniqueIdentifierFromCache,
   deleteProtectedAttributesDocByIdFromCache,
+  getAllProtectedAttributesFromCache,
   getProtectedAttributesByNamespacesFromCache,
 };
 
 /**
  * Testing exports for cache internals.
- *
  * @private
  */
 export const __testing__protectedAttributesCache = {

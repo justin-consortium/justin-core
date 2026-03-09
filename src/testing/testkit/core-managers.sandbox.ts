@@ -85,13 +85,23 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
   sb.stub(dm, 'ensureStore').resolves();
   sb.stub(dm, 'ensureIndexes').resolves();
   sb.stub(dm, 'getInitializationStatus').returns(true);
-  sb.stub(dm, 'getAllInCollection').resolves([]);
+
+  // single-item CRUD
   sb.stub(dm, 'addItemToCollection').resolves(null as any);
   sb.stub(dm, 'updateItemByIdInCollection').resolves(null as any);
-  sb.stub(dm, 'removeItemFromCollection').resolves(false as any);
-  sb.stub(dm, 'clearCollection').resolves();
+  sb.stub(dm, 'removeItemFromCollection').resolves(0 as any);
   sb.stub(dm, 'findItemByIdInCollection').resolves(null as any);
   sb.stub(dm, 'findItemsInCollection').resolves([] as any);
+
+  // bulk CRUD
+  sb.stub(dm, 'addItemsToCollection').resolves([] as any);
+  sb.stub(dm, 'updateItemsByIdInCollection').resolves(0 as any);
+  sb.stub(dm, 'removeItemsFromCollection').resolves(0 as any);
+  sb.stub(dm, 'findItemsByIdsInCollection').resolves([] as any);
+
+  // collection-level
+  sb.stub(dm, 'getAllInCollection').resolves([]);
+  sb.stub(dm, 'clearCollection').resolves();
 
   // ChangeListenerManager stubs
   sb.stub(clm, 'addChangeListener');

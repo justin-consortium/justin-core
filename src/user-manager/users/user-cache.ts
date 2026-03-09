@@ -1,42 +1,28 @@
 import DataManager from '../../data-manager/data-manager';
 import { USERS } from '../../data-manager/data-manager.constants';
+import { checkInitialized } from '../../data-manager/data-manager.helpers';
 import { JUser } from '../user.type';
-import { cleanString } from '../validation';
+import { isNonEmptyString } from '../helpers';
 
 const dm = DataManager.getInstance();
 
+const _checkInitialization = (): void => {
+  checkInitialized(dm.getInitializationStatus(), 'UserManager');
+};
+
 /**
  * In-memory cache for user data.
- *
- * Key: userId
- * Value: JUser
- *
+ * Key: userId / Value: JUser
  * @private
  */
 const _users: Map<string, JUser> = new Map();
 
 /**
  * Reverse lookup for users by uniqueIdentifier.
- *
- * Key: uniqueIdentifier
- * Value: userId
- *
+ * Key: uniqueIdentifier / Value: userId
  * @private
  */
 const _userIdByUniqueIdentifier: Map<string, string> = new Map();
-
-/**
- * Ensures that the DataManager has been initialized before any cache
- * operation can proceed.
- *
- * @throws {Error} If DataManager is not initialized.
- * @private
- */
-const _checkInitialization = (): void => {
-  if (!dm.getInitializationStatus()) {
-    throw new Error('UserManager has not been initialized');
-  }
-};
 
 /**
  * Clears the users cache.
@@ -97,10 +83,9 @@ const getUserByIdFromCache = (userId: string): JUser | null => {
 const getUserIdByUniqueIdentifierFromCache = (uniqueIdentifier: string): string | null => {
   _checkInitialization();
 
-  const cleaned = cleanString(uniqueIdentifier);
-  if (!cleaned) return null;
+  if (!isNonEmptyString(uniqueIdentifier)) return null;
 
-  return _userIdByUniqueIdentifier.get(cleaned) ?? null;
+  return _userIdByUniqueIdentifier.get(uniqueIdentifier) ?? null;
 };
 
 /**
@@ -169,7 +154,6 @@ export {
 
 /**
  * Testing exports for cache internals.
- *
  * @private
  */
 export const __testing__usersCache = {

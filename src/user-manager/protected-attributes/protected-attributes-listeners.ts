@@ -6,6 +6,9 @@ import {
   deleteProtectedAttributesDocByIdFromCache,
   upsertProtectedAttributesInCache,
 } from './protected-attributes-cache';
+import { createLogger } from '../../logger';
+
+const Log = createLogger({ context: { source: 'protected-attributes-listeners' } });
 
 const clm = ChangeListenerManager.getInstance();
 
@@ -17,7 +20,14 @@ const setupProtectedAttributesChangeListeners = (): void => {
     PROTECTED_ATTRIBUTES,
     CollectionChangeType.INSERT,
     (doc: ProtectedAttributesRecord) => {
-      upsertProtectedAttributesInCache(doc);
+      try {
+        upsertProtectedAttributesInCache(doc);
+      } catch (error) {
+        Log.error('Failed to upsert protected attributes in cache on INSERT', {
+          error,
+          docId: doc?.id,
+        });
+      }
     },
   );
 
@@ -25,12 +35,23 @@ const setupProtectedAttributesChangeListeners = (): void => {
     PROTECTED_ATTRIBUTES,
     CollectionChangeType.UPDATE,
     (doc: ProtectedAttributesRecord) => {
-      upsertProtectedAttributesInCache(doc);
+      try {
+        upsertProtectedAttributesInCache(doc);
+      } catch (error) {
+        Log.error('Failed to upsert protected attributes in cache on UPDATE', {
+          error,
+          docId: doc?.id,
+        });
+      }
     },
   );
 
   clm.addChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.DELETE, (docId: string) => {
-    deleteProtectedAttributesDocByIdFromCache(docId);
+    try {
+      deleteProtectedAttributesDocByIdFromCache(docId);
+    } catch (error) {
+      Log.error('Failed to delete protected attributes from cache on DELETE', { error, docId });
+    }
   });
 };
 

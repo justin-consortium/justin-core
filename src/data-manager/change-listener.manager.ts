@@ -22,6 +22,27 @@ type ReadableWithCleanup = Readable & {
 };
 
 /**
+ * Closes a stream, running the adapter cleanup hook first if present.
+ * Always resolves — never throws.
+ *
+ * @param stream - The stream to close.
+ * @private
+ */
+async function _closeStream(stream: ReadableWithCleanup): Promise<void> {
+  const maybeCleanup = stream.cleanup;
+
+  try {
+    if (maybeCleanup) {
+      await maybeCleanup();
+    }
+  } catch {
+    // swallow — best-effort close
+  } finally {
+    stream.destroy();
+  }
+}
+
+/**
  * Manages change listeners for database collections.
  *
  * The `ChangeListenerManager` allows registering, removing, and managing
@@ -63,9 +84,6 @@ class ChangeListenerManager extends EventEmitter {
 
   /**
    * Registers a change listener for a specific collection and change type.
-   *
-   * This method interacts with the `DataManager` abstraction to fetch
-   * change streams, ensuring no direct dependency on database-specific logic.
    *
    * @template T - The expected type of data emitted by the change stream.
    * @param {string} collectionName - The name of the collection to monitor.
@@ -116,10 +134,19 @@ class ChangeListenerManager extends EventEmitter {
   /**
    * Removes a change listener for a specific collection and change type.
    *
+   * Awaiting this promise ensures the underlying stream (and any adapter-level
+   * resources such as a Mongo change stream) are fully closed before returning.
+   * This is important when the caller intends to re-open streams shortly after,
+   * e.g. during a UserManager re-init in tests or after a graceful restart.
+   *
    * @param {string} collectionName - The name of the collection.
    * @param {CollectionChangeType} changeType - The type of changes to stop listening for.
+   * @returns {Promise<void>} Resolves when the stream is fully closed.
    */
-  public removeChangeListener(collectionName: string, changeType: CollectionChangeType): void {
+  public async removeChangeListener(
+    collectionName: string,
+    changeType: CollectionChangeType,
+  ): Promise<void> {
     const key = `${collectionName}-${changeType}`;
 
     if (!this.changeListeners.has(key)) {
@@ -129,63 +156,39 @@ class ChangeListenerManager extends EventEmitter {
 
     const { stream, cleanup } = this.changeListeners.get(key)!;
 
-    // Remove listeners we attached.
+    // Remove event listeners we attached first, so no more callbacks fire.
     cleanup();
 
-    /**
-     * Some adapters attach a `cleanup()` method to the readable stream to close
-     * underlying resources (e.g., MongoDB change streams). If present, we call it
-     * best-effort before destroying the stream.
-     */
-    const maybeCleanup = stream.cleanup;
-
-    if (maybeCleanup) {
-      Promise.resolve()
-        .then(() => maybeCleanup())
-        .catch(() => {
-          /* swallow */
-        })
-        .finally(() => {
-          stream.destroy();
-        });
-    } else {
-      stream.destroy();
-    }
-
+    // Delete from the map before awaiting close, so a racing addChangeListener
+    // call (if any) can register a fresh stream rather than seeing a stale entry.
     this.changeListeners.delete(key);
+
+    await _closeStream(stream);
+
     Log.info(`Change listener removed for ${key}.`);
   }
 
   /**
-   * Clears all registered change listeners.
+   * Clears all registered change listeners, awaiting full stream teardown.
    *
-   * This method clears only the custom change listeners managed by
-   * `ChangeListenerManager` and does not override the default `EventEmitter` behavior.
+   * All streams are closed in parallel so teardown is as fast as possible.
+   *
+   * @returns {Promise<void>} Resolves when all streams are fully closed.
    */
-  public clearChangeListeners(): void {
-    for (const { stream, cleanup, collectionName, changeType } of this.changeListeners.values()) {
-      // Remove listeners we attached.
-      cleanup();
+  public async clearChangeListeners(): Promise<void> {
+    const entries = [...this.changeListeners.entries()];
 
-      const maybeCleanup = stream.cleanup;
-
-      if (maybeCleanup) {
-        Promise.resolve()
-          .then(() => maybeCleanup())
-          .catch(() => {
-            /* swallow */
-          })
-          .finally(() => {
-            stream.destroy();
-          });
-      } else {
-        stream.destroy();
-      }
-
-      Log.info(`Change listener for ${collectionName}:${changeType} removed.`);
-    }
-
+    // Clear the map immediately so any racing addChangeListener calls see a clean state.
     this.changeListeners.clear();
+
+    await Promise.all(
+      entries.map(async ([, { stream, cleanup, collectionName, changeType }]) => {
+        cleanup();
+        await _closeStream(stream);
+        Log.info(`Change listener for ${collectionName}:${changeType} removed.`);
+      }),
+    );
+
     Log.info(`All custom change listeners removed.`);
   }
 
