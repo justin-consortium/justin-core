@@ -1,6 +1,5 @@
-import DataManager from './data-manager';
-import { UserManager } from './user-manager';
-import { ChangeListenerManager } from './data-manager/change-listener.manager';
+import { DataManager, ChangeListenerManager} from './data-manager';
+import { UserManager } from './user-manager/user-manager';
 
 export type ShutdownCoreOptions = {
   /**

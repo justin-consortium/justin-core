@@ -1,6 +1,4 @@
-import DataManager from '../../data-manager';
-import { USERS } from '../../data-manager/constants';
-import { checkInitialized } from '../../data-manager/helpers';
+import { DataManager, USERS, checkInitialized} from '../../data-manager';
 import { JUser } from '../types';
 import { isNonEmptyString } from '../helpers';
 

@@ -1,16 +1,11 @@
-import DataManager from './data-manager';
 
-export { DataManager };
+export { DataManager, USERS, PROTECTED_ATTRIBUTES, DBType, NO_ID, ChangeListenerManager, CollectionChangeType  } from './data-manager';
 
-export { ChangeListenerManager } from './data-manager/change-listener.manager';
-
-export { USERS, PROTECTED_ATTRIBUTES, DBType, NO_ID } from './data-manager/constants';
-export { CollectionChangeType } from './data-manager/types';
 
 /**
  * UserManager
  */
-export { UserManager } from './user-manager';
+export { UserManager } from './user-manager/user-manager';
 export type { JUser, NewUserRecord } from './user-manager/types';
 
 /**

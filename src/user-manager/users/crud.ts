@@ -1,5 +1,4 @@
-import DataManager from '../../data-manager';
-import { USERS } from '../../data-manager/constants';
+import { DataManager, USERS } from '../../data-manager';
 import { handleDbError, checkInitialized } from '../../data-manager/helpers';
 import type { JUser, NewUserRecord } from '../types';
 import { assertNoReservedKeys, isNonEmptyString, isPlainObject, omitKeys } from '../helpers';
@@ -83,7 +82,7 @@ const createUserRecord = async (record: NewUserRecord): Promise<JUser | null> =>
  * Creates multiple user records.
  *
  * NOTE: Protected-attributes creation is intentionally NOT handled here.
- * Cross-domain orchestration belongs in `user-manager/index.ts`.
+ * Cross-domain orchestration belongs in `user-manager/data-manager.ts`.
  *
  * @param records - Array of new user records.
  * @returns Successfully created users (may be fewer than requested).

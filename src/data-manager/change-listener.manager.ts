@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
+import { DataManager } from './';
 import { CollectionChangeType } from './types';
-import DataManager from './';
 import { Readable } from 'stream';
 import { createLogger } from '../logger';
 
@@ -112,7 +112,7 @@ class ChangeListenerManager extends EventEmitter {
     };
 
     const errorHandler = (error: Error) => {
-      Log.error('Change stream error', error);
+      Log.error('Change stream errors', error);
     };
 
     stream.on('data', listener);

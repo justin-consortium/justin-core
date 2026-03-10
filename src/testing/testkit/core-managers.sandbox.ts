@@ -1,8 +1,7 @@
 import sinon from 'sinon';
 // eslint-disable-next-line no-duplicate-imports
 import type { SinonSandbox, SinonStub } from 'sinon';
-import DataManager from '../../data-manager';
-import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
+import { DataManager, ChangeListenerManager } from '../../data-manager';
 import * as HelpersModule from '../../data-manager/helpers';
 
 /**
@@ -42,8 +41,8 @@ export type CoreManagersSandbox = {
   clm: ChangeListenerManager;
 
   /**
-   * Stubbed handleDbError that always throws the underlying error (or a new Error).
-   * The thrown error will include `dbMessage` (the first arg passed to handleDbError).
+   * Stubbed handleDbError that always throws the underlying errors (or a new Error).
+   * The thrown errors will include `dbMessage` (the first arg passed to handleDbError).
    */
   handleDbErrorStub: SinonStub;
 
@@ -112,8 +111,8 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
    * handleDbError stub
    *
    * Supports both call styles:
-   *   handleDbError(message, error)
-   *   handleDbError(message, methodName, error)
+   *   handleDbError(message, errors)
+   *   handleDbError(message, methodName, errors)
    *
    * Always rethrows the underlying Error (if present), or a new Error(message).
    */

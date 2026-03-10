@@ -1,6 +1,4 @@
-import DataManager from '../../data-manager';
-import { PROTECTED_ATTRIBUTES } from '../../data-manager/constants';
-import { checkInitialized } from '../../data-manager/helpers';
+import { DataManager, PROTECTED_ATTRIBUTES, checkInitialized } from '../../data-manager';
 import { ProtectedAttributesRecord } from '../types';
 import { isNonEmptyString } from '../helpers';
 

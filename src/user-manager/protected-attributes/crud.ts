@@ -1,6 +1,4 @@
-import DataManager from '../../data-manager';
-import { PROTECTED_ATTRIBUTES } from '../../data-manager/constants';
-import { handleDbError, checkInitialized } from '../../data-manager/helpers';
+import { DataManager, PROTECTED_ATTRIBUTES,  handleDbError, checkInitialized } from '../../data-manager';
 import type { NamespacedAttributes, ProtectedAttributesRecord } from '../types';
 import {
   assertNoReservedKeysDeep,
