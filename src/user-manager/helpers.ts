@@ -1,10 +1,5 @@
-import { createLogger } from '../logger';
-
-const Log = createLogger({
-  context: {
-    source: 'user-manager-helpers',
-  },
-});
+import { handleError } from '../data-manager/helpers';
+import { JustinErrorCode } from '../errors';
 
 /**
  * Returns true if `value` is a string with at least one non-whitespace character.
@@ -58,7 +53,7 @@ const isPlainObject = (value: unknown): value is Record<string, any> => {
  * @param obj - The object to check.
  * @param reservedKeys - Keys that must not be present.
  * @param errorMessage - Optional custom error message.
- * @throws {Error} If any reserved key is present in `obj`.
+ * @throws {JustinError} If any reserved key is present in `obj`.
  */
 const assertNoReservedKeys = (
   obj: unknown,
@@ -70,8 +65,10 @@ const assertNoReservedKeys = (
   for (const key of reservedKeys) {
     if (key in obj) {
       const message = errorMessage ?? `Cannot update reserved field "${key}".`;
-      Log.error(message, { function: 'assertNoReservedKeys', key });
-      throw new Error(message);
+      handleError(message, 'assertNoReservedKeys', {
+        code: JustinErrorCode.VALIDATION_ERROR,
+        data: { key },
+      });
     }
   }
 };
@@ -85,7 +82,7 @@ const assertNoReservedKeys = (
  * @param value - The value tree to inspect.
  * @param reservedKeys - Keys that must not appear anywhere in the tree.
  * @param errorMessage - Optional custom error message.
- * @throws {Error} If any reserved key is present anywhere in the value tree.
+ * @throws {JustinError} If any reserved key is present anywhere in the value tree.
  */
 const assertNoReservedKeysDeep = (
   value: unknown,
@@ -106,8 +103,10 @@ const assertNoReservedKeysDeep = (
   for (const [key, nestedValue] of Object.entries(value)) {
     if (reservedKeys.includes(key)) {
       const message = errorMessage ?? `Cannot update reserved field "${key}".`;
-      Log.error(message, { function: 'assertNoReservedKeysDeep', key });
-      throw new Error(message);
+      handleError(message, 'assertNoReservedKeysDeep', {
+        code: JustinErrorCode.VALIDATION_ERROR,
+        data: { key },
+      });
     }
 
     assertNoReservedKeysDeep(nestedValue, reservedKeys, errorMessage);

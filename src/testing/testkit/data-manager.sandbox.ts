@@ -29,7 +29,7 @@ type DataManagerUnitSandbox = {
     findItemsInCollection: SinonStub;
     getCollectionChangeReadable: SinonStub;
   };
-  handleDbErrorSpy: SinonSpy;
+  handleErrorSpy: SinonSpy;
   restore(): void;
 };
 
@@ -63,13 +63,13 @@ function makeDataManagerSandbox(): DataManagerUnitSandbox {
     getCollectionChangeReadable: sb.stub(mongoFns, 'getCollectionChangeReadable'),
   };
 
-  const handleDbErrorSpy = sb.spy(Helpers, 'handleDbError');
+  const handleErrorSpy = sb.spy(Helpers, 'handleError');
 
   return {
     sb,
     clm,
     mongo,
-    handleDbErrorSpy,
+    handleErrorSpy,
     restore() {
       sb.restore();
     },

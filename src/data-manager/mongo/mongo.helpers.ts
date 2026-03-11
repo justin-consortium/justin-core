@@ -1,29 +1,31 @@
 import * as mongoDB from 'mongodb';
 import { NO_ID } from '../constants';
-import { createLogger } from '../../logger';
-
-const Log = createLogger({
-  context: {
-    source: 'mongo-manager-helpers',
-  },
-});
+import { handleError } from '../helpers';
+import { JustinErrorCode } from '../../errors';
 
 /**
  * Converts a string to a MongoDB `ObjectId`.
  *
  * @param id - The string to convert into an `ObjectId`.
  * @returns The created `ObjectId`.
- * @throws {Error} If `id` is missing, not a string, or not a valid ObjectId format.
+ * @throws {JustinError} If `id` is missing, not a string, or not a valid ObjectId format.
  */
 const stringToMongoId = (id: string | null | undefined): mongoDB.ObjectId => {
   if (!id || typeof id !== 'string') {
-    throw new Error(`Invalid ObjectId — expected a non-empty string, received: ${id}`);
+    return handleError(`Invalid ObjectId — expected a non-empty string, received: ${id}`, 'stringToMongoId', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { id },
+    });
   }
 
   try {
     return new mongoDB.ObjectId(id);
-  } catch {
-    throw new Error(`Invalid ObjectId format: "${id}"`);
+  } catch (error) {
+    return handleError(`Invalid ObjectId format: "${id}"`, 'stringToMongoId', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { id },
+      error,
+    });
   }
 };
 

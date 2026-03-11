@@ -1,9 +1,9 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import sinon from 'sinon';
 
-import DataManager from '../../data-manager';
+import DataManager from '../../data-manager/data-manager';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
-import { UserManager, TestingUserManager } from '../index';
+import { UserManager, TestingUserManager } from '../user-manager';
 import { DBType, USERS, PROTECTED_ATTRIBUTES } from '../../data-manager/constants';
 import { waitForMongoReady } from '../../testing';
 
@@ -13,7 +13,7 @@ import { waitForMongoReady } from '../../testing';
  *
  * Goals:
  * - Exercise every public UserManager API against real Mongo infrastructure.
- * - Cover happy paths, edge cases, and error/invalid-input paths.
+ * - Cover happy paths, edge cases, and errors/invalid-input paths.
  * - Verify cache consistency after every mutation.
  * - Verify DB state directly via DataManager as a secondary assertion source.
  *
@@ -98,9 +98,9 @@ describe('User Manager public API e2e', () => {
       });
 
       it('returns null for invalid input', async () => {
-        // @ts-expect-error intentional
+        // @ts-expect-errors intentional
         expect(await UserManager.createUser(null)).toBeNull();
-        // @ts-expect-error intentional
+        // @ts-expect-errors intentional
         expect(await UserManager.createUser({})).toBeNull();
         expect(await UserManager.createUser({ uniqueIdentifier: '', attributes: {} })).toBeNull();
       });
@@ -160,7 +160,7 @@ describe('User Manager public API e2e', () => {
       it('skips invalid records and returns only valid ones', async () => {
         const users = await UserManager.createUsers([
           { uniqueIdentifier: 'valid-1', attributes: {} },
-          // @ts-expect-error intentional
+          // @ts-expect-errors intentional
           null,
           { uniqueIdentifier: 'valid-2', attributes: {} },
         ]);

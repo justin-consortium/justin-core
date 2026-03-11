@@ -1,4 +1,5 @@
-import { DataManager, PROTECTED_ATTRIBUTES,  handleDbError, checkInitialized } from '../../data-manager';
+import { DataManager, PROTECTED_ATTRIBUTES, handleError, checkInitialized } from '../../data-manager';
+import { JustinErrorCode } from '../../errors';
 import type { NamespacedAttributes, ProtectedAttributesRecord } from '../types';
 import {
   assertNoReservedKeysDeep,
@@ -32,7 +33,7 @@ const _checkInitialization = (): void => {
  *
  * @param protectedAttributes - The payload to validate.
  * @returns True when valid.
- * @throws {Error} If reserved keys are present.
+ * @throws {JustinError} If reserved keys are present.
  * @private
  */
 const _isValidProtectedAttributesPayload = (
@@ -64,7 +65,7 @@ const _normalizeNamespacedAttributesInput = (
 /**
  * Finds a protected-attributes record by uniqueIdentifier and namespace.
  *
- * @throws {Error} If the DB query fails.
+ * @throws {JustinError} If the DB query fails.
  * @private
  */
 const _findProtectedAttributesRecord = async (
@@ -81,10 +82,10 @@ const _findProtectedAttributesRecord = async (
 
     return docs[0] ?? null;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Failed to find protected attributes for ${uniqueIdentifier}/${namespace}`,
       '_findProtectedAttributesRecord',
-      error,
+      { error },
     );
   }
 };
@@ -106,7 +107,7 @@ const _mergeProtectedAttributes = (
 /**
  * Asserts that a path string does not contain reserved key segments.
  *
- * @throws {Error} If any path segment is a reserved key.
+ * @throws {JustinError} If any path segment is a reserved key.
  * @private
  */
 const _assertNoReservedKeyPath = (keyPath: string): void => {
@@ -114,8 +115,10 @@ const _assertNoReservedKeyPath = (keyPath: string): void => {
 
   for (const segment of segments) {
     if (RESERVED_PROTECTED_ATTRIBUTE_KEYS.includes(segment)) {
-      throw new Error(
+      handleError(
         'Cannot set reserved protected-attributes fields (id, uniqueIdentifier, namespace).',
+        '_assertNoReservedKeyPath',
+        { code: JustinErrorCode.VALIDATION_ERROR, data: { keyPath, segment } },
       );
     }
   }
@@ -132,7 +135,7 @@ const _assertNoReservedKeyPath = (keyPath: string): void => {
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespaces - The namespaces to retrieve.
  * @returns Matching records, or an empty array.
- * @throws {Error} If DataManager has not been initialized.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const getProtectedAttributesByUniqueIdentifier = (
   uniqueIdentifier: string,
@@ -155,7 +158,7 @@ const getProtectedAttributesByUniqueIdentifier = (
  *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @returns All records for the user, or an empty array.
- * @throws {Error} If DataManager has not been initialized.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const getAllProtectedAttributesByUniqueIdentifier = (
   uniqueIdentifier: string,
@@ -183,7 +186,7 @@ const getAllProtectedAttributesByUniqueIdentifier = (
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param input - A single namespaced attributes object or an array of them.
  * @returns The created or updated records.
- * @throws {Error} If DataManager has not been initialized, a payload contains reserved keys,
+ * @throws {JustinError} If DataManager has not been initialized, a payload contains reserved keys,
  * or a DB operation fails.
  */
 const setProtectedAttributesByUniqueIdentifier = async (
@@ -219,10 +222,10 @@ const setProtectedAttributesByUniqueIdentifier = async (
         upsertProtectedAttributesInCache(created);
         results.push(created);
       } catch (error) {
-        handleDbError(
+        handleError(
           `Failed to create protected attributes for ${uniqueIdentifier}/${namespace}`,
           'setProtectedAttributesByUniqueIdentifier',
-          error,
+          { error },
         );
       }
       continue;
@@ -230,7 +233,10 @@ const setProtectedAttributesByUniqueIdentifier = async (
 
     const existingId = existing?.id;
     if (!existingId || typeof existingId !== 'string') {
-      throw new Error('ProtectedAttributesRecord is missing id.');
+      handleError('ProtectedAttributesRecord is missing id.', 'setProtectedAttributesByUniqueIdentifier', {
+        code: JustinErrorCode.VALIDATION_ERROR,
+        data: { uniqueIdentifier, namespace },
+      });
     }
 
     const mergedProtectedAttributes = _mergeProtectedAttributes(
@@ -246,10 +252,10 @@ const setProtectedAttributesByUniqueIdentifier = async (
       upsertProtectedAttributesInCache(updated);
       results.push(updated);
     } catch (error) {
-      handleDbError(
+      handleError(
         `Failed to update protected attributes for ${uniqueIdentifier}/${namespace}`,
         'setProtectedAttributesByUniqueIdentifier',
-        error,
+        { error },
       );
     }
   }
@@ -269,7 +275,7 @@ const setProtectedAttributesByUniqueIdentifier = async (
  * @param keyPath - The key path to update.
  * @param value - The value to set.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If DataManager has not been initialized, the path or value contains
+ * @throws {JustinError} If DataManager has not been initialized, the path or value contains
  * reserved keys, or the DB operation fails.
  */
 const updateProtectedAttributeByUniqueIdentifier = async (
@@ -299,7 +305,10 @@ const updateProtectedAttributeByUniqueIdentifier = async (
 
   const existingId = existing?.id;
   if (!existingId || typeof existingId !== 'string') {
-    throw new Error('ProtectedAttributesRecord is missing id.');
+    return handleError('ProtectedAttributesRecord is missing id.', 'updateProtectedAttributeByUniqueIdentifier', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { uniqueIdentifier, namespace, keyPath },
+    });
   }
 
   const currentProtectedAttributes = isPlainObject(existing.protectedAttributes)
@@ -316,10 +325,10 @@ const updateProtectedAttributeByUniqueIdentifier = async (
     upsertProtectedAttributesInCache(updated);
     return updated;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Failed to update protected attribute at ${keyPath} for ${uniqueIdentifier}/${namespace}`,
       'updateProtectedAttributeByUniqueIdentifier',
-      error,
+      { error },
     );
   }
 };
@@ -331,7 +340,7 @@ const updateProtectedAttributeByUniqueIdentifier = async (
  * @param namespace - The namespace to update.
  * @param updates - An object whose keys are path strings and values are the values to set.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If DataManager has not been initialized, any path or value contains
+ * @throws {JustinError} If DataManager has not been initialized, any path or value contains
  * reserved keys, or the DB operation fails.
  */
 const updateProtectedAttributesByUniqueIdentifier = async (
@@ -350,7 +359,10 @@ const updateProtectedAttributesByUniqueIdentifier = async (
 
   const existingId = existing?.id;
   if (!existingId || typeof existingId !== 'string') {
-    throw new Error('ProtectedAttributesRecord is missing id.');
+    return handleError('ProtectedAttributesRecord is missing id.', 'updateProtectedAttributesByUniqueIdentifier', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { uniqueIdentifier, namespace },
+    });
   }
 
   let updatedProtectedAttributes = isPlainObject(existing.protectedAttributes)
@@ -380,10 +392,10 @@ const updateProtectedAttributesByUniqueIdentifier = async (
     upsertProtectedAttributesInCache(updated);
     return updated;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Failed to update protected attributes for ${uniqueIdentifier}/${namespace}`,
       'updateProtectedAttributesByUniqueIdentifier',
-      error,
+      { error },
     );
   }
 };
@@ -398,7 +410,7 @@ const updateProtectedAttributesByUniqueIdentifier = async (
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespaces - A namespace string or array of namespace strings to delete.
  * @returns True if at least one record was deleted.
- * @throws {Error} If DataManager has not been initialized or a DB operation fails.
+ * @throws {JustinError} If DataManager has not been initialized or a DB operation fails.
  */
 const deleteProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
@@ -443,10 +455,10 @@ const deleteProtectedAttributesByUniqueIdentifier = async (
 
     return deletedAny;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Failed to delete protected attributes for ${uniqueIdentifier}`,
       'deleteProtectedAttributesByUniqueIdentifier',
-      error,
+      { error },
     );
   }
 };
@@ -455,7 +467,7 @@ const deleteProtectedAttributesByUniqueIdentifier = async (
  * Deletes all protected attributes records for a user in a single bulk operation.
  *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
- * @throws {Error} If DataManager has not been initialized or a DB operation fails.
+ * @throws {JustinError} If DataManager has not been initialized or a DB operation fails.
  */
 const deleteAllProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
@@ -477,10 +489,10 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
 
     deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
   } catch (error) {
-    handleDbError(
+    return handleError(
       `Failed to delete all protected attributes for ${uniqueIdentifier}`,
       'deleteAllProtectedAttributesByUniqueIdentifier',
-      error,
+      { error },
     );
   }
 };
@@ -492,7 +504,7 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
  * @param namespace - The namespace to update.
  * @param keyPath - The key path to delete.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If DataManager has not been initialized, the path contains reserved keys,
+ * @throws {JustinError} If DataManager has not been initialized, the path contains reserved keys,
  * or the DB operation fails.
  */
 const deleteProtectedAttributeByUniqueIdentifier = async (
@@ -515,7 +527,10 @@ const deleteProtectedAttributeByUniqueIdentifier = async (
 
   const existingId = existing?.id;
   if (!existingId || typeof existingId !== 'string') {
-    throw new Error('ProtectedAttributesRecord is missing id.');
+    return handleError('ProtectedAttributesRecord is missing id.', 'deleteProtectedAttributeByUniqueIdentifier', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { uniqueIdentifier, namespace, keyPath },
+    });
   }
 
   const currentProtectedAttributes = isPlainObject(existing.protectedAttributes)
@@ -532,10 +547,10 @@ const deleteProtectedAttributeByUniqueIdentifier = async (
     upsertProtectedAttributesInCache(updated);
     return updated;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Failed to delete protected attribute at ${keyPath} for ${uniqueIdentifier}/${namespace}`,
       'deleteProtectedAttributeByUniqueIdentifier',
-      error,
+      { error },
     );
   }
 };
@@ -547,7 +562,7 @@ const deleteProtectedAttributeByUniqueIdentifier = async (
  * @param namespace - The namespace to update.
  * @param keyPaths - A path string or array of path strings to delete.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If DataManager has not been initialized, any path contains reserved keys,
+ * @throws {JustinError} If DataManager has not been initialized, any path contains reserved keys,
  * or the DB operation fails.
  */
 const deleteProtectedAttributesFromNamespaceByUniqueIdentifier = async (
@@ -568,7 +583,10 @@ const deleteProtectedAttributesFromNamespaceByUniqueIdentifier = async (
 
   const existingId = existing?.id;
   if (!existingId || typeof existingId !== 'string') {
-    throw new Error('ProtectedAttributesRecord is missing id.');
+    return handleError('ProtectedAttributesRecord is missing id.', 'deleteProtectedAttributesFromNamespaceByUniqueIdentifier', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { uniqueIdentifier, namespace },
+    });
   }
 
   let updatedProtectedAttributes = isPlainObject(existing.protectedAttributes)
@@ -591,10 +609,10 @@ const deleteProtectedAttributesFromNamespaceByUniqueIdentifier = async (
     upsertProtectedAttributesInCache(updated);
     return updated;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Failed to delete protected attributes from namespace ${namespace} for ${uniqueIdentifier}`,
       'deleteProtectedAttributesFromNamespaceByUniqueIdentifier',
-      error,
+      { error },
     );
   }
 };

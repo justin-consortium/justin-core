@@ -3,10 +3,11 @@ import { Readable } from 'stream';
 import { CollectionChangeType } from '../types';
 import { NO_ID } from '../constants';
 import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-data-manager.type';
-import { handleDbError } from '../helpers';
+import { handleError } from '../helpers';
 import { stringToMongoId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
 import { createLogger } from '../../logger';
+import {JustinErrorCode} from "../../errors";
 
 const Log = createLogger({
   context: {
@@ -57,12 +58,14 @@ const _setIsConnected = (isConnected: boolean): void => {
 /**
  * Ensures the MongoDB client and database are initialized.
  *
- * @throws {Error} If the Mongo client, database, or connection flag are not set.
+ * @throws {JustinError} If the Mongo client, database, or connection flag are not set.
  * @internal
  */
 const ensureInitialized = (): void => {
   if (!_isConnected || !_db || !_client) {
-    throw new Error('MongoDBManager not initialized. Call init() first.');
+    handleError('MongoDBManager not initialized. Call init() first.', 'ensureInitialized', {
+      code: JustinErrorCode.NOT_INITIALIZED,
+    });
   }
 };
 
@@ -91,6 +94,8 @@ const init = async (
     _isConnected = true;
     Log.debug(`Mongo connected: db=${dbName}`);
   } catch (error) {
+    // Raw driver error — log and rethrow as-is so the caller gets the
+    // original Mongo connection failure, not a wrapped JustinError.
     Log.error('Mongo connection failed', error);
     throw error;
   }
@@ -129,7 +134,7 @@ const close = async (): Promise<void> => {
  *
  * @param collectionName - Target collection name.
  * @param options - Optional validator configuration.
- * @throws {Error} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const ensureStore = async (
   collectionName: string,
@@ -144,7 +149,7 @@ const ensureStore = async (
       await _db!.createCollection(collectionName);
       Log.debug(`Created collection ${collectionName}`);
     } catch (err: any) {
-      // Tolerate concurrent creation races.
+      // Tolerate concurrent creation races — NamespaceExists is expected and safe to ignore.
       if (err?.codeName !== 'NamespaceExists') throw err;
     }
   }
@@ -173,7 +178,7 @@ const ensureStore = async (
  *
  * @param collectionName - Target collection.
  * @param indexes - Index models to ensure.
- * @throws {Error} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const ensureIndexes = async (
   collectionName: string,
@@ -245,7 +250,7 @@ const ensureIndexes = async (
  * @param collectionName - The collection to watch.
  * @param changeType - The type of change to observe (insert, update, delete).
  * @returns A readable stream of normalized change payloads.
- * @throws {Error} If the MongoDBManager has not been initialized.
+ * @throws {JustinError} If the MongoDBManager has not been initialized.
  */
 const getCollectionChangeReadable = (
   collectionName: string,
@@ -308,7 +313,7 @@ const getCollectionChangeReadable = (
  * @param collectionName - Target collection name.
  * @param id - String representation of the `_id`.
  * @returns A normalized document or `null` if not found.
- * @throws {Error} If the id is not a valid ObjectId, the MongoDBManager has not been
+ * @throws {JustinError} If the id is not a valid ObjectId, the MongoDBManager has not been
  * initialized, or the query fails.
  */
 const findItemByIdInCollection = async (
@@ -322,11 +327,7 @@ const findItemByIdInCollection = async (
     const foundDoc = await _db!.collection(collectionName).findOne({ _id: objectId });
     return transformId(foundDoc);
   } catch (error) {
-    return handleDbError(
-      `Error finding item with id ${id} in ${collectionName}`,
-      'findItemByIdInCollection',
-      error,
-    );
+    return handleError(`Error finding item with id ${id} in ${collectionName}`, 'findItemByIdInCollection', { error });
   }
 };
 
@@ -339,7 +340,7 @@ const findItemByIdInCollection = async (
  * @param collectionName - Target collection name.
  * @param filter - MongoDB filter object.
  * @returns An array of normalized documents.
- * @throws {Error} If the MongoDBManager has not been initialized or the query fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the query fails.
  */
 const findItemsInCollection = async (collectionName: string, filter: object): Promise<object[]> => {
   ensureInitialized();
@@ -349,10 +350,10 @@ const findItemsInCollection = async (collectionName: string, filter: object): Pr
     const results = await cursor.toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Error finding items in ${collectionName} with filter ${JSON.stringify(filter)}`,
       'findItemsInCollection',
-      error,
+      { error },
     );
   }
 };
@@ -367,7 +368,7 @@ const findItemsInCollection = async (collectionName: string, filter: object): Pr
  * @param collectionName - Target collection name.
  * @param ids - String representations of the `_id` values to find.
  * @returns Normalized documents for all ids that were found.
- * @throws {Error} If any id is not a valid ObjectId, the MongoDBManager has not been
+ * @throws {JustinError} If any id is not a valid ObjectId, the MongoDBManager has not been
  * initialized, or the query fails.
  */
 const findItemsByIdsInCollection = async (
@@ -388,10 +389,10 @@ const findItemsByIdsInCollection = async (
       .toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Error finding items by ids in ${collectionName}`,
       'findItemsByIdsInCollection',
-      error,
+      { error },
     );
   }
 };
@@ -403,7 +404,7 @@ const findItemsByIdsInCollection = async (
  *
  * @param collectionName - Target collection name.
  * @returns An array of normalized documents.
- * @throws {Error} If the MongoDBManager has not been initialized or the query fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the query fails.
  */
 const getAllInCollection = async (collectionName: string): Promise<object[]> => {
   ensureInitialized();
@@ -412,11 +413,7 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
     const results = await _db!.collection(collectionName).find({}).toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleDbError(
-      `Error getting all items in ${collectionName}`,
-      'getAllInCollection',
-      error,
-    );
+    return handleError(`Error getting all items in ${collectionName}`, 'getAllInCollection', { error });
   }
 };
 
@@ -433,7 +430,7 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
  * @param collectionName - Target collection name.
  * @param item - The object to insert.
  * @returns The inserted `_id` as a string.
- * @throws {Error} If the MongoDBManager has not been initialized or the insert fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the insert fails.
  */
 const addItemToCollection = async (collectionName: string, item: object): Promise<string> => {
   ensureInitialized();
@@ -447,11 +444,7 @@ const addItemToCollection = async (collectionName: string, item: object): Promis
 
     return insertedId.toString();
   } catch (error) {
-    return handleDbError(
-      `Error inserting item into ${collectionName}`,
-      'addItemToCollection',
-      error,
-    );
+    return handleError(`Error inserting item into ${collectionName}`, 'addItemToCollection', { error });
   }
 };
 
@@ -463,7 +456,7 @@ const addItemToCollection = async (collectionName: string, item: object): Promis
  * @param collectionName - Target collection name.
  * @param items - The objects to insert.
  * @returns Inserted `_id` values as strings.
- * @throws {Error} If the MongoDBManager has not been initialized or the insert fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the insert fails.
  */
 const addItemsToCollection = async (collectionName: string, items: object[]): Promise<string[]> => {
   ensureInitialized();
@@ -483,11 +476,7 @@ const addItemsToCollection = async (collectionName: string, items: object[]): Pr
 
     return ids;
   } catch (error) {
-    return handleDbError(
-      `Error inserting many items into ${collectionName}`,
-      'addItemsToCollection',
-      error,
-    );
+    return handleError(`Error inserting many items into ${collectionName}`, 'addItemsToCollection', { error });
   }
 };
 
@@ -506,7 +495,7 @@ const addItemsToCollection = async (collectionName: string, items: object[]): Pr
  * @param id - String representation of the `_id`.
  * @param item - Partial document to `$set`.
  * @returns The updated and normalized document, or `null` if not found.
- * @throws {Error} If the id is not a valid ObjectId, the MongoDBManager has not been
+ * @throws {JustinError} If the id is not a valid ObjectId, the MongoDBManager has not been
  * initialized, or the update fails.
  */
 const updateItemInCollection = async (
@@ -533,10 +522,10 @@ const updateItemInCollection = async (
     const updatedDoc = await coll.findOne({ _id: objectId });
     return transformId(updatedDoc);
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Error updating item with id ${id} in ${collectionName}`,
       'updateItemInCollection',
-      error,
+      { error },
     );
   }
 };
@@ -551,7 +540,7 @@ const updateItemInCollection = async (
  * @param collectionName - Target collection name.
  * @param updates - Array of `{ id, update }` pairs.
  * @returns Number of documents actually modified.
- * @throws {Error} If any id is not a valid ObjectId, the MongoDBManager has not been
+ * @throws {JustinError} If any id is not a valid ObjectId, the MongoDBManager has not been
  * initialized, or the operation fails.
  */
 const updateItemsInCollection = async (
@@ -572,11 +561,7 @@ const updateItemsInCollection = async (
     Log.debug(`Bulk updated ${result.modifiedCount} item(s) in ${collectionName}`);
     return result.modifiedCount;
   } catch (error) {
-    return handleDbError(
-      `Error bulk-updating items in ${collectionName}`,
-      'updateItemsInCollection',
-      error,
-    );
+    return handleError(`Error bulk-updating items in ${collectionName}`, 'updateItemsInCollection', { error });
   }
 };
 
@@ -592,7 +577,7 @@ const updateItemsInCollection = async (
  * @param collectionName - Target collection name.
  * @param id - String representation of the `_id`.
  * @returns Number of documents deleted (0 or 1).
- * @throws {Error} If the id is not a valid ObjectId, the MongoDBManager has not been
+ * @throws {JustinError} If the id is not a valid ObjectId, the MongoDBManager has not been
  * initialized, or the operation fails.
  */
 const removeItemFromCollection = async (collectionName: string, id: string): Promise<number> => {
@@ -610,10 +595,10 @@ const removeItemFromCollection = async (collectionName: string, id: string): Pro
 
     return deletedCount;
   } catch (error) {
-    return handleDbError(
+    return handleError(
       `Error removing item with id ${id} from ${collectionName}`,
       'removeItemFromCollection',
-      error,
+      { error },
     );
   }
 };
@@ -628,7 +613,7 @@ const removeItemFromCollection = async (collectionName: string, id: string): Pro
  * @param collectionName - Target collection name.
  * @param ids - String representations of the `_id` values to delete.
  * @returns Number of documents actually deleted.
- * @throws {Error} If any id is not a valid ObjectId, the MongoDBManager has not been
+ * @throws {JustinError} If any id is not a valid ObjectId, the MongoDBManager has not been
  * initialized, or the operation fails.
  */
 const removeItemsFromCollection = async (
@@ -656,11 +641,7 @@ const removeItemsFromCollection = async (
     Log.debug(`Bulk removed ${deletedCount} item(s) from ${collectionName}`);
     return deletedCount;
   } catch (error) {
-    return handleDbError(
-      `Error bulk-removing items from ${collectionName}`,
-      'removeItemsFromCollection',
-      error,
-    );
+    return handleError(`Error bulk-removing items from ${collectionName}`, 'removeItemsFromCollection', { error });
   }
 };
 
@@ -671,7 +652,7 @@ const removeItemsFromCollection = async (
  *
  * @param collectionName - Target collection name.
  * @returns `true` if the operation was acknowledged.
- * @throws {Error} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const clearCollection = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
@@ -680,7 +661,7 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
     const { acknowledged } = await _db!.collection(collectionName).deleteMany({});
     return acknowledged;
   } catch (error) {
-    return handleDbError(`Error clearing collection ${collectionName}`, 'clearCollection', error);
+    return handleError(`Error clearing collection ${collectionName}`, 'clearCollection', { error });
   }
 };
 
@@ -695,7 +676,7 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
  *
  * @param collectionName - Target collection name.
  * @returns `true` if the collection contains zero documents, `false` otherwise.
- * @throws {Error} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
@@ -704,11 +685,7 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
     const count = await _db!.collection(collectionName).countDocuments({}, { limit: 1 });
     return count === 0;
   } catch (error) {
-    return handleDbError(
-      `Error counting documents in ${collectionName}`,
-      'isCollectionEmpty',
-      error,
-    );
+    return handleError(`Error counting documents in ${collectionName}`, 'isCollectionEmpty', { error });
   }
 };
 

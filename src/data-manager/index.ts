@@ -1,6 +1,6 @@
 export { default as DataManager } from './data-manager';
 export { ChangeListenerManager } from './change-listener.manager';
-export { handleDbError, checkInitialized } from './helpers';
+export { handleError, checkInitialized } from './helpers';
 export { DBType, USERS, PROTECTED_ATTRIBUTES, NO_ID } from './constants';
 export {
   SortDirection,

@@ -1,5 +1,6 @@
 import { DataManager, USERS } from '../../data-manager';
-import { handleDbError, checkInitialized } from '../../data-manager/helpers';
+import { handleError, checkInitialized } from '../../data-manager/helpers';
+import { JustinErrorCode } from '../../errors';
 import type { JUser, NewUserRecord } from '../types';
 import { assertNoReservedKeys, isNonEmptyString, isPlainObject, omitKeys } from '../helpers';
 import {
@@ -21,13 +22,16 @@ const _checkInitialization = (): void => {
  *
  * @param userUniqueIdentifier - The unique identifier to check.
  * @returns True if unique; false if it already exists.
- * @throws {Error} If the uniqueIdentifier is not a non-empty string.
+ * @throws {JustinError} If the uniqueIdentifier is not a non-empty string.
  */
 const isIdentifierUnique = (userUniqueIdentifier: string): boolean => {
   _checkInitialization();
 
   if (!isNonEmptyString(userUniqueIdentifier)) {
-    throw new Error(`Invalid unique identifier: ${userUniqueIdentifier}`);
+    handleError(`Invalid unique identifier: ${userUniqueIdentifier}`, 'isIdentifierUnique', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { userUniqueIdentifier },
+    });
   }
 
   const existingUserId = getUserIdByUniqueIdentifierFromCache(userUniqueIdentifier);
@@ -42,7 +46,7 @@ const isIdentifierUnique = (userUniqueIdentifier: string): boolean => {
  *
  * @param record - New user record.
  * @returns The created user or null if input is invalid.
- * @throws {Error} If the DB operation fails.
+ * @throws {JustinError} If the DB operation fails.
  */
 const createUserRecord = async (record: NewUserRecord): Promise<JUser | null> => {
   _checkInitialization();
@@ -74,7 +78,7 @@ const createUserRecord = async (record: NewUserRecord): Promise<JUser | null> =>
 
     return addedUser;
   } catch (error) {
-    return handleDbError('Failed to create user record', 'createUserRecord', error);
+    return handleError('Failed to create user record', 'createUserRecord', { error });
   }
 };
 
@@ -86,13 +90,15 @@ const createUserRecord = async (record: NewUserRecord): Promise<JUser | null> =>
  *
  * @param records - Array of new user records.
  * @returns Successfully created users (may be fewer than requested).
- * @throws {Error} If no records provided.
+ * @throws {JustinError} If no records provided.
  */
 const createUserRecords = async (records: NewUserRecord[]): Promise<JUser[]> => {
   _checkInitialization();
 
   if (!Array.isArray(records) || records.length === 0) {
-    throw new Error('No users provided for insertion.');
+    handleError('No users provided for insertion.', 'createUserRecords', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+    });
   }
 
   const created: JUser[] = [];
@@ -147,15 +153,24 @@ const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
  * @param userId - The user's id.
  * @param attributesToUpdate - Fields to update.
  * @returns Updated user.
- * @throws {Error} If input is invalid, reserved fields are included, user not found,
+ * @throws {JustinError} If input is invalid, reserved fields are included, user not found,
  * or the DB operation fails.
  */
 const updateUserById = async (userId: string, attributesToUpdate: object): Promise<JUser> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userId)) throw new Error('Invalid userId.');
+  if (!isNonEmptyString(userId)) {
+    handleError('Invalid userId.', 'updateUserById', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { userId },
+    });
+  }
 
-  if (!isPlainObject(attributesToUpdate)) throw new Error('Invalid attributesToUpdate.');
+  if (!isPlainObject(attributesToUpdate)) {
+    handleError('Invalid attributesToUpdate.', 'updateUserById', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+    });
+  }
 
   assertNoReservedKeys(
     attributesToUpdate,
@@ -164,7 +179,12 @@ const updateUserById = async (userId: string, attributesToUpdate: object): Promi
   );
 
   const existingUser = getUserByIdFromCache(userId);
-  if (!existingUser) throw new Error(`User with id (${userId}) not found.`);
+  if (!existingUser) {
+    handleError(`User with id (${userId}) not found.`, 'updateUserById', {
+      code: JustinErrorCode.NOT_FOUND,
+      data: { userId },
+    });
+  }
 
   const merged = { ...existingUser, ...attributesToUpdate };
   const dataToUpdate = omitKeys(merged as any, ['id', 'uniqueIdentifier'] as const);
@@ -174,12 +194,17 @@ const updateUserById = async (userId: string, attributesToUpdate: object): Promi
       ...dataToUpdate,
     })) as JUser;
 
-    if (!updatedUser) throw new Error(`Failed to update user: ${userId}`);
+    if (!updatedUser) {
+      handleError(`Failed to update user: ${userId}`, 'updateUserById', {
+        code: JustinErrorCode.DB_ERROR,
+        data: { userId },
+      });
+    }
 
     upsertUserInCache(updatedUser);
     return updatedUser;
   } catch (error) {
-    return handleDbError(`Failed to update user: ${userId}`, 'updateUserById', error);
+    return handleError(`Failed to update user: ${userId}`, 'updateUserById', { error });
   }
 };
 
@@ -189,7 +214,7 @@ const updateUserById = async (userId: string, attributesToUpdate: object): Promi
  * @param userUniqueIdentifier - Unique identifier.
  * @param attributesToUpdate - Fields to update.
  * @returns Updated user or null if not found or input is invalid.
- * @throws {Error} If reserved fields are included or the DB operation fails.
+ * @throws {JustinError} If reserved fields are included or the DB operation fails.
  */
 const updateUserByUniqueIdentifier = async (
   userUniqueIdentifier: string,

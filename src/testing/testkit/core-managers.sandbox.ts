@@ -5,13 +5,13 @@ import { DataManager, ChangeListenerManager } from '../../data-manager';
 import * as HelpersModule from '../../data-manager/helpers';
 
 /**
- * Error shape thrown by the `handleDbError` stub in {@link makeCoreManagersSandbox}.
- * Includes the original db message passed to `handleDbError` as `dbMessage`.
+ * Error shape thrown by the `handleError` stub in {@link makeCoreManagersSandbox}.
+ * Includes the original db message passed to `handleError` as `dbMessage`.
  */
 export type DbErrorWithMessage = Error & { dbMessage: string };
 
 /**
- * Type guard for errors thrown by the `handleDbError` stub.
+ * Type guard for errors thrown by the `handleError` stub.
  */
 export function isDbErrorWithMessage(err: unknown): err is DbErrorWithMessage {
   return err instanceof Error && typeof (err as any).dbMessage === 'string';
@@ -41,10 +41,10 @@ export type CoreManagersSandbox = {
   clm: ChangeListenerManager;
 
   /**
-   * Stubbed handleDbError that always throws the underlying errors (or a new Error).
-   * The thrown errors will include `dbMessage` (the first arg passed to handleDbError).
+   * Stubbed handleError that always throws the underlying errors (or a new Error).
+   * The thrown errors will include `dbMessage` (the first arg passed to handleError).
    */
-  handleDbErrorStub: SinonStub;
+  handleErrorStub: SinonStub;
 
   /**
    * Restore all sinon stubs/spies in this sandbox.
@@ -58,7 +58,7 @@ export type CoreManagersSandbox = {
  * This mirrors the "clean beforeEach" pattern:
  * - DataManager singleton with common methods stubbed
  * - ChangeListenerManager singleton with listener methods stubbed
- * - handleDbError stub that always throws
+ * - handleError stub that always throws
  *
  * @example
  * ```ts
@@ -108,24 +108,22 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
   sb.stub(clm, 'clearChangeListeners');
 
   /**
-   * handleDbError stub
+   * handleError stub
    *
    * Supports both call styles:
-   *   handleDbError(message, errors)
-   *   handleDbError(message, methodName, errors)
+   *   handleError(message, errors)
+   *   handleError(message, methodName, errors)
    *
    * Always rethrows the underlying Error (if present), or a new Error(message).
    */
-  const handleDbErrorStub = sb
-    .stub(HelpersModule, 'handleDbError')
+  const handleErrorStub = sb
+    .stub(HelpersModule, 'handleError')
     .callsFake((...args: unknown[]): never => {
-      const [message, maybeMethod, maybeError] = args;
+      const [message, , options] = args as [string, string, { error?: unknown } | undefined];
       const msg = String(message);
-      const error = maybeError ?? maybeMethod;
+      const error = (options as any)?.error;
 
       const err = error instanceof Error ? error : new Error(String(error ?? msg));
-
-      // Useful for assertions if tests want it.
       (err as DbErrorWithMessage).dbMessage = msg;
 
       throw err;
@@ -135,7 +133,7 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
     sb,
     dm,
     clm,
-    handleDbErrorStub,
+    handleErrorStub,
     restore() {
       sb.restore();
     },

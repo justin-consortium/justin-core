@@ -1,4 +1,6 @@
 import { DataManager, ChangeListenerManager, checkInitialized, PROTECTED_ATTRIBUTES, USERS, CollectionChangeType  } from '../data-manager';
+import { handleError } from '../data-manager/helpers';
+import { JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './types';
 import { isNonEmptyString } from './helpers';
@@ -107,9 +109,6 @@ const init = async (): Promise<void> => {
 };
 
 /**
- * Shuts down the UserManager by removing all change listeners.
- */
-/**
  * Shuts down the UserManager by removing all change listeners and awaiting
  * full stream teardown.
  *
@@ -155,6 +154,7 @@ const createUser = async (record: NewUserRecord): Promise<JUser | null> => {
   try {
     await setProtectedAttributesByUniqueIdentifier(uniqueIdentifier, items as NamespacedAttributes[]);
   } catch (err) {
+    // Intentional swallow — protected-attributes failure must never fail user creation.
     Log.warn(`Failed to create protectedAttributes for user (${uniqueIdentifier}).`);
     Log.warn(String((err as any)?.message ?? err));
   }
@@ -170,13 +170,15 @@ const createUser = async (record: NewUserRecord): Promise<JUser | null> => {
  *
  * @param records - New user records.
  * @returns Successfully created users (may be empty).
- * @throws {Error} If no records are provided.
+ * @throws {JustinError} If no records are provided.
  */
 const createUsers = async (records: NewUserRecord[]): Promise<JUser[]> => {
   _checkInitialization();
 
   if (!Array.isArray(records) || records.length === 0) {
-    throw new Error('No users provided for insertion.');
+    handleError('No users provided for insertion.', 'createUsers', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+    });
   }
 
   return await createUserRecords(records);
@@ -287,7 +289,7 @@ const getProtectedAttributesForUser = (
  * @param userId - The user's id.
  * @param input - A single {@link NamespacedAttributes} or an array of them.
  * @returns Array of successfully upserted records.
- * @throws {Error} If any payload contains reserved keys.
+ * @throws {JustinError} If any payload contains reserved keys.
  */
 const setProtectedAttributesForUser = async (
   userId: string,
@@ -313,7 +315,7 @@ const setProtectedAttributesForUser = async (
  * @param keyPath - Dot-notated path of the key to set.
  * @param value - The value to set at the path.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If the path or value contains reserved keys.
+ * @throws {JustinError} If the path or value contains reserved keys.
  */
 const updateProtectedAttributeForUser = async (
   userId: string,
@@ -336,7 +338,7 @@ const updateProtectedAttributeForUser = async (
  * @param namespace - The namespace of the record to patch.
  * @param updates - An object whose keys are dot-notated paths and values are the values to set.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If any path or value contains reserved keys.
+ * @throws {JustinError} If any path or value contains reserved keys.
  */
 const updateProtectedAttributesForUser = async (
   userId: string,
@@ -395,7 +397,7 @@ const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void
  * @param namespace - The namespace of the record to patch.
  * @param keyPath - Dot-notated path of the key to delete.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If the path contains reserved keys.
+ * @throws {JustinError} If the path contains reserved keys.
  */
 const deleteProtectedAttributeForUser = async (
   userId: string,
@@ -417,7 +419,7 @@ const deleteProtectedAttributeForUser = async (
  * @param namespace - The namespace of the record to patch.
  * @param keyPaths - A single dot-notated path string or an array of them.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {Error} If any path contains reserved keys.
+ * @throws {JustinError} If any path contains reserved keys.
  */
 const deleteProtectedAttributesFromNamespaceForUser = async (
   userId: string,
