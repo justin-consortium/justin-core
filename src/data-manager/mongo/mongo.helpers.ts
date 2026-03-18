@@ -1,6 +1,6 @@
 import * as mongoDB from 'mongodb';
 import { NO_ID } from '../constants';
-import { handleError } from '../helpers';
+import { handleError } from '../../utils';
 import { JustinErrorCode } from '../../errors';
 
 /**

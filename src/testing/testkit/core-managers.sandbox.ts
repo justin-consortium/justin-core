@@ -2,7 +2,7 @@ import sinon from 'sinon';
 // eslint-disable-next-line no-duplicate-imports
 import type { SinonSandbox, SinonStub } from 'sinon';
 import { DataManager, ChangeListenerManager } from '../../data-manager';
-import * as HelpersModule from '../../data-manager/helpers';
+import * as HelpersModule from '../../utils';
 
 /**
  * Error shape thrown by the `handleError` stub in {@link makeCoreManagersSandbox}.
