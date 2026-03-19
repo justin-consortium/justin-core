@@ -8,7 +8,7 @@ import { JustinErrorCode } from './types';
  * `data` record for structured context that accumulates as the errors
  * propagates up through layers.
  */
-export class JustinError extends Error {
+export class JustInError extends Error {
   code: string;
   isLogged: boolean;
   data: Record<string, any>;
@@ -17,7 +17,7 @@ export class JustinError extends Error {
     message: string,
     code: string,
     {
-      name = 'JustinError',
+      name = 'JustInError',
       isLogged = false,
       data = {},
     }: {

@@ -1,6 +1,4 @@
-import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
-import { USERS } from '../../data-manager/constants';
-import { CollectionChangeType } from '../../data-manager/types';
+import { ChangeListenerManager, USERS, CollectionChangeType } from '../../data-manager';
 import { JUser } from '../types';
 import { deleteUserFromCache, upsertUserInCache } from './cache';
 import { createLogger } from '../../logger';
@@ -51,11 +49,12 @@ const setupUserChangeListeners = (
 
 /**
  * Removes user-related change listeners.
+ * Awaits each removal to ensure underlying streams are fully closed.
  */
-const removeUserChangeListeners = (): void => {
-  clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
-  clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
-  clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
+const removeUserChangeListeners = async (): Promise<void> => {
+  await clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
+  await clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
+  await clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
 };
 
 export { setupUserChangeListeners, removeUserChangeListeners };

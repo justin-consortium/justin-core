@@ -1,2 +1,2 @@
-export { JustinError } from './justin-error';
+export { JustInError } from './just-in-error';
 export { JustinErrorCode } from './types';

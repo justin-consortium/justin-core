@@ -67,6 +67,25 @@ export interface LoggerEntry<T extends string = BaseSeverity> {
 /**
  * Function signature for emitters (console, remote, etc.).
  *
+ * The logger calls this synchronously and does not await the result. Async
+ * emitters are supported — the returned promise will be fire-and-forget. If
+ * your emitter does async work (e.g. writing to a database or external
+ * service), you are responsible for handling errors inside the function.
+ * Any unhandled rejection will not be caught by the logger.
+ *
+ * @example
+ * ```ts
+ * configureLogger({
+ *   emitFn: async (entry, context) => {
+ *     try {
+ *       await myTransport.send({ ...entry, ...context });
+ *     } catch (err) {
+ *       console.error('Log transport failed', err);
+ *     }
+ *   },
+ * });
+ * ```
+ *
  * @typeParam T - Severity union used by this emitter.
  * @param entry - The structured log entry to emit.
  * @param mergedContext - The merged global + instance context.
@@ -78,6 +97,26 @@ export type EmitFn<T extends string = BaseSeverity> = (
 
 /**
  * Function signature for log callbacks (fire-and-forget).
+ *
+ * Called after the emitter runs. The logger does not await the result — async
+ * callbacks are supported but run fire-and-forget. Errors thrown synchronously
+ * are silently swallowed by the logger. If your callback does async work
+ * (e.g. writing to a database or external service), you are responsible for
+ * handling errors inside the function. Any unhandled rejection will not be
+ * caught by the logger.
+ *
+ * @example
+ * ```ts
+ * configureLogger({
+ *   callback: async (entry) => {
+ *     try {
+ *       await db.insertLog(entry);
+ *     } catch (err) {
+ *       console.error('Log callback failed', err);
+ *     }
+ *   },
+ * });
+ * ```
  *
  * @typeParam T - Severity union used by this callback.
  * @param entry - The structured log entry that was just emitted.
