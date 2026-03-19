@@ -1,6 +1,8 @@
-import { DataManager, PROTECTED_ATTRIBUTES, handleError, checkInitialized } from '../../data-manager';
+import { DataManager, PROTECTED_ATTRIBUTES } from '../../data-manager';
+import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector, failureEntryFromError } from '../../utils';
 import { JustinErrorCode } from '../../errors';
 import type { NamespacedAttributes, ProtectedAttributesRecord } from '../types';
+import type { CoreResult, FailureEntry } from '../../types';
 import {
   assertNoReservedKeysDeep,
   isNonEmptyString,
@@ -20,10 +22,6 @@ const dm = DataManager.getInstance();
 
 const RESERVED_PROTECTED_ATTRIBUTE_KEYS = ['id', 'uniqueIdentifier', 'namespace'];
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 const _checkInitialization = (): void => {
   checkInitialized(dm.getInitializationStatus(), 'UserManager');
 };
@@ -32,21 +30,14 @@ const _checkInitialization = (): void => {
  * Validates a protected-attributes payload.
  *
  * @param protectedAttributes - The payload to validate.
- * @returns True when valid.
- * @throws {JustinError} If reserved keys are present.
+ * @returns True if valid; false if not a plain object or contains reserved keys.
  * @private
  */
 const _isValidProtectedAttributesPayload = (
   protectedAttributes: Record<string, any>,
 ): boolean => {
   if (!isPlainObject(protectedAttributes)) return false;
-
-  assertNoReservedKeysDeep(
-    protectedAttributes,
-    RESERVED_PROTECTED_ATTRIBUTE_KEYS,
-    'Cannot set reserved protected-attributes fields (id, uniqueIdentifier, namespace).',
-  );
-
+  if (!assertNoReservedKeysDeep(protectedAttributes, RESERVED_PROTECTED_ATTRIBUTE_KEYS)) return false;
   return true;
 };
 
@@ -64,30 +55,20 @@ const _normalizeNamespacedAttributesInput = (
 
 /**
  * Finds a protected-attributes record by uniqueIdentifier and namespace.
- *
- * @throws {JustinError} If the DB query fails.
+ * Returns null if not found or if the query fails.
  * @private
  */
 const _findProtectedAttributesRecord = async (
   uniqueIdentifier: string,
   namespace: string,
 ): Promise<ProtectedAttributesRecord | null> => {
-  try {
-    const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
-      uniqueIdentifier,
-      namespace,
-    });
+  const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+    namespace,
+  });
 
-    if (!Array.isArray(docs) || docs.length === 0) return null;
-
-    return docs[0] ?? null;
-  } catch (error) {
-    return handleError(
-      `Failed to find protected attributes for ${uniqueIdentifier}/${namespace}`,
-      '_findProtectedAttributesRecord',
-      { error },
-    );
-  }
+  if (!Array.isArray(docs) || docs.length === 0) return null;
+  return docs[0] ?? null;
 };
 
 /**
@@ -105,23 +86,83 @@ const _mergeProtectedAttributes = (
 };
 
 /**
- * Asserts that a path string does not contain reserved key segments.
+ * Returns false if a path string contains any reserved key segments.
  *
- * @throws {JustinError} If any path segment is a reserved key.
+ * @param keyPath - The dot-notated path to check.
+ * @returns True if the path is safe; false if it contains a reserved segment.
  * @private
  */
-const _assertNoReservedKeyPath = (keyPath: string): void => {
+const _isValidKeyPath = (keyPath: string): boolean => {
   const segments = getPathSegments(keyPath);
-
   for (const segment of segments) {
-    if (RESERVED_PROTECTED_ATTRIBUTE_KEYS.includes(segment)) {
-      handleError(
-        'Cannot set reserved protected-attributes fields (id, uniqueIdentifier, namespace).',
-        '_assertNoReservedKeyPath',
-        { code: JustinErrorCode.VALIDATION_ERROR, data: { keyPath, segment } },
-      );
-    }
+    if (RESERVED_PROTECTED_ATTRIBUTE_KEYS.includes(segment)) return false;
   }
+  return true;
+};
+
+// ---------------------------------------------------------------------------
+// Internal write helper
+// ---------------------------------------------------------------------------
+
+type _UpsertSingleResult =
+  | { ok: true; record: ProtectedAttributesRecord }
+  | { ok: false; code: string; reason: string };
+
+/**
+ * Creates or shallow-merges a single namespace-scoped protected-attributes record.
+ *
+ * Returns a discriminated union so the outer loop in
+ * {@link setProtectedAttributesByUniqueIdentifier} can collect successes and
+ * failures without throwing.
+ *
+ * @private
+ */
+const _upsertSingleProtectedAttributesRecord = async (
+  uniqueIdentifier: string,
+  namespace: string,
+  protectedAttributes: Record<string, any>,
+): Promise<_UpsertSingleResult> => {
+  const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
+
+  if (!existing) {
+    const addResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+      await dm.addItemToCollection(PROTECTED_ATTRIBUTES, { uniqueIdentifier, namespace, protectedAttributes }),
+      '_upsertSingleProtectedAttributesRecord',
+      { uniqueIdentifier },
+      { namespace },
+    );
+    if (!addResult.ok) {
+      return { ok: false, code: addResult.failures[0].code, reason: addResult.failures[0].reason };
+    }
+    const created = addResult.successes[0] as ProtectedAttributesRecord;
+    upsertProtectedAttributesInCache(created);
+    return { ok: true, record: created };
+  }
+
+  const existingId = existing?.id;
+  if (!existingId || typeof existingId !== 'string') {
+    return {
+      ok: false,
+      code: JustinErrorCode.VALIDATION_ERROR,
+      reason: 'ProtectedAttributesRecord is missing id',
+    };
+  }
+
+  const merged = _mergeProtectedAttributes(existing.protectedAttributes, protectedAttributes);
+
+  const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+    await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, { protectedAttributes: merged }),
+    '_upsertSingleProtectedAttributesRecord',
+    { uniqueIdentifier },
+    { namespace },
+  );
+  if (!updateResult.ok) {
+    return { ok: false, code: updateResult.failures[0].code, reason: updateResult.failures[0].reason };
+  }
+
+  const updated = updateResult.successes[0] as ProtectedAttributesRecord;
+  upsertProtectedAttributesInCache(updated);
+  return { ok: true, record: updated };
 };
 
 // ---------------------------------------------------------------------------
@@ -175,92 +216,66 @@ const getAllProtectedAttributesByUniqueIdentifier = (
 // ---------------------------------------------------------------------------
 
 /**
- * Upserts one or more namespace-scoped protected attributes records for a user.
+ * Upserts one or more namespace-scoped protected-attributes records for a user.
  *
  * For each namespace:
  * - if no record exists, a new record is created.
- * - if a record exists, the incoming protectedAttributes are shallow-merged and persisted.
+ * - if a record exists, the incoming protectedAttributes are shallow-merged.
  *
- * Invalid items are skipped.
+ * Every failure entry carries `uniqueIdentifier`, `namespace`, `code`, and `reason`
+ * so callers have complete context without inspecting call arguments.
  *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param input - A single namespaced attributes object or an array of them.
- * @returns The created or updated records.
- * @throws {JustinError} If DataManager has not been initialized, a payload contains reserved keys,
- * or a DB operation fails.
+ * @returns A {@link CoreResult} with per-namespace success and failure detail.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const setProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
   input: NamespacedAttributes | NamespacedAttributes[],
-): Promise<ProtectedAttributesRecord[]> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return [];
+  if (!isNonEmptyString(uniqueIdentifier)) return coreFailureResult('setProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier });
 
   const items = _normalizeNamespacedAttributesInput(input);
-  if (items.length === 0) return [];
+  if (items.length === 0) return coreSuccess([]);
 
-  const results: ProtectedAttributesRecord[] = [];
+  const successes: ProtectedAttributesRecord[] = [];
+  const collector = makeLoopFailureCollector<ProtectedAttributesRecord>(
+    'setProtectedAttributesByUniqueIdentifier',
+    { uniqueIdentifier },
+  );
 
   for (const item of items) {
     const namespace = item?.namespace;
     const protectedAttributes = item?.protectedAttributes;
+    const ns = String(namespace ?? '');
 
-    if (!isNonEmptyString(namespace)) continue;
-    if (!_isValidProtectedAttributesPayload(protectedAttributes)) continue;
+    if (!isNonEmptyString(namespace)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'namespace must be a non-empty string', { namespace: ns }); continue; }
 
-    const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
-
-    if (!existing) {
-      try {
-        const created = (await dm.addItemToCollection(PROTECTED_ATTRIBUTES, {
-          uniqueIdentifier,
-          namespace,
-          protectedAttributes,
-        })) as ProtectedAttributesRecord;
-
-        upsertProtectedAttributesInCache(created);
-        results.push(created);
-      } catch (error) {
-        handleError(
-          `Failed to create protected attributes for ${uniqueIdentifier}/${namespace}`,
-          'setProtectedAttributesByUniqueIdentifier',
-          { error },
-        );
-      }
+    if (!_isValidProtectedAttributesPayload(protectedAttributes)) {
+      collector.push(
+        JustinErrorCode.VALIDATION_ERROR,
+        !isPlainObject(protectedAttributes)
+          ? 'protectedAttributes must be a plain object'
+          : 'protectedAttributes contains reserved keys (id, uniqueIdentifier, namespace)',
+        { namespace },
+      );
       continue;
     }
 
-    const existingId = existing?.id;
-    if (!existingId || typeof existingId !== 'string') {
-      handleError('ProtectedAttributesRecord is missing id.', 'setProtectedAttributesByUniqueIdentifier', {
-        code: JustinErrorCode.VALIDATION_ERROR,
-        data: { uniqueIdentifier, namespace },
-      });
+    const result = await _upsertSingleProtectedAttributesRecord(uniqueIdentifier, namespace, protectedAttributes);
+
+    if (!result.ok) {
+      collector.push(result.code, result.reason, { namespace });
+      continue;
     }
 
-    const mergedProtectedAttributes = _mergeProtectedAttributes(
-      existing.protectedAttributes,
-      protectedAttributes,
-    );
-
-    try {
-      const updated = (await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
-        protectedAttributes: mergedProtectedAttributes,
-      })) as ProtectedAttributesRecord;
-
-      upsertProtectedAttributesInCache(updated);
-      results.push(updated);
-    } catch (error) {
-      handleError(
-        `Failed to update protected attributes for ${uniqueIdentifier}/${namespace}`,
-        'setProtectedAttributesByUniqueIdentifier',
-        { error },
-      );
-    }
+    successes.push(result.record);
   }
 
-  return results;
+  return collector.hasFailures ? coreFailure(collector.failures, successes) : coreSuccess(successes);
 };
 
 // ---------------------------------------------------------------------------
@@ -275,41 +290,32 @@ const setProtectedAttributesByUniqueIdentifier = async (
  * @param keyPath - The key path to update.
  * @param value - The value to set.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If DataManager has not been initialized, the path or value contains
- * reserved keys, or the DB operation fails.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const updateProtectedAttributeByUniqueIdentifier = async (
   uniqueIdentifier: string,
   namespace: string,
   keyPath: string,
   value: any,
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return null;
-  if (!isNonEmptyString(namespace)) return null;
+  const fail = (code: string, reason: string) =>
+    coreFailureResult<ProtectedAttributesRecord>('updateProtectedAttributeByUniqueIdentifier', code, reason, { uniqueIdentifier }, { namespace, keyPath });
+
+  if (!isNonEmptyString(uniqueIdentifier)) return fail(JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string');
+  if (!isNonEmptyString(namespace)) return fail(JustinErrorCode.VALIDATION_ERROR, 'namespace must be a non-empty string');
 
   const pathSegments = getPathSegments(keyPath);
-  if (pathSegments.length === 0) return null;
-
-  _assertNoReservedKeyPath(keyPath);
-
-  assertNoReservedKeysDeep(
-    value,
-    RESERVED_PROTECTED_ATTRIBUTE_KEYS,
-    'Cannot set reserved protected-attributes fields (id, uniqueIdentifier, namespace).',
-  );
+  if (pathSegments.length === 0) return fail(JustinErrorCode.VALIDATION_ERROR, 'keyPath must be a non-empty dot-notated string');
+  if (!_isValidKeyPath(keyPath)) return fail(JustinErrorCode.VALIDATION_ERROR, 'keyPath contains a reserved segment (id, uniqueIdentifier, namespace)');
+  if (!assertNoReservedKeysDeep(value, RESERVED_PROTECTED_ATTRIBUTE_KEYS)) return fail(JustinErrorCode.VALIDATION_ERROR, 'value contains reserved keys (id, uniqueIdentifier, namespace)');
 
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
-  if (!existing) return null;
+  if (!existing) return fail(JustinErrorCode.NOT_FOUND, `protected attributes record not found for (${uniqueIdentifier}/${namespace})`);
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string') {
-    return handleError('ProtectedAttributesRecord is missing id.', 'updateProtectedAttributeByUniqueIdentifier', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { uniqueIdentifier, namespace, keyPath },
-    });
-  }
+  if (!existingId || typeof existingId !== 'string') return fail(JustinErrorCode.VALIDATION_ERROR, 'protected attributes record is missing id');
 
   const currentProtectedAttributes = isPlainObject(existing.protectedAttributes)
     ? existing.protectedAttributes
@@ -317,87 +323,80 @@ const updateProtectedAttributeByUniqueIdentifier = async (
 
   const updatedProtectedAttributes = setValueAtPath(currentProtectedAttributes, keyPath, value);
 
-  try {
-    const updated = (await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
-      protectedAttributes: updatedProtectedAttributes,
-    })) as ProtectedAttributesRecord;
+  const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+    await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, { protectedAttributes: updatedProtectedAttributes }),
+    'updateProtectedAttributeByUniqueIdentifier',
+    { uniqueIdentifier },
+    { namespace, keyPath },
+  );
+  if (!updateResult.ok) return updateResult;
 
-    upsertProtectedAttributesInCache(updated);
-    return updated;
-  } catch (error) {
-    return handleError(
-      `Failed to update protected attribute at ${keyPath} for ${uniqueIdentifier}/${namespace}`,
-      'updateProtectedAttributeByUniqueIdentifier',
-      { error },
-    );
-  }
+  const updated = updateResult.successes[0] as ProtectedAttributesRecord;
+  upsertProtectedAttributesInCache(updated);
+  return coreSuccess([updated]);
 };
 
 /**
  * Updates multiple nested key paths within a namespace-scoped protected attributes object.
  *
+ * Every skipped entry carries `uniqueIdentifier`, `namespace`, `keyPath`, `code`, and
+ * `reason` so callers have the complete picture without correlating back to call arguments.
+ *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespace - The namespace to update.
  * @param updates - An object whose keys are path strings and values are the values to set.
- * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If DataManager has not been initialized, any path or value contains
- * reserved keys, or the DB operation fails.
+ * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const updateProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
   namespace: string,
   updates: Record<string, any>,
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return null;
-  if (!isNonEmptyString(namespace)) return null;
-  if (!isPlainObject(updates)) return null;
+  if (!isNonEmptyString(uniqueIdentifier)) return coreFailureResult('updateProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier });
+  if (!isNonEmptyString(namespace)) return coreFailureResult('updateProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'namespace must be a non-empty string', { uniqueIdentifier }, { namespace });
+  if (!isPlainObject(updates)) return coreFailureResult('updateProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'updates must be a plain object', { uniqueIdentifier }, { namespace });
 
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
-  if (!existing) return null;
+  if (!existing) return coreFailureResult('updateProtectedAttributesByUniqueIdentifier', JustinErrorCode.NOT_FOUND, `protected attributes record not found for (${uniqueIdentifier}/${namespace})`, { uniqueIdentifier }, { namespace });
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string') {
-    return handleError('ProtectedAttributesRecord is missing id.', 'updateProtectedAttributesByUniqueIdentifier', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { uniqueIdentifier, namespace },
-    });
-  }
+  if (!existingId || typeof existingId !== 'string') return coreFailureResult('updateProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'protected attributes record is missing id', { uniqueIdentifier }, { namespace });
 
   let updatedProtectedAttributes = isPlainObject(existing.protectedAttributes)
     ? { ...existing.protectedAttributes }
     : {};
 
+  const skipCollector = makeLoopFailureCollector<ProtectedAttributesRecord>(
+    'updateProtectedAttributesByUniqueIdentifier',
+    { uniqueIdentifier },
+  );
+
   for (const [keyPath, value] of Object.entries(updates)) {
     const pathSegments = getPathSegments(keyPath);
-    if (pathSegments.length === 0) continue;
 
-    _assertNoReservedKeyPath(keyPath);
-
-    assertNoReservedKeysDeep(
-      value,
-      RESERVED_PROTECTED_ATTRIBUTE_KEYS,
-      'Cannot set reserved protected-attributes fields (id, uniqueIdentifier, namespace).',
-    );
+    if (pathSegments.length === 0) { skipCollector.push(JustinErrorCode.VALIDATION_ERROR, 'keyPath must be a non-empty dot-notated string', { namespace, keyPath }); continue; }
+    if (!_isValidKeyPath(keyPath)) { skipCollector.push(JustinErrorCode.VALIDATION_ERROR, 'keyPath contains a reserved segment (id, uniqueIdentifier, namespace)', { namespace, keyPath }); continue; }
+    if (!assertNoReservedKeysDeep(value, RESERVED_PROTECTED_ATTRIBUTE_KEYS)) { skipCollector.push(JustinErrorCode.VALIDATION_ERROR, 'value contains reserved keys (id, uniqueIdentifier, namespace)', { namespace, keyPath }); continue; }
 
     updatedProtectedAttributes = setValueAtPath(updatedProtectedAttributes, keyPath, value);
   }
 
-  try {
-    const updated = (await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
-      protectedAttributes: updatedProtectedAttributes,
-    })) as ProtectedAttributesRecord;
-
-    upsertProtectedAttributesInCache(updated);
-    return updated;
-  } catch (error) {
-    return handleError(
-      `Failed to update protected attributes for ${uniqueIdentifier}/${namespace}`,
-      'updateProtectedAttributesByUniqueIdentifier',
-      { error },
-    );
+  const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+    await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, { protectedAttributes: updatedProtectedAttributes }),
+    'updateProtectedAttributesByUniqueIdentifier',
+    { uniqueIdentifier },
+    { namespace },
+  );
+  if (!updateResult.ok) {
+    return coreFailure([...skipCollector.failures, ...updateResult.failures]);
   }
+
+  const updated = updateResult.successes[0] as ProtectedAttributesRecord;
+  upsertProtectedAttributesInCache(updated);
+  return skipCollector.hasFailures ? coreFailure(skipCollector.failures, [updated]) : coreSuccess([updated]);
 };
 
 // ---------------------------------------------------------------------------
@@ -410,21 +409,21 @@ const updateProtectedAttributesByUniqueIdentifier = async (
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespaces - A namespace string or array of namespace strings to delete.
  * @returns True if at least one record was deleted.
- * @throws {JustinError} If DataManager has not been initialized or a DB operation fails.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
   namespaces: string | string[],
-): Promise<boolean> => {
+): Promise<CoreResult<null>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return false;
+  if (!isNonEmptyString(uniqueIdentifier)) return coreFailureResult('deleteProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier });
 
   const namespaceList = Array.isArray(namespaces) ? namespaces : [namespaces];
-  if (namespaceList.length === 0) return false;
+  if (namespaceList.length === 0) return coreFailureResult('deleteProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'at least one namespace must be provided', { uniqueIdentifier });
 
   const validNamespaces = namespaceList.filter(isNonEmptyString);
-  if (validNamespaces.length === 0) return false;
+  if (validNamespaces.length === 0) return coreFailureResult('deleteProtectedAttributesByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'no valid namespaces provided', { uniqueIdentifier });
 
   const idsToDelete: string[] = [];
 
@@ -434,40 +433,32 @@ const deleteProtectedAttributesByUniqueIdentifier = async (
     if (id && typeof id === 'string') idsToDelete.push(id);
   }
 
-  if (idsToDelete.length === 0) return false;
+  if (idsToDelete.length === 0) return coreFailureResult('deleteProtectedAttributesByUniqueIdentifier', JustinErrorCode.NOT_FOUND, 'no matching protected attributes records found', { uniqueIdentifier });
 
-  try {
-    const deletedCount = await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, idsToDelete);
-    const deletedAny = deletedCount > 0;
-
-    if (deletedAny) {
-      deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
-
-      const remainingDocs = await dm.findItemsInCollection<ProtectedAttributesRecord>(
-        PROTECTED_ATTRIBUTES,
-        { uniqueIdentifier },
-      );
-
-      remainingDocs.forEach((doc: ProtectedAttributesRecord) => {
-        upsertProtectedAttributesInCache(doc);
-      });
-    }
-
-    return deletedAny;
-  } catch (error) {
-    return handleError(
-      `Failed to delete protected attributes for ${uniqueIdentifier}`,
-      'deleteProtectedAttributesByUniqueIdentifier',
-      { error },
-    );
+  const removeResult = await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, idsToDelete);
+  if (!removeResult.ok && removeResult.successes.length === 0) {
+    return coreFailure(removeResult.failures.map(f => ({ uniqueIdentifier, ...f })));
   }
+
+  deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
+
+  const remainingDocs = await dm.findItemsInCollection<ProtectedAttributesRecord>(
+    PROTECTED_ATTRIBUTES,
+    { uniqueIdentifier },
+  );
+  remainingDocs.forEach((doc: ProtectedAttributesRecord) => upsertProtectedAttributesInCache(doc));
+
+  if (!removeResult.ok) {
+    return coreFailure(removeResult.failures.map(f => ({ uniqueIdentifier, ...f })), [null]);
+  }
+  return coreSuccess([null]);
 };
 
 /**
  * Deletes all protected attributes records for a user in a single bulk operation.
  *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
- * @throws {JustinError} If DataManager has not been initialized or a DB operation fails.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteAllProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
@@ -476,25 +467,17 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
 
   if (!isNonEmptyString(uniqueIdentifier)) return;
 
-  try {
-    const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
-      uniqueIdentifier,
-    });
+  const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
+    uniqueIdentifier,
+  });
 
-    const ids = docs.map((doc) => doc?.id).filter((id): id is string => typeof id === 'string');
+  const ids = docs.map((doc) => doc?.id).filter((id): id is string => typeof id === 'string');
 
-    if (ids.length > 0) {
-      await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, ids);
-    }
-
-    deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
-  } catch (error) {
-    return handleError(
-      `Failed to delete all protected attributes for ${uniqueIdentifier}`,
-      'deleteAllProtectedAttributesByUniqueIdentifier',
-      { error },
-    );
+  if (ids.length > 0) {
+    await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, ids);
   }
+
+  deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
 };
 
 /**
@@ -504,34 +487,30 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
  * @param namespace - The namespace to update.
  * @param keyPath - The key path to delete.
  * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If DataManager has not been initialized, the path contains reserved keys,
- * or the DB operation fails.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteProtectedAttributeByUniqueIdentifier = async (
   uniqueIdentifier: string,
   namespace: string,
   keyPath: string,
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return null;
-  if (!isNonEmptyString(namespace)) return null;
+  const fail = (code: string, reason: string) =>
+    coreFailureResult<ProtectedAttributesRecord>('deleteProtectedAttributeByUniqueIdentifier', code, reason, { uniqueIdentifier }, { namespace, keyPath });
+
+  if (!isNonEmptyString(uniqueIdentifier)) return fail(JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string');
+  if (!isNonEmptyString(namespace)) return fail(JustinErrorCode.VALIDATION_ERROR, 'namespace must be a non-empty string');
 
   const pathSegments = getPathSegments(keyPath);
-  if (pathSegments.length === 0) return null;
-
-  _assertNoReservedKeyPath(keyPath);
+  if (pathSegments.length === 0) return fail(JustinErrorCode.VALIDATION_ERROR, 'keyPath must be a non-empty dot-notated string');
+  if (!_isValidKeyPath(keyPath)) return fail(JustinErrorCode.VALIDATION_ERROR, 'keyPath contains a reserved segment (id, uniqueIdentifier, namespace)');
 
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
-  if (!existing) return null;
+  if (!existing) return fail(JustinErrorCode.NOT_FOUND, `protected attributes record not found for (${uniqueIdentifier}/${namespace})`);
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string') {
-    return handleError('ProtectedAttributesRecord is missing id.', 'deleteProtectedAttributeByUniqueIdentifier', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { uniqueIdentifier, namespace, keyPath },
-    });
-  }
+  if (!existingId || typeof existingId !== 'string') return fail(JustinErrorCode.VALIDATION_ERROR, 'protected attributes record is missing id');
 
   const currentProtectedAttributes = isPlainObject(existing.protectedAttributes)
     ? existing.protectedAttributes
@@ -539,82 +518,81 @@ const deleteProtectedAttributeByUniqueIdentifier = async (
 
   const updatedProtectedAttributes = deleteValueAtPath(currentProtectedAttributes, keyPath);
 
-  try {
-    const updated = (await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
-      protectedAttributes: updatedProtectedAttributes,
-    })) as ProtectedAttributesRecord;
+  const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+    await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, { protectedAttributes: updatedProtectedAttributes }),
+    'deleteProtectedAttributeByUniqueIdentifier',
+    { uniqueIdentifier },
+    { namespace, keyPath },
+  );
+  if (!updateResult.ok) return updateResult;
 
-    upsertProtectedAttributesInCache(updated);
-    return updated;
-  } catch (error) {
-    return handleError(
-      `Failed to delete protected attribute at ${keyPath} for ${uniqueIdentifier}/${namespace}`,
-      'deleteProtectedAttributeByUniqueIdentifier',
-      { error },
-    );
-  }
+  const updated = updateResult.successes[0] as ProtectedAttributesRecord;
+  upsertProtectedAttributesInCache(updated);
+  return coreSuccess([updated]);
 };
 
 /**
  * Deletes multiple nested key paths within a namespace-scoped protected attributes object.
  *
+ * Every skipped entry carries `uniqueIdentifier`, `namespace`, `keyPath`, `code`, and
+ * `reason` so callers have the complete picture without correlating back to call arguments.
+ *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespace - The namespace to update.
  * @param keyPaths - A path string or array of path strings to delete.
- * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If DataManager has not been initialized, any path contains reserved keys,
- * or the DB operation fails.
+ * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
+ * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteProtectedAttributesFromNamespaceByUniqueIdentifier = async (
   uniqueIdentifier: string,
   namespace: string,
   keyPaths: string | string[],
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return null;
-  if (!isNonEmptyString(namespace)) return null;
+  if (!isNonEmptyString(uniqueIdentifier)) return coreFailureResult('deleteProtectedAttributesFromNamespaceByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier });
+  if (!isNonEmptyString(namespace)) return coreFailureResult('deleteProtectedAttributesFromNamespaceByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'namespace must be a non-empty string', { uniqueIdentifier }, { namespace });
 
   const paths = Array.isArray(keyPaths) ? keyPaths : [keyPaths];
-  if (paths.length === 0) return null;
+  if (paths.length === 0) return coreFailureResult('deleteProtectedAttributesFromNamespaceByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'at least one keyPath must be provided', { uniqueIdentifier }, { namespace });
 
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
-  if (!existing) return null;
+  if (!existing) return coreFailureResult('deleteProtectedAttributesFromNamespaceByUniqueIdentifier', JustinErrorCode.NOT_FOUND, `protected attributes record not found for (${uniqueIdentifier}/${namespace})`, { uniqueIdentifier }, { namespace });
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string') {
-    return handleError('ProtectedAttributesRecord is missing id.', 'deleteProtectedAttributesFromNamespaceByUniqueIdentifier', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { uniqueIdentifier, namespace },
-    });
-  }
+  if (!existingId || typeof existingId !== 'string') return coreFailureResult('deleteProtectedAttributesFromNamespaceByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'protected attributes record is missing id', { uniqueIdentifier }, { namespace });
 
   let updatedProtectedAttributes = isPlainObject(existing.protectedAttributes)
     ? { ...existing.protectedAttributes }
     : {};
 
+  const skipCollector = makeLoopFailureCollector<ProtectedAttributesRecord>(
+    'deleteProtectedAttributesFromNamespaceByUniqueIdentifier',
+    { uniqueIdentifier },
+  );
+
   for (const keyPath of paths) {
     const pathSegments = getPathSegments(keyPath);
-    if (pathSegments.length === 0) continue;
 
-    _assertNoReservedKeyPath(keyPath);
+    if (pathSegments.length === 0) { skipCollector.push(JustinErrorCode.VALIDATION_ERROR, 'keyPath must be a non-empty dot-notated string', { namespace, keyPath }); continue; }
+    if (!_isValidKeyPath(keyPath)) { skipCollector.push(JustinErrorCode.VALIDATION_ERROR, 'keyPath contains a reserved segment (id, uniqueIdentifier, namespace)', { namespace, keyPath }); continue; }
+
     updatedProtectedAttributes = deleteValueAtPath(updatedProtectedAttributes, keyPath);
   }
 
-  try {
-    const updated = (await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
-      protectedAttributes: updatedProtectedAttributes,
-    })) as ProtectedAttributesRecord;
-
-    upsertProtectedAttributesInCache(updated);
-    return updated;
-  } catch (error) {
-    return handleError(
-      `Failed to delete protected attributes from namespace ${namespace} for ${uniqueIdentifier}`,
-      'deleteProtectedAttributesFromNamespaceByUniqueIdentifier',
-      { error },
-    );
+  const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+    await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, { protectedAttributes: updatedProtectedAttributes }),
+    'deleteProtectedAttributesFromNamespaceByUniqueIdentifier',
+    { uniqueIdentifier },
+    { namespace },
+  );
+  if (!updateResult.ok) {
+    return coreFailure([...skipCollector.failures, ...updateResult.failures]);
   }
+
+  const updated = updateResult.successes[0] as ProtectedAttributesRecord;
+  upsertProtectedAttributesInCache(updated);
+  return skipCollector.hasFailures ? coreFailure(skipCollector.failures, [updated]) : coreSuccess([updated]);
 };
 
 // ---------------------------------------------------------------------------
@@ -643,5 +621,6 @@ export const __testing__protectedAttributesCrud = {
   _normalizeNamespacedAttributesInput,
   _findProtectedAttributesRecord,
   _mergeProtectedAttributes,
-  _assertNoReservedKeyPath,
+  _isValidKeyPath,
+  _upsertSingleProtectedAttributesRecord,
 };

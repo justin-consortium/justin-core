@@ -1,7 +1,8 @@
 import { DataManager, USERS } from '../../data-manager';
-import { handleError, checkInitialized } from '../../data-manager/helpers';
+import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector, failureEntryFromError } from '../../utils';
 import { JustinErrorCode } from '../../errors';
 import type { JUser, NewUserRecord } from '../types';
+import type { CoreResult } from '../../types';
 import { assertNoReservedKeys, isNonEmptyString, isPlainObject, omitKeys } from '../helpers';
 import {
   getAllUsersFromCache,
@@ -21,94 +22,102 @@ const _checkInitialization = (): void => {
  * Checks whether a uniqueIdentifier is available (cache-backed).
  *
  * @param userUniqueIdentifier - The unique identifier to check.
- * @returns True if unique; false if it already exists.
- * @throws {JustinError} If the uniqueIdentifier is not a non-empty string.
+ * @returns True if unique; false if it already exists or input is invalid.
  */
 const isIdentifierUnique = (userUniqueIdentifier: string): boolean => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userUniqueIdentifier)) {
-    handleError(`Invalid unique identifier: ${userUniqueIdentifier}`, 'isIdentifierUnique', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { userUniqueIdentifier },
-    });
-  }
+  if (!isNonEmptyString(userUniqueIdentifier)) return false;
 
   const existingUserId = getUserIdByUniqueIdentifierFromCache(userUniqueIdentifier);
   return !Boolean(existingUserId);
 };
 
 /**
- * Creates a user record in the USERS store.
+ * Creates a single user record in the USERS store.
  *
  * Persisted shape: { uniqueIdentifier, ...attributes }
- * Invalid user input returns null; DB failures throw.
+ * Returns null on any validation failure or DB error — caller is responsible
+ * for logging context since this is used both standalone and from createUserRecords.
  *
  * @param record - New user record.
- * @returns The created user or null if input is invalid.
- * @throws {JustinError} If the DB operation fails.
+ * @returns The created user or null if input is invalid or the DB operation fails.
  */
-const createUserRecord = async (record: NewUserRecord): Promise<JUser | null> => {
+const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
-  if (!isPlainObject(record)) return null;
+  const uid = isNonEmptyString((record as any)?.uniqueIdentifier)
+    ? (record as any).uniqueIdentifier as string
+    : '(unknown)';
 
-  if (!isNonEmptyString(record.uniqueIdentifier)) return null;
+  if (!isPlainObject(record)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object', { uniqueIdentifier: uid });
+  if (!isNonEmptyString(record.uniqueIdentifier)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier: uid });
 
   const attrs = (record as any).attributes;
-  if (!isPlainObject(attrs)) return null;
+  if (!isPlainObject(attrs)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object', { uniqueIdentifier: uid });
+  if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'attributes contains reserved keys (id, uniqueIdentifier)', { uniqueIdentifier: uid });
+  if (!isIdentifierUnique(record.uniqueIdentifier)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, `uniqueIdentifier (${uid}) already exists`, { uniqueIdentifier: uid });
 
-  assertNoReservedKeys(
-    attrs,
-    ['id', 'uniqueIdentifier'],
-    'Cannot set reserved user fields (id, uniqueIdentifier) inside NewUserRecord.attributes.',
+  const convertedUser: Record<string, any> = {
+    uniqueIdentifier: record.uniqueIdentifier,
+    ...attrs,
+  };
+
+  const addResult = unwrapSuccess<typeof convertedUser & { id: string }, JUser>(
+    await dm.addItemToCollection(USERS, convertedUser),
+    'createUserRecord',
+    { uniqueIdentifier: uid },
   );
+  if (!addResult.ok) return addResult;
 
-  const isUnique = isIdentifierUnique(record.uniqueIdentifier);
-  if (!isUnique) return null;
-
-  try {
-    const convertedUser: Record<string, any> = {
-      uniqueIdentifier: record.uniqueIdentifier,
-      ...attrs,
-    };
-
-    const addedUser = (await dm.addItemToCollection(USERS, convertedUser)) as JUser;
-    upsertUserInCache(addedUser);
-
-    return addedUser;
-  } catch (error) {
-    return handleError('Failed to create user record', 'createUserRecord', { error });
-  }
+  const addedUser = addResult.successes[0] as JUser;
+  upsertUserInCache(addedUser);
+  return coreSuccess([addedUser]);
 };
 
 /**
  * Creates multiple user records.
  *
- * NOTE: Protected-attributes creation is intentionally NOT handled here.
- * Cross-domain orchestration belongs in `user-manager/data-manager.ts`.
+ * Validates each record individually and tracks per-record failures with
+ * full identity context. Protected-attributes creation is intentionally NOT
+ * handled here — cross-domain orchestration belongs in user-manager.ts.
  *
  * @param records - Array of new user records.
- * @returns Successfully created users (may be fewer than requested).
- * @throws {JustinError} If no records provided.
+ * @returns A {@link CoreResult} with per-record success and failure detail.
  */
-const createUserRecords = async (records: NewUserRecord[]): Promise<JUser[]> => {
+const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
   if (!Array.isArray(records) || records.length === 0) {
-    handleError('No users provided for insertion.', 'createUserRecords', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-    });
+    return coreSuccess([]);
   }
 
-  const created: JUser[] = [];
+  const successes: JUser[] = [];
+  const collector = makeLoopFailureCollector<JUser>('createUserRecords');
 
   for (const record of records) {
-    const user = await createUserRecord(record);
-    if (user) created.push(user);
+    // Extract uniqueIdentifier early for identity in failure entries
+    const uniqueIdentifier = isNonEmptyString((record as any)?.uniqueIdentifier)
+      ? (record as any).uniqueIdentifier as string
+      : '(unknown)';
+
+    if (!isPlainObject(record)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object', { uniqueIdentifier }); continue; }
+    if (!isNonEmptyString(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier }); continue; }
+
+    const attrs = (record as any).attributes;
+    if (!isPlainObject(attrs)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object', { uniqueIdentifier }); continue; }
+    if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes contains reserved keys (id, uniqueIdentifier)', { uniqueIdentifier }); continue; }
+    if (!isIdentifierUnique(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, `uniqueIdentifier (${uniqueIdentifier}) already exists`, { uniqueIdentifier }); continue; }
+
+    const userResult = await createUserRecord(record);
+    if (userResult.ok) {
+      successes.push(userResult.successes[0]);
+    } else {
+      collector.failures.push(...userResult.failures);
+    }
   }
 
-  return created;
+  return collector.hasFailures ? coreFailure(collector.failures, successes) : coreSuccess(successes);
 };
 
 /**
@@ -152,60 +161,31 @@ const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
  *
  * @param userId - The user's id.
  * @param attributesToUpdate - Fields to update.
- * @returns Updated user.
- * @throws {JustinError} If input is invalid, reserved fields are included, user not found,
- * or the DB operation fails.
+ * @returns Updated user, or null if input is invalid, user not found, or the DB operation fails.
  */
-const updateUserById = async (userId: string, attributesToUpdate: object): Promise<JUser> => {
+const updateUserById = async (userId: string, attributesToUpdate: object): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userId)) {
-    handleError('Invalid userId.', 'updateUserById', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { userId },
-    });
-  }
-
-  if (!isPlainObject(attributesToUpdate)) {
-    handleError('Invalid attributesToUpdate.', 'updateUserById', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-    });
-  }
-
-  assertNoReservedKeys(
-    attributesToUpdate,
-    ['id', 'uniqueIdentifier'],
-    'Cannot update reserved user fields (id, uniqueIdentifier).',
-  );
+  if (!isNonEmptyString(userId)) return coreFailureResult('updateUserById', JustinErrorCode.VALIDATION_ERROR, 'userId must be a non-empty string', { id: userId });
+  if (!isPlainObject(attributesToUpdate)) return coreFailureResult('updateUserById', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate must be a plain object', { id: userId });
+  if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier'])) return coreFailureResult('updateUserById', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate contains reserved keys (id, uniqueIdentifier)', { id: userId });
 
   const existingUser = getUserByIdFromCache(userId);
-  if (!existingUser) {
-    handleError(`User with id (${userId}) not found.`, 'updateUserById', {
-      code: JustinErrorCode.NOT_FOUND,
-      data: { userId },
-    });
-  }
+  if (!existingUser) return coreFailureResult('updateUserById', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
 
   const merged = { ...existingUser, ...attributesToUpdate };
   const dataToUpdate = omitKeys(merged as any, ['id', 'uniqueIdentifier'] as const);
 
-  try {
-    const updatedUser = (await dm.updateItemByIdInCollection(USERS, userId, {
-      ...dataToUpdate,
-    })) as JUser;
+  const updateResult = unwrapSuccess<object, JUser>(
+    await dm.updateItemByIdInCollection(USERS, userId, { ...dataToUpdate }),
+    'updateUserById',
+    { id: userId },
+  );
+  if (!updateResult.ok) return updateResult;
 
-    if (!updatedUser) {
-      handleError(`Failed to update user: ${userId}`, 'updateUserById', {
-        code: JustinErrorCode.DB_ERROR,
-        data: { userId },
-      });
-    }
-
-    upsertUserInCache(updatedUser);
-    return updatedUser;
-  } catch (error) {
-    return handleError(`Failed to update user: ${userId}`, 'updateUserById', { error });
-  }
+  const updatedUser = updateResult.successes[0] as JUser;
+  upsertUserInCache(updatedUser);
+  return coreSuccess([updatedUser]);
 };
 
 /**
@@ -213,27 +193,20 @@ const updateUserById = async (userId: string, attributesToUpdate: object): Promi
  *
  * @param userUniqueIdentifier - Unique identifier.
  * @param attributesToUpdate - Fields to update.
- * @returns Updated user or null if not found or input is invalid.
- * @throws {JustinError} If reserved fields are included or the DB operation fails.
+ * @returns Updated user, or null if not found, input is invalid, or the DB operation fails.
  */
 const updateUserByUniqueIdentifier = async (
   userUniqueIdentifier: string,
   attributesToUpdate: Record<string, any>,
-): Promise<JUser | null> => {
+): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userUniqueIdentifier)) return null;
-
-  if (!isPlainObject(attributesToUpdate)) return null;
-
-  assertNoReservedKeys(
-    attributesToUpdate,
-    ['id', 'uniqueIdentifier'],
-    'Cannot update reserved user fields (id, uniqueIdentifier).',
-  );
+  if (!isNonEmptyString(userUniqueIdentifier)) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier: userUniqueIdentifier });
+  if (!isPlainObject(attributesToUpdate)) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate must be a plain object', { uniqueIdentifier: userUniqueIdentifier });
+  if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier'])) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate contains reserved keys (id, uniqueIdentifier)', { uniqueIdentifier: userUniqueIdentifier });
 
   const user = getUserByUniqueIdentifierFromCache(userUniqueIdentifier);
-  if (!user) return null;
+  if (!user) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.NOT_FOUND, `user (${userUniqueIdentifier}) not found`, { uniqueIdentifier: userUniqueIdentifier });
 
   return await updateUserById(user.id, attributesToUpdate);
 };

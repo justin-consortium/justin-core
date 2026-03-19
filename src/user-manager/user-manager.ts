@@ -1,8 +1,9 @@
-import { DataManager, ChangeListenerManager, checkInitialized, PROTECTED_ATTRIBUTES, USERS, CollectionChangeType  } from '../data-manager';
-import { handleError } from '../data-manager/helpers';
+import { DataManager, ChangeListenerManager, PROTECTED_ATTRIBUTES, USERS, CollectionChangeType  } from '../data-manager';
+import {checkInitialized, coreFailureResult, coreSuccess} from '../utils';
 import { JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './types';
+import type { CoreResult } from '../types';
 import { isNonEmptyString } from './helpers';
 import {
   clearUsersCache,
@@ -36,11 +37,8 @@ import {
   deleteProtectedAttributeByUniqueIdentifier,
   deleteProtectedAttributesFromNamespaceByUniqueIdentifier,
 } from './protected-attributes/crud';
-import { removeUserChangeListeners, setupUserChangeListeners } from './users/listeners';
-import {
-  removeProtectedAttributesChangeListeners,
-  setupProtectedAttributesChangeListeners,
-} from './protected-attributes/listeners';
+import { setupUserChangeListeners } from './users/listeners';
+import { setupProtectedAttributesChangeListeners } from './protected-attributes/listeners';
 
 const Log = createLogger({
   context: {
@@ -139,27 +137,27 @@ const shutdown = async (): Promise<void> => {
  * @param record - New user record.
  * @returns The created user or null for invalid input.
  */
-const createUser = async (record: NewUserRecord): Promise<JUser | null> => {
+const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
-  const user = await createUserRecord(record);
-  if (!user) return null;
+  const userResult = await createUserRecord(record);
+  if (!userResult.ok) return userResult;
 
+  const user = userResult.successes[0];
   const uniqueIdentifier = user.uniqueIdentifier;
-  if (!isNonEmptyString(uniqueIdentifier)) return user;
 
   const items = Array.isArray(record?.protectedAttributes) ? record.protectedAttributes : [];
-  if (items.length === 0) return user;
+  if (items.length === 0) return coreSuccess([user]);
 
-  try {
-    await setProtectedAttributesByUniqueIdentifier(uniqueIdentifier, items as NamespacedAttributes[]);
-  } catch (err) {
-    // Intentional swallow — protected-attributes failure must never fail user creation.
-    Log.warn(`Failed to create protectedAttributes for user (${uniqueIdentifier}).`);
-    Log.warn(String((err as any)?.message ?? err));
+  const setPAResult = await setProtectedAttributesByUniqueIdentifier(uniqueIdentifier, items as NamespacedAttributes[]);
+  if (!setPAResult.ok) {
+    setPAResult.failures.forEach(({ code, reason, details }) => {
+      Log.warn('createUser: PA set failed', { uniqueIdentifier, code, reason, namespace: details?.namespace });
+    });
   }
 
-  return user;
+
+  return coreSuccess([user]);
 };
 
 /**
@@ -169,16 +167,13 @@ const createUser = async (record: NewUserRecord): Promise<JUser | null> => {
  * Use {@link createUser} for individual creation with protected-attributes.
  *
  * @param records - New user records.
- * @returns Successfully created users (may be empty).
- * @throws {JustinError} If no records are provided.
+ * @returns A {@link CoreResult} with per-record success and failure detail.
  */
-const createUsers = async (records: NewUserRecord[]): Promise<JUser[]> => {
+const createUsers = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
   if (!Array.isArray(records) || records.length === 0) {
-    handleError('No users provided for insertion.', 'createUsers', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-    });
+    return coreSuccess([]);
   }
 
   return await createUserRecords(records);
@@ -190,23 +185,22 @@ const createUsers = async (records: NewUserRecord[]): Promise<JUser[]> => {
  * @param userId - The user's id.
  * @returns True if the user was deleted.
  */
-const deleteUserById = async (userId: string): Promise<boolean> => {
+const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userId)) return false;
+  if (!isNonEmptyString(userId)) return coreFailureResult('deleteUserById', JustinErrorCode.VALIDATION_ERROR, 'userId must be a non-empty string', { id: userId });
 
   const existing = getUserByIdFromCache(userId);
-  if (!existing?.uniqueIdentifier) return false;
+  if (!existing?.uniqueIdentifier) return coreFailureResult('deleteUserById', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
 
   await deleteAllProtectedAttributesByUniqueIdentifier(existing.uniqueIdentifier);
 
-  const deletedCount = await dm.removeItemFromCollection(USERS, userId);
-  if (deletedCount > 0) {
-    clearUsersCache();
-    await refreshUsersCache();
-  }
+  const removeResult = await dm.removeItemFromCollection(USERS, userId);
+  if (!removeResult.ok) return removeResult;
 
-  return deletedCount > 0;
+  clearUsersCache();
+  await refreshUsersCache();
+  return coreSuccess([null]);
 };
 
 /**
@@ -215,13 +209,13 @@ const deleteUserById = async (userId: string): Promise<boolean> => {
  * @param uniqueIdentifier - The user's unique identifier.
  * @returns True if the user was deleted.
  */
-const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<boolean> => {
+const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<CoreResult<null>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return false;
+  if (!isNonEmptyString(uniqueIdentifier)) return coreFailureResult('deleteUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier });
 
   const existing = getUserByUniqueIdentifierFromCache(uniqueIdentifier);
-  if (!existing) return false;
+  if (!existing) return coreFailureResult('deleteUserByUniqueIdentifier', JustinErrorCode.NOT_FOUND, `user (${uniqueIdentifier}) not found`, { uniqueIdentifier });
 
   return await deleteUserById(existing.id);
 };
@@ -254,7 +248,10 @@ const getAllProtectedAttributesForUser = (userId: string): ProtectedAttributesRe
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return [];
+  if (!uid) {
+    Log.warn('getAllProtectedAttributesForUser: userId invalid or user not found', { userId, code: JustinErrorCode.NOT_FOUND });
+    return [];
+  }
 
   return getAllProtectedAttributesByUniqueIdentifier(uid);
 };
@@ -274,7 +271,10 @@ const getProtectedAttributesForUser = (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return [];
+  if (!uid) {
+    Log.warn('getProtectedAttributesForUser: userId invalid or user not found', { userId, code: JustinErrorCode.NOT_FOUND });
+    return [];
+  }
 
   return getProtectedAttributesByUniqueIdentifier(uid, namespaces);
 };
@@ -288,17 +288,16 @@ const getProtectedAttributesForUser = (
  *
  * @param userId - The user's id.
  * @param input - A single {@link NamespacedAttributes} or an array of them.
- * @returns Array of successfully upserted records.
- * @throws {JustinError} If any payload contains reserved keys.
+ * @returns Result with succeeded and failed records per namespace.
  */
 const setProtectedAttributesForUser = async (
   userId: string,
   input: NamespacedAttributes | NamespacedAttributes[],
-): Promise<ProtectedAttributesRecord[]> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return [];
+  if (!uid) return coreFailureResult('setProtectedAttributesForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
 
   return await setProtectedAttributesByUniqueIdentifier(uid, input);
 };
@@ -314,19 +313,18 @@ const setProtectedAttributesForUser = async (
  * @param namespace - The namespace of the record to patch.
  * @param keyPath - Dot-notated path of the key to set.
  * @param value - The value to set at the path.
- * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If the path or value contains reserved keys.
+ * @returns The updated record, or null if not found, input is invalid, or the operation fails.
  */
 const updateProtectedAttributeForUser = async (
   userId: string,
   namespace: string,
   keyPath: string,
   value: any,
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return null;
+  if (!uid) return coreFailureResult('updateProtectedAttributeForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace, keyPath });
 
   return await updateProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath, value);
 };
@@ -337,18 +335,17 @@ const updateProtectedAttributeForUser = async (
  * @param userId - The user's id.
  * @param namespace - The namespace of the record to patch.
  * @param updates - An object whose keys are dot-notated paths and values are the values to set.
- * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If any path or value contains reserved keys.
+ * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
 const updateProtectedAttributesForUser = async (
   userId: string,
   namespace: string,
   updates: Record<string, any>,
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return null;
+  if (!uid) return coreFailureResult('updateProtectedAttributesForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace });
 
   return await updateProtectedAttributesByUniqueIdentifier(uid, namespace, updates);
 };
@@ -367,11 +364,11 @@ const updateProtectedAttributesForUser = async (
 const deleteProtectedAttributesForUser = async (
   userId: string,
   namespaces: string | string[],
-): Promise<boolean> => {
+): Promise<CoreResult<null>> => {
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return false;
+  if (!uid) return coreFailureResult('deleteProtectedAttributesForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
 
   return await deleteProtectedAttributesByUniqueIdentifier(uid, namespaces);
 };
@@ -385,7 +382,10 @@ const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return;
+  if (!uid) {
+    Log.warn('deleteAllProtectedAttributesForUser: userId invalid or user not found', { userId, code: JustinErrorCode.NOT_FOUND });
+    return;
+  }
 
   await deleteAllProtectedAttributesByUniqueIdentifier(uid);
 };
@@ -396,18 +396,17 @@ const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void
  * @param userId - The user's id.
  * @param namespace - The namespace of the record to patch.
  * @param keyPath - Dot-notated path of the key to delete.
- * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If the path contains reserved keys.
+ * @returns The updated record, or null if not found, input is invalid, or the operation fails.
  */
 const deleteProtectedAttributeForUser = async (
   userId: string,
   namespace: string,
   keyPath: string,
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return null;
+  if (!uid) return coreFailureResult('deleteProtectedAttributeForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace, keyPath });
 
   return await deleteProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath);
 };
@@ -418,18 +417,17 @@ const deleteProtectedAttributeForUser = async (
  * @param userId - The user's id.
  * @param namespace - The namespace of the record to patch.
  * @param keyPaths - A single dot-notated path string or an array of them.
- * @returns The updated record, or null if not found or input is invalid.
- * @throws {JustinError} If any path contains reserved keys.
+ * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
 const deleteProtectedAttributesFromNamespaceForUser = async (
   userId: string,
   namespace: string,
   keyPaths: string | string[],
-): Promise<ProtectedAttributesRecord | null> => {
+): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return null;
+  if (!uid) return coreFailureResult('deleteProtectedAttributesFromNamespaceForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace });
 
   return await deleteProtectedAttributesFromNamespaceByUniqueIdentifier(uid, namespace, keyPaths);
 };
@@ -455,18 +453,12 @@ const UserManager = {
   deleteAllUsers,
   isIdentifierUnique,
 
-  // protected attributes — read
+  // protected attributes
   getAllProtectedAttributesForUser,
   getProtectedAttributesForUser,
-
-  // protected attributes — upsert
   setProtectedAttributesForUser,
-
-  // protected attributes — key-level patch
   updateProtectedAttributeForUser,
   updateProtectedAttributesForUser,
-
-  // protected attributes — delete
   deleteProtectedAttributesForUser,
   deleteAllProtectedAttributesForUser,
   deleteProtectedAttributeForUser,

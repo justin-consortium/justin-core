@@ -3,11 +3,11 @@ import { Readable } from 'stream';
 import { CollectionChangeType } from '../types';
 import { NO_ID } from '../constants';
 import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-data-manager.type';
-import { handleError } from '../helpers';
+import { handleError } from '../../utils';
 import { stringToMongoId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
 import { createLogger } from '../../logger';
-import {JustinErrorCode} from "../../errors";
+import { JustInError, JustinErrorCode } from '../../errors';
 
 const Log = createLogger({
   context: {
@@ -58,7 +58,7 @@ const _setIsConnected = (isConnected: boolean): void => {
 /**
  * Ensures the MongoDB client and database are initialized.
  *
- * @throws {JustinError} If the Mongo client, database, or connection flag are not set.
+ * @throws {JustInError} If the Mongo client, database, or connection flag are not set.
  * @internal
  */
 const ensureInitialized = (): void => {
@@ -79,7 +79,8 @@ const ensureInitialized = (): void => {
  * @param uri - Connection string for MongoDB. Defaults to {@link DEFAULT_MONGO_URI}.
  * @param dbName - Database name. Defaults to {@link DEFAULT_DB_NAME}.
  * @returns A promise that resolves when the connection is established.
- * @throws {Error} If the connection or database selection fails.
+ * @throws {Error} If the connection or database selection fails. Raw driver
+ * error is rethrown as-is so the caller gets the original Mongo failure.
  */
 const init = async (
   uri: string = DEFAULT_MONGO_URI,
@@ -94,10 +95,11 @@ const init = async (
     _isConnected = true;
     Log.debug(`Mongo connected: db=${dbName}`);
   } catch (error) {
-    // Raw driver error — log and rethrow as-is so the caller gets the
-    // original Mongo connection failure, not a wrapped JustinError.
-    Log.error('Mongo connection failed', error);
-    throw error;
+    handleError('Mongo connection failed', 'init', {
+      code: JustinErrorCode.DB_ERROR,
+      data: { uri, dbName },
+      error,
+    });
   }
 };
 
@@ -134,7 +136,7 @@ const close = async (): Promise<void> => {
  *
  * @param collectionName - Target collection name.
  * @param options - Optional validator configuration.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const ensureStore = async (
   collectionName: string,
@@ -178,7 +180,7 @@ const ensureStore = async (
  *
  * @param collectionName - Target collection.
  * @param indexes - Index models to ensure.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const ensureIndexes = async (
   collectionName: string,
@@ -250,7 +252,7 @@ const ensureIndexes = async (
  * @param collectionName - The collection to watch.
  * @param changeType - The type of change to observe (insert, update, delete).
  * @returns A readable stream of normalized change payloads.
- * @throws {JustinError} If the MongoDBManager has not been initialized.
+ * @throws {JustInError} If the MongoDBManager has not been initialized.
  */
 const getCollectionChangeReadable = (
   collectionName: string,
@@ -313,8 +315,8 @@ const getCollectionChangeReadable = (
  * @param collectionName - Target collection name.
  * @param id - String representation of the `_id`.
  * @returns A normalized document or `null` if not found.
- * @throws {JustinError} If the id is not a valid ObjectId, the MongoDBManager has not been
- * initialized, or the query fails.
+ * @throws {JustInError} If the id is not a valid ObjectId, the MongoDBManager
+ * has not been initialized, or the query fails.
  */
 const findItemByIdInCollection = async (
   collectionName: string,
@@ -327,7 +329,11 @@ const findItemByIdInCollection = async (
     const foundDoc = await _db!.collection(collectionName).findOne({ _id: objectId });
     return transformId(foundDoc);
   } catch (error) {
-    return handleError(`Error finding item with id ${id} in ${collectionName}`, 'findItemByIdInCollection', { error });
+    return handleError(
+      `Error finding item with id ${id} in ${collectionName}`,
+      'findItemByIdInCollection',
+      { error },
+    );
   }
 };
 
@@ -340,9 +346,12 @@ const findItemByIdInCollection = async (
  * @param collectionName - Target collection name.
  * @param filter - MongoDB filter object.
  * @returns An array of normalized documents.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the query fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the query fails.
  */
-const findItemsInCollection = async (collectionName: string, filter: object): Promise<object[]> => {
+const findItemsInCollection = async (
+  collectionName: string,
+  filter: object,
+): Promise<object[]> => {
   ensureInitialized();
 
   try {
@@ -368,8 +377,8 @@ const findItemsInCollection = async (collectionName: string, filter: object): Pr
  * @param collectionName - Target collection name.
  * @param ids - String representations of the `_id` values to find.
  * @returns Normalized documents for all ids that were found.
- * @throws {JustinError} If any id is not a valid ObjectId, the MongoDBManager has not been
- * initialized, or the query fails.
+ * @throws {JustInError} If any id is not a valid ObjectId, the MongoDBManager
+ * has not been initialized, or the query fails.
  */
 const findItemsByIdsInCollection = async (
   collectionName: string,
@@ -404,7 +413,7 @@ const findItemsByIdsInCollection = async (
  *
  * @param collectionName - Target collection name.
  * @returns An array of normalized documents.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the query fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the query fails.
  */
 const getAllInCollection = async (collectionName: string): Promise<object[]> => {
   ensureInitialized();
@@ -413,7 +422,11 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
     const results = await _db!.collection(collectionName).find({}).toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleError(`Error getting all items in ${collectionName}`, 'getAllInCollection', { error });
+    return handleError(
+      `Error getting all items in ${collectionName}`,
+      'getAllInCollection',
+      { error },
+    );
   }
 };
 
@@ -430,7 +443,7 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
  * @param collectionName - Target collection name.
  * @param item - The object to insert.
  * @returns The inserted `_id` as a string.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the insert fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the insert fails.
  */
 const addItemToCollection = async (collectionName: string, item: object): Promise<string> => {
   ensureInitialized();
@@ -439,26 +452,39 @@ const addItemToCollection = async (collectionName: string, item: object): Promis
 
   try {
     const { insertedId } = await _db!.collection(collectionName).insertOne(filteredObject);
-
     Log.debug(`Item added to ${collectionName}`, { id: insertedId.toString() });
-
     return insertedId.toString();
   } catch (error) {
-    return handleError(`Error inserting item into ${collectionName}`, 'addItemToCollection', { error });
+    return handleError(
+      `Error inserting item into ${collectionName}`,
+      'addItemToCollection',
+      { error },
+    );
   }
 };
 
 /**
- * Inserts multiple items into a collection and returns the inserted ids.
+ * Inserts multiple items into a collection using `bulkWrite` with `ordered: false`.
  *
- * Any existing `id` or `_id` fields on the input objects are stripped before insertion.
+ * `ordered: false` allows Mongo to continue processing remaining items after a
+ * failure, enabling partial success. Any existing `id` or `_id` fields on input
+ * objects are stripped before insertion.
+ *
+ * Each entry in the returned array corresponds to the item at the same index
+ * in `items`:
+ * - `{ id: string }` — the item was inserted; `id` is the new `_id`.
+ * - `{ error: string }` — the item failed; `error` is the driver message.
  *
  * @param collectionName - Target collection name.
  * @param items - The objects to insert.
- * @returns Inserted `_id` values as strings.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the insert fails.
+ * @returns Per-item results in input order.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or a
+ * total (non-partial) failure occurs.
  */
-const addItemsToCollection = async (collectionName: string, items: object[]): Promise<string[]> => {
+const addItemsToCollection = async (
+  collectionName: string,
+  items: object[],
+): Promise<Array<{ id: string } | { error: string }>> => {
   ensureInitialized();
 
   if (!Array.isArray(items) || items.length === 0) return [];
@@ -468,15 +494,32 @@ const addItemsToCollection = async (collectionName: string, items: object[]): Pr
     return rest;
   });
 
+  const ops: mongoDB.AnyBulkWriteOperation[] = filtered.map((doc) => ({
+    insertOne: { document: doc },
+  }));
+
   try {
-    const result = await _db!.collection(collectionName).insertMany(filtered, { ordered: true });
-    const ids = Object.values(result.insertedIds).map((oid) => oid.toString());
+    const result = await _db!.collection(collectionName).bulkWrite(ops, { ordered: false });
 
-    Log.debug(`Items added to ${collectionName}`, { count: ids.length });
+    // Build per-item result array. insertedIds is keyed by original index.
+    const out: Array<{ id: string } | { error: string }> = items.map((_, i) => ({
+      error: 'Not inserted',
+    }));
 
-    return ids;
+    for (const [indexStr, oid] of Object.entries(result.insertedIds)) {
+      out[Number(indexStr)] = { id: oid.toString() };
+    }
+
+    const succeeded = Object.keys(result.insertedIds).length;
+    Log.debug(`Bulk inserted ${succeeded}/${items.length} item(s) into ${collectionName}`);
+
+    return out;
   } catch (error) {
-    return handleError(`Error inserting many items into ${collectionName}`, 'addItemsToCollection', { error });
+    return handleError(
+      `Error bulk-inserting items into ${collectionName}`,
+      'addItemsToCollection',
+      { error },
+    );
   }
 };
 
@@ -495,8 +538,8 @@ const addItemsToCollection = async (collectionName: string, items: object[]): Pr
  * @param id - String representation of the `_id`.
  * @param item - Partial document to `$set`.
  * @returns The updated and normalized document, or `null` if not found.
- * @throws {JustinError} If the id is not a valid ObjectId, the MongoDBManager has not been
- * initialized, or the update fails.
+ * @throws {JustInError} If the id is not a valid ObjectId, the MongoDBManager
+ * has not been initialized, or the update fails.
  */
 const updateItemInCollection = async (
   collectionName: string,
@@ -508,7 +551,10 @@ const updateItemInCollection = async (
 
   try {
     const coll = _db!.collection(collectionName);
-    const { matchedCount, modifiedCount } = await coll.updateOne({ _id: objectId }, { $set: item });
+    const { matchedCount, modifiedCount } = await coll.updateOne(
+      { _id: objectId },
+      { $set: item },
+    );
 
     if (matchedCount !== 1) {
       Log.warn(`Update failed for item with id ${id} in ${collectionName}: no match`);
@@ -531,25 +577,30 @@ const updateItemInCollection = async (
 };
 
 /**
- * Updates multiple items in a collection by ID in a single `bulkWrite` call.
+ * Updates multiple items in a collection by ID using `bulkWrite` with `ordered: false`.
  *
- * All ids must be valid ObjectIds — any invalid id throws immediately
- * and no updates are issued. The `update` object is applied as `$set`
- * on each matched document.
+ * `ordered: false` allows Mongo to continue processing remaining updates after a
+ * failure, enabling partial success. All ids must be convertible to valid ObjectIds —
+ * any invalid id throws immediately and no updates are issued.
+ *
+ * Each entry in the returned array corresponds to the update at the same index
+ * in `updates`:
+ * - `{ id: string }` — the item was updated successfully.
+ * - `{ id: string; error: string }` — the update failed; `error` is the driver message.
  *
  * @param collectionName - Target collection name.
- * @param updates - Array of `{ id, update }` pairs.
- * @returns Number of documents actually modified.
- * @throws {JustinError} If any id is not a valid ObjectId, the MongoDBManager has not been
- * initialized, or the operation fails.
+ * @param updates - Array of `{ id, update }` pairs. `update` is applied as `$set`.
+ * @returns Per-item results in input order.
+ * @throws {JustInError} If any id is not a valid ObjectId, the MongoDBManager
+ * has not been initialized, or a total failure occurs.
  */
 const updateItemsInCollection = async (
   collectionName: string,
   updates: Array<{ id: string; update: object }>,
-): Promise<number> => {
+): Promise<Array<{ id: string } | { id: string; error: string }>> => {
   ensureInitialized();
 
-  if (!Array.isArray(updates) || updates.length === 0) return 0;
+  if (!Array.isArray(updates) || updates.length === 0) return [];
 
   // stringToMongoId throws on invalid id — any bad id aborts the whole operation.
   const ops: mongoDB.AnyBulkWriteOperation[] = updates.map(({ id, update }) => ({
@@ -558,10 +609,29 @@ const updateItemsInCollection = async (
 
   try {
     const result = await _db!.collection(collectionName).bulkWrite(ops, { ordered: false });
-    Log.debug(`Bulk updated ${result.modifiedCount} item(s) in ${collectionName}`);
-    return result.modifiedCount;
+
+    // Build per-item result array. writeErrors is keyed by original index.
+    const errorsByIndex = new Map<number, string>();
+    for (const writeError of (result as any).writeErrors ?? []) {
+      errorsByIndex.set(writeError.index, writeError.errmsg ?? 'Unknown error');
+    }
+
+    const out: Array<{ id: string } | { id: string; error: string }> = updates.map(
+      ({ id }, i) => {
+        const err = errorsByIndex.get(i);
+        return err ? { id, error: err } : { id };
+      },
+    );
+
+    Log.debug(`Bulk updated ${result.modifiedCount}/${updates.length} item(s) in ${collectionName}`);
+
+    return out;
   } catch (error) {
-    return handleError(`Error bulk-updating items in ${collectionName}`, 'updateItemsInCollection', { error });
+    return handleError(
+      `Error bulk-updating items in ${collectionName}`,
+      'updateItemsInCollection',
+      { error },
+    );
   }
 };
 
@@ -577,8 +647,8 @@ const updateItemsInCollection = async (
  * @param collectionName - Target collection name.
  * @param id - String representation of the `_id`.
  * @returns Number of documents deleted (0 or 1).
- * @throws {JustinError} If the id is not a valid ObjectId, the MongoDBManager has not been
- * initialized, or the operation fails.
+ * @throws {JustInError} If the id is not a valid ObjectId, the MongoDBManager
+ * has not been initialized, or the operation fails.
  */
 const removeItemFromCollection = async (collectionName: string, id: string): Promise<number> => {
   ensureInitialized();
@@ -604,44 +674,60 @@ const removeItemFromCollection = async (collectionName: string, id: string): Pro
 };
 
 /**
- * Removes multiple items from a collection by ID in a single `deleteMany` call.
+ * Removes multiple items from a collection by ID using `bulkWrite` with `ordered: false`.
  *
- * All ids must be valid ObjectIds — any invalid id throws immediately
- * and no deletes are issued. Partial success (some ids not found) is acceptable
- * and returns the count of documents actually deleted.
+ * `ordered: false` allows Mongo to continue processing remaining deletes after a
+ * failure, enabling partial success. All ids must be convertible to valid ObjectIds —
+ * any invalid id throws immediately and no deletes are issued.
+ *
+ * Each entry in the returned array corresponds to the id at the same index in `ids`:
+ * - `{ id: string }` — the item was deleted successfully.
+ * - `{ id: string; error: string }` — the delete failed; `error` is the driver message.
  *
  * @param collectionName - Target collection name.
  * @param ids - String representations of the `_id` values to delete.
- * @returns Number of documents actually deleted.
- * @throws {JustinError} If any id is not a valid ObjectId, the MongoDBManager has not been
- * initialized, or the operation fails.
+ * @returns Per-item results in input order.
+ * @throws {JustInError} If any id is not a valid ObjectId, the MongoDBManager
+ * has not been initialized, or a total failure occurs.
  */
 const removeItemsFromCollection = async (
   collectionName: string,
   ids: string[],
-): Promise<number> => {
+): Promise<Array<{ id: string } | { id: string; error: string }>> => {
   ensureInitialized();
 
-  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  if (!Array.isArray(ids) || ids.length === 0) return [];
 
   // stringToMongoId throws on invalid id — any bad id aborts the whole operation.
-  const objectIds = ids.map((id) => stringToMongoId(id));
+  const ops: mongoDB.AnyBulkWriteOperation[] = ids.map((id) => ({
+    deleteOne: { filter: { _id: stringToMongoId(id) } },
+  }));
 
   try {
-    const { deletedCount } = await _db!
-      .collection(collectionName)
-      .deleteMany({ _id: { $in: objectIds } });
+    const result = await _db!.collection(collectionName).bulkWrite(ops, { ordered: false });
 
-    if (deletedCount < ids.length) {
-      Log.warn(
-        `Bulk remove from ${collectionName}: requested ${ids.length}, deleted ${deletedCount}`,
-      );
+    // Build per-item result array. writeErrors is keyed by original index.
+    const errorsByIndex = new Map<number, string>();
+    for (const writeError of (result as any).writeErrors ?? []) {
+      errorsByIndex.set(writeError.index, writeError.errmsg ?? 'Unknown error');
     }
 
-    Log.debug(`Bulk removed ${deletedCount} item(s) from ${collectionName}`);
-    return deletedCount;
+    const out: Array<{ id: string } | { id: string; error: string }> = ids.map((id, i) => {
+      const err = errorsByIndex.get(i);
+      return err ? { id, error: err } : { id };
+    });
+
+    Log.debug(
+      `Bulk removed ${result.deletedCount}/${ids.length} item(s) from ${collectionName}`,
+    );
+
+    return out;
   } catch (error) {
-    return handleError(`Error bulk-removing items from ${collectionName}`, 'removeItemsFromCollection', { error });
+    return handleError(
+      `Error bulk-removing items from ${collectionName}`,
+      'removeItemsFromCollection',
+      { error },
+    );
   }
 };
 
@@ -652,7 +738,7 @@ const removeItemsFromCollection = async (
  *
  * @param collectionName - Target collection name.
  * @returns `true` if the operation was acknowledged.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const clearCollection = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
@@ -661,7 +747,11 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
     const { acknowledged } = await _db!.collection(collectionName).deleteMany({});
     return acknowledged;
   } catch (error) {
-    return handleError(`Error clearing collection ${collectionName}`, 'clearCollection', { error });
+    return handleError(
+      `Error clearing collection ${collectionName}`,
+      'clearCollection',
+      { error },
+    );
   }
 };
 
@@ -676,7 +766,7 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
  *
  * @param collectionName - Target collection name.
  * @returns `true` if the collection contains zero documents, `false` otherwise.
- * @throws {JustinError} If the MongoDBManager has not been initialized or the operation fails.
+ * @throws {JustInError} If the MongoDBManager has not been initialized or the operation fails.
  */
 const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
   ensureInitialized();
@@ -685,7 +775,11 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
     const count = await _db!.collection(collectionName).countDocuments({}, { limit: 1 });
     return count === 0;
   } catch (error) {
-    return handleError(`Error counting documents in ${collectionName}`, 'isCollectionEmpty', { error });
+    return handleError(
+      `Error counting documents in ${collectionName}`,
+      'isCollectionEmpty',
+      { error },
+    );
   }
 };
 
