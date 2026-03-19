@@ -67,3 +67,45 @@ export function makeLoggerSandbox(options: LoggerSandboxOptions = {}): LoggerSan
     },
   };
 }
+
+/**
+ * Silences all logger output for the duration of a test or suite.
+ *
+ * Replaces the global emit function and default emitter with no-ops so
+ * that log output from production code does not pollute test output.
+ * Unlike {@link makeLoggerSandbox}, this does not capture entries —
+ * use it when you want quiet tests and do not need to assert on logs.
+ *
+ * Pass the test's existing sinon sandbox so restore happens automatically
+ * with `sb.restore()` in `afterAll` — no separate cleanup needed.
+ *
+ * @example
+ * ```ts
+ * // Silence for the entire suite using the existing sandbox
+ * beforeAll(async () => {
+ *   sb = sinon.createSandbox();
+ *   silenceLogger(sb);
+ *   // ...
+ * });
+ * afterAll(async () => {
+ *   sb.restore(); // silenceLogger stubs are cleaned up here
+ * });
+ *
+ * // Or standalone with its own restore
+ * const { restore } = silenceLogger();
+ * restore();
+ * ```
+ */
+export function silenceLogger(sb?: SinonSandbox): { restore: () => void } {
+  const sandbox = sb ?? sinon.createSandbox();
+  const noop = () => {};
+
+  sandbox.stub(GlobalLogger, 'getGlobalEmitFn').returns(noop as any);
+  sandbox.stub(GlobalLogger, 'defaultEmit').callsFake(noop as any);
+
+  return {
+    restore() {
+      if (!sb) sandbox.restore();
+    },
+  };
+}
