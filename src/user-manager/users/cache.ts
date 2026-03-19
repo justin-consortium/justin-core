@@ -2,8 +2,11 @@ import { DataManager, USERS } from '../../data-manager';
 import { checkInitialized } from '../../utils';
 import { JUser } from '../types';
 import { isNonEmptyString } from '../helpers';
+import { createLogger } from '../../logger';
 
 const dm = DataManager.getInstance();
+
+const Log = createLogger({ context: { source: 'users-cache' } });
 
 const _checkInitialization = (): void => {
   checkInitialized(dm.getInitializationStatus(), 'UserManager');
@@ -42,7 +45,10 @@ const refreshUsersCache = async (): Promise<void> => {
 
   const userDocs = await dm.getAllInCollection<JUser>(USERS);
   userDocs.forEach((jUser: any) => {
-    if (!jUser?.id) return;
+    if (!jUser?.id) {
+      Log.error('refreshUsersCache: skipping malformed record — missing id', { record: jUser });
+      return;
+    }
 
     _users.set(jUser.id, jUser);
 
@@ -110,7 +116,10 @@ const getUserByUniqueIdentifierFromCache = (uniqueIdentifier: string): JUser | n
 const upsertUserInCache = (jUser: JUser): void => {
   _checkInitialization();
 
-  if (!jUser?.id) return;
+  if (!jUser?.id) {
+    Log.error('upsertUserInCache: skipping malformed user — missing id', { record: jUser });
+    return;
+  }
 
   _users.set(jUser.id, jUser);
 

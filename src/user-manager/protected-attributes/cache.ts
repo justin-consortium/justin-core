@@ -2,8 +2,11 @@ import { DataManager, PROTECTED_ATTRIBUTES } from '../../data-manager';
 import { checkInitialized } from '../../utils';
 import { ProtectedAttributesRecord } from '../types';
 import { isNonEmptyString } from '../helpers';
+import { createLogger } from '../../logger';
 
 const dm = DataManager.getInstance();
+
+const Log = createLogger({ context: { source: 'protected-attributes-cache' } });
 
 const _checkInitialization = (): void => {
   checkInitialized(dm.getInitializationStatus(), 'UserManager');
@@ -34,7 +37,10 @@ const refreshProtectedAttributesCache = async (): Promise<void> => {
 
   const docs = await dm.getAllInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES);
   docs.forEach((doc: ProtectedAttributesRecord) => {
-    if (!doc?.uniqueIdentifier || !doc?.namespace) return;
+    if (!doc?.uniqueIdentifier || !doc?.namespace) {
+      Log.error('refreshProtectedAttributesCache: skipping malformed record — missing uniqueIdentifier or namespace', { record: doc });
+      return;
+    }
 
     const byNamespace =
       _protectedAttributes.get(doc.uniqueIdentifier) ??
@@ -55,7 +61,10 @@ const refreshProtectedAttributesCache = async (): Promise<void> => {
  * @param {ProtectedAttributesRecord} doc - The protected attributes record to cache.
  */
 const upsertProtectedAttributesInCache = (doc: ProtectedAttributesRecord): void => {
-  if (!doc?.uniqueIdentifier || !doc?.namespace) return;
+  if (!doc?.uniqueIdentifier || !doc?.namespace) {
+    Log.error('upsertProtectedAttributesInCache: skipping malformed record — missing uniqueIdentifier or namespace', { record: doc });
+    return;
+  }
 
   const byNamespace =
     _protectedAttributes.get(doc.uniqueIdentifier) ?? new Map<string, ProtectedAttributesRecord>();
