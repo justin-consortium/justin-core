@@ -2,9 +2,10 @@ import { MongoDBManager } from './mongo/mongo-data-manager';
 import { EventEmitter } from 'events';
 import { ChangeListenerManager } from './change-listener.manager';
 import { CollectionChangeType, DataManagerAdapter } from './types';
+import { CoreResult, FailureEntry } from '../types';
 import { DBType, USERS } from './constants';
-import { handleError } from './helpers';
-import { JustinErrorCode } from '../errors';
+import { handleError, coreSuccess, coreFailure, failureEntryFromError } from '../utils';
+import { JustInError, JustinErrorCode } from '../errors';
 import { Readable } from 'stream';
 import { createLogger } from '../logger';
 
@@ -16,6 +17,15 @@ const Log = createLogger({
 
 /**
  * Manages database operations and collection change listeners.
+ *
+ * All public write methods return a {@link CoreResult} envelope — they never
+ * throw. Callers branch on `result.ok` rather than wrapping calls in try/catch.
+ *
+ * Read methods (`find*`, `getAll*`) return data directly (`T | null` or `T[]`)
+ * since an empty or missing result is not an error condition.
+ *
+ * Lifecycle methods (`init`, `close`) still throw on failure since they run
+ * before the manager is operational and an envelope would be meaningless.
  */
 class DataManager extends EventEmitter {
   protected static instance: DataManager | null = null;
@@ -25,12 +35,10 @@ class DataManager extends EventEmitter {
 
   private changeListenerManager = ChangeListenerManager.getInstance();
   private isInitialized = false;
-  private initializedAt: Date | null = null;
 
   private constructor() {
     super();
     this.isInitialized = false;
-    this.initializedAt = new Date();
   }
 
   // ---------------------------------------------------------------------------
@@ -39,7 +47,8 @@ class DataManager extends EventEmitter {
 
   /**
    * Retrieves the singleton instance of DataManager.
-   * @returns {DataManager} The singleton instance.
+   *
+   * @returns The singleton instance.
    */
   public static getInstance(): DataManager {
     if (!DataManager.instance) {
@@ -49,7 +58,9 @@ class DataManager extends EventEmitter {
   }
 
   /**
-   * Deletes the singleton instance of DataManager.
+   * Deletes the singleton instance.
+   *
+   * @internal
    */
   protected static killInstance(): void {
     if (DataManager.instance) {
@@ -63,9 +74,10 @@ class DataManager extends EventEmitter {
 
   /**
    * Initializes the DataManager with the specified database type.
-   * @param {DBType} dbType - The type of database to initialize. Defaults to MongoDB.
-   * @returns {Promise<void>} Resolves when initialization is complete.
-   * @throws {JustinError} If initialization fails.
+   *
+   * @param dbType - The type of database to initialize. Defaults to MongoDB.
+   * @returns Resolves when initialization is complete.
+   * @throws {JustInError} If the db type is unsupported or initialization fails.
    */
   public async init(dbType: DBType = DBType.MONGO): Promise<void> {
     try {
@@ -84,13 +96,14 @@ class DataManager extends EventEmitter {
 
   /**
    * Closes the DataManager and removes all listeners.
-   * @returns {Promise<void>} Resolves when closed.
-   * @throws {JustinError} If the DataManager has not been initialized or close fails.
+   *
+   * @returns Resolves when closed.
+   * @throws {JustInError} If the DataManager has not been initialized or close fails.
    */
   public async close(): Promise<void> {
     try {
       this.checkInitialization();
-      this.changeListenerManager.clearChangeListeners();
+      await this.changeListenerManager.clearChangeListeners();
       await this.db.close();
       this.isInitialized = false;
       Log.debug('DataManager closed and uninitialized');
@@ -101,7 +114,8 @@ class DataManager extends EventEmitter {
 
   /**
    * Returns whether the DataManager has been initialized.
-   * @returns {boolean} Initialization status.
+   *
+   * @returns `true` if initialized.
    */
   public getInitializationStatus(): boolean {
     return this.isInitialized;
@@ -109,7 +123,9 @@ class DataManager extends EventEmitter {
 
   /**
    * Throws if the DataManager has not been initialized.
-   * @throws {JustinError} If the DataManager has not been initialized.
+   *
+   * @throws {JustInError} If not initialized.
+   * @internal
    */
   public checkInitialization(): void {
     if (!this.isInitialized) {
@@ -124,33 +140,45 @@ class DataManager extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   /**
-   * Ensures a store exists and applies adapter-supported options (idempotent).
-   * @param {string} storeName - The collection/table name.
-   * @param {object} [options] - Optional storage options (adapter-specific).
-   * @throws {JustinError} If the DataManager has not been initialized or the operation fails.
+   * Ensures a collection (store) exists in the database.
+   *
+   * @param collectionName - The name of the collection to ensure.
+   * @param options - Optional adapter-specific store options.
+   * @returns Resolves when the store is confirmed to exist.
+   * @throws {JustInError} If the DataManager has not been initialized or the operation fails.
    */
-  public async ensureStore(storeName: string, options?: { validator?: unknown }): Promise<void> {
-    this.checkInitialization();
-    await this.db.ensureStore(storeName, options as any);
+  public async ensureStore(collectionName: string, options?: any): Promise<void> {
+    try {
+      this.checkInitialization();
+      await this.db.ensureStore(collectionName, options);
+    } catch (error) {
+      return handleError(
+        `Failed to ensure store: ${collectionName}`,
+        'ensureStore',
+        { error },
+      );
+    }
   }
 
   /**
-   * Ensures indexes exist on a store (idempotent by name and key).
-   * @param {string} storeName - The collection/table name.
-   * @param {Array<{name?: string; key: unknown; unique?: boolean; partialFilterExpression?: unknown}>} indexes
-   * @throws {JustinError} If the DataManager has not been initialized or the operation fails.
+   * Ensures indexes exist on a collection.
+   *
+   * @param collectionName - The name of the collection.
+   * @param indexes - Index definitions to ensure.
+   * @returns Resolves when all indexes are confirmed.
+   * @throws {JustInError} If the DataManager has not been initialized or the operation fails.
    */
-  public async ensureIndexes(
-    storeName: string,
-    indexes: Array<{
-      name?: string;
-      key: unknown;
-      unique?: boolean;
-      partialFilterExpression?: unknown;
-    }>,
-  ): Promise<void> {
-    this.checkInitialization();
-    await this.db.ensureIndexes(storeName, indexes as any);
+  public async ensureIndexes(collectionName: string, indexes: any[]): Promise<void> {
+    try {
+      this.checkInitialization();
+      await this.db.ensureIndexes(collectionName, indexes);
+    } catch (error) {
+      return handleError(
+        `Failed to ensure indexes on: ${collectionName}`,
+        'ensureIndexes',
+        { error },
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -159,10 +187,11 @@ class DataManager extends EventEmitter {
 
   /**
    * Provides a change stream for a specific collection and change type.
-   * @param {string} collectionName - The name of the collection to monitor.
-   * @param {CollectionChangeType} changeType - The type of change to monitor.
-   * @returns {Readable} A readable stream of change events.
-   * @throws {JustinError} If the DataManager has not been initialized.
+   *
+   * @param collectionName - The name of the collection to monitor.
+   * @param changeType - The type of change to monitor.
+   * @returns A readable stream of change events.
+   * @throws {JustInError} If the DataManager has not been initialized.
    */
   public getChangeStream(collectionName: string, changeType: CollectionChangeType): Readable {
     this.checkInitialization();
@@ -175,52 +204,51 @@ class DataManager extends EventEmitter {
 
   /**
    * Finds an item by ID in a specified collection.
+   *
+   * Returns `null` if no document matches — this is not an error condition.
+   *
    * @template T - The expected type of the item.
-   * @param {string} collectionName - The name of the collection.
-   * @param {string} id - The ID of the item to find.
-   * @returns {Promise<T | null>} Resolves with the found item or `null` if not found.
-   * @throws {JustinError} If the DataManager has not been initialized or the query fails.
+   * @param collectionName - The name of the collection.
+   * @param id - The ID of the item to find.
+   * @returns The found item or `null` if not found or if the query fails.
    */
-  public async findItemByIdInCollection<T>(collectionName: string, id: string): Promise<T | null> {
+  public async findItemByIdInCollection<T>(
+    collectionName: string,
+    id: string,
+  ): Promise<T | null> {
     try {
       this.checkInitialization();
       const item = await this.db.findItemByIdInCollection(collectionName, id);
       return item as T | null;
     } catch (error) {
-      return handleError(
-        `Failed to find item by ID in collection: ${collectionName}`,
-        'findItemByIdInCollection',
-        { error },
-      );
+      Log.error(`Failed to find item by ID in collection: ${collectionName}`, error);
+      return null;
     }
   }
 
   /**
    * Finds items by criteria in a specified collection.
+   *
+   * Returns an empty array if no documents match — this is not an error condition.
+   *
    * @template T - The expected type of the items.
-   * @param {string} collectionName - The name of the collection.
-   * @param {object} criteria - Key-value pairs to search for.
-   * @returns {Promise<T[]>} Resolves with matching items.
-   * @throws {JustinError} If the DataManager has not been initialized or the query fails.
+   * @param collectionName - The name of the collection.
+   * @param criteria - Key-value pairs to search for.
+   * @returns Matching items, or an empty array if none found or if the query fails.
    */
   public async findItemsInCollection<T>(
     collectionName: string,
     criteria: Record<string, any>,
   ): Promise<T[]> {
-    if (!criteria || !collectionName) {
-      return [];
-    }
+    if (!criteria || !collectionName) return [];
 
     try {
       this.checkInitialization();
       const itemList = await this.db.findItemsInCollection(collectionName, criteria);
       return itemList as T[];
     } catch (error) {
-      return handleError(
-        `Failed to find items by criteria in collection: ${collectionName}`,
-        'findItemsInCollection',
-        { error },
-      );
+      Log.error(`Failed to find items by criteria in collection: ${collectionName}`, error);
+      return [];
     }
   }
 
@@ -229,12 +257,12 @@ class DataManager extends EventEmitter {
    *
    * Uses adapter bulk find if available; otherwise falls back to one-by-one.
    * Order of results is not guaranteed to match the input order.
+   * Returns an empty array if no ids match — this is not an error condition.
    *
    * @template T - The expected type of the items.
-   * @param {string} collectionName - The name of the collection.
-   * @param {string[]} ids - IDs to look up.
-   * @returns {Promise<T[]>} Found items (may be fewer than requested if some ids do not exist).
-   * @throws {JustinError} If the DataManager has not been initialized or the query fails.
+   * @param collectionName - The name of the collection.
+   * @param ids - IDs to look up.
+   * @returns Found items (could be fewer than requested if some ids do not exist), or an empty array if the query fails.
    */
   public async findItemsByIdsInCollection<T>(
     collectionName: string,
@@ -257,31 +285,27 @@ class DataManager extends EventEmitter {
       }
       return results;
     } catch (error) {
-      return handleError(
-        `Failed to bulk-find items in collection: ${collectionName}`,
-        'findItemsByIdsInCollection',
-        { error },
-      );
+      Log.error(`Failed to bulk-find items in collection: ${collectionName}`, error);
+      return [];
     }
   }
 
   /**
    * Retrieves all items from a collection.
+   *
+   * Returns an empty array if the collection is empty — this is not an error condition.
+   *
    * @template T - The expected type of the items.
-   * @param {string} collectionName - The name of the collection.
-   * @returns {Promise<T[]>} Resolves with all items in the collection.
-   * @throws {JustinError} If the DataManager has not been initialized or the query fails.
+   * @param collectionName - The name of the collection.
+   * @returns All items in the collection, an empty array if none exist, or an empty array if the query fails.
    */
   public async getAllInCollection<T>(collectionName: string): Promise<T[]> {
     try {
       this.checkInitialization();
       return (await this.db.getAllInCollection(collectionName)) as T[];
     } catch (error) {
-      return handleError(
-        `Failed to retrieve items from collection: ${collectionName}`,
-        'getAllInCollection',
-        { error },
-      );
+      Log.error(`Failed to retrieve items from collection: ${collectionName}`, error);
+      return [];
     }
   }
 
@@ -291,82 +315,108 @@ class DataManager extends EventEmitter {
 
   /**
    * Adds an item to a specified collection.
+   *
    * @template T - The type of the item being added.
-   * @param {string} collectionName - The name of the collection.
-   * @param {T} item - The item to add.
-   * @returns {Promise<T & { id: string }>} Resolves with the added item including its new id.
-   * @throws {JustinError} If the DataManager has not been initialized or the insert fails.
+   * @param collectionName - The name of the collection.
+   * @param item - The item to add.
+   * @returns A {@link CoreResult} with the added item (including assigned `id`) on success.
    */
   public async addItemToCollection<T extends object>(
     collectionName: string,
     item: T,
-  ): Promise<T & { id: string }> {
+  ): Promise<CoreResult<T & { id: string }>> {
     try {
       this.checkInitialization();
       const id = await this.db.addItemToCollection(collectionName, item);
-      const newItem = { id, ...item };
+      const newItem = { id, ...item } as T & { id: string };
 
       if (collectionName === USERS) {
         this.emit('userAdded', newItem);
       }
 
-      return newItem;
+      return coreSuccess([newItem]);
     } catch (error) {
-      return handleError(
-        `Failed to add item to collection: ${collectionName}`,
-        'addItemToCollection',
-        { error },
-      );
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('addItemToCollection failed', { store: collectionName, error });
+      }
+      return coreFailure([failureEntryFromError(error)]);
     }
   }
 
   /**
    * Adds multiple items to a specified collection.
    *
-   * Uses adapter bulk insert if available; otherwise falls back to one-by-one.
+   * Uses adapter bulk insert if available (`ordered: false` — continues on
+   * partial failure); otherwise falls back to one-by-one.
    *
    * @template T - The type of the items being added.
-   * @param {string} collectionName - The collection name.
-   * @param {T[]} items - The items to insert.
-   * @returns {Promise<Array<T & { id: string }>>} Inserted items with their new ids.
-   * @throws {JustinError} If the DataManager has not been initialized or the insert fails.
+   * @param collectionName - The collection name.
+   * @param items - The items to insert.
+   * @returns A {@link CoreResult} with per-item success and failure detail.
    */
   public async addItemsToCollection<T extends object>(
     collectionName: string,
     items: T[],
-  ): Promise<Array<T & { id: string }>> {
+  ): Promise<CoreResult<T & { id: string }>> {
+    if (!Array.isArray(items) || items.length === 0) {
+      return coreSuccess([]);
+    }
+
     try {
       this.checkInitialization();
 
-      if (!Array.isArray(items) || items.length === 0) return [];
-
       if (typeof this.db.addItemsToCollection === 'function') {
-        const ids = await this.db.addItemsToCollection(collectionName, items);
-        const created = ids.map((id, idx) => ({ id, ...(items[idx] as any) })) as Array<T & { id: string }>;
+        const results = await this.db.addItemsToCollection(collectionName, items);
 
-        if (collectionName === USERS) {
-          for (const item of created) {
-            this.emit('userAdded', item);
+        const successes: Array<T & { id: string }> = [];
+        const failures: FailureEntry[] = [];
+
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+
+          if ('id' in result) {
+            const inserted = { id: result.id, ...items[i] } as T & { id: string };
+            successes.push(inserted);
+
+            if (collectionName === USERS) {
+              this.emit('userAdded', inserted);
+            }
+          } else {
+            Log.warn('addItemsToCollection: item failed', { store: collectionName, reason: result.error });
+            failures.push({ code: JustinErrorCode.DB_ERROR, reason: result.error });
           }
         }
 
-        return created;
+        return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
       }
 
-      // Fallback: insert one-by-one.
-      const created: Array<T & { id: string }> = [];
+      // Fallback: insert one-by-one, collect results.
+      const successes: Array<T & { id: string }> = [];
+      const failures: FailureEntry[] = [];
+
       for (const item of items) {
-        const out = await this.addItemToCollection(collectionName, item);
-        created.push(out);
+        try {
+          const id = await this.db.addItemToCollection(collectionName, item);
+          const inserted = { id, ...item } as T & { id: string };
+          successes.push(inserted);
+
+          if (collectionName === USERS) {
+            this.emit('userAdded', inserted);
+          }
+        } catch (err) {
+          if (!(err instanceof JustInError) || !err.isLogged) {
+            Log.warn('addItemsToCollection: item failed', { store: collectionName, error: err });
+          }
+          failures.push(failureEntryFromError(err));
+        }
       }
 
-      return created;
+      return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
     } catch (error) {
-      return handleError(
-        `Failed to add items to collection: ${collectionName}`,
-        'addItemsToCollection',
-        { error },
-      );
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('addItemsToCollection failed', { store: collectionName, error });
+      }
+      return coreFailure([failureEntryFromError(error)]);
     }
   }
 
@@ -376,17 +426,17 @@ class DataManager extends EventEmitter {
 
   /**
    * Updates an item in a collection by ID.
-   * @param {string} collectionName - The name of the collection.
-   * @param {string} id - The ID of the item to update.
-   * @param {object} updateObject - The update data.
-   * @returns {Promise<object | null>} Resolves with the updated item or `null` if not found.
-   * @throws {JustinError} If the DataManager has not been initialized or the update fails.
+   *
+   * @param collectionName - The name of the collection.
+   * @param id - The ID of the item to update.
+   * @param updateObject - The update data.
+   * @returns A {@link CoreResult} with the updated item on success, or failure detail.
    */
   public async updateItemByIdInCollection(
     collectionName: string,
     id: string,
     updateObject: object,
-  ): Promise<object | null> {
+  ): Promise<CoreResult<object>> {
     try {
       this.checkInitialization();
       const updatedItem = await this.db.updateItemInCollection(collectionName, id, updateObject);
@@ -395,52 +445,84 @@ class DataManager extends EventEmitter {
         this.emit('userUpdated', { id, ...updateObject });
       }
 
-      return updatedItem;
+      if (!updatedItem) {
+        return coreFailure([{ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` }]);
+      }
+      return coreSuccess([updatedItem]);
     } catch (error) {
-      return handleError(
-        `Failed to update item in collection: ${collectionName}`,
-        'updateItemByIdInCollection',
-        { error },
-      );
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('updateItemByIdInCollection failed', { store: collectionName, id, error });
+      }
+      return coreFailure([failureEntryFromError(error, { id })]);
     }
   }
 
   /**
    * Updates multiple items in a collection by ID in a single bulk operation.
    *
-   * Uses adapter bulk write if available; otherwise falls back to one-by-one.
+   * Uses adapter bulk write if available (`ordered: false` — continues on
+   * partial failure); otherwise falls back to one-by-one.
    *
-   * @param {string} collectionName - The name of the collection.
-   * @param {Array<{ id: string; update: object }>} updates - Array of `{ id, update }` pairs to apply.
-   * @returns {Promise<number>} Number of documents actually modified.
-   * @throws {JustinError} If the DataManager has not been initialized or the update fails.
+   * @param collectionName - The name of the collection.
+   * @param updates - Array of `{ id, update }` pairs to apply.
+   * @returns A {@link CoreResult} with per-item success and failure detail.
    */
   public async updateItemsByIdInCollection(
     collectionName: string,
     updates: Array<{ id: string; update: object }>,
-  ): Promise<number> {
+  ): Promise<CoreResult<{ id: string }>> {
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return coreSuccess([]);
+    }
+
     try {
       this.checkInitialization();
 
-      if (!Array.isArray(updates) || updates.length === 0) return 0;
-
       if (typeof this.db.updateItemsInCollection === 'function') {
-        return await this.db.updateItemsInCollection(collectionName, updates);
+        const results = await this.db.updateItemsInCollection(collectionName, updates);
+
+        const successes: Array<{ id: string }> = [];
+        const failures: FailureEntry[] = [];
+
+        for (const result of results) {
+          if ('error' in result) {
+            Log.warn('updateItemsByIdInCollection: item failed', { store: collectionName, id: result.id, reason: result.error });
+            failures.push({ id: result.id, code: JustinErrorCode.DB_ERROR, reason: result.error });
+          } else {
+            successes.push({ id: result.id });
+          }
+        }
+
+        return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
       }
 
-      // Fallback: update one-by-one.
-      let modified = 0;
+      // Fallback: update one-by-one, collect results.
+      const successes: Array<{ id: string }> = [];
+      const failures: FailureEntry[] = [];
+
       for (const { id, update } of updates) {
-        const result = await this.db.updateItemInCollection(collectionName, id, update);
-        if (result) modified++;
+        try {
+          const result = await this.db.updateItemInCollection(collectionName, id, update);
+          if (result) {
+            successes.push({ id });
+          } else {
+            Log.warn('updateItemsByIdInCollection: item not found', { store: collectionName, id });
+            failures.push({ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` });
+          }
+        } catch (err) {
+          if (!(err instanceof JustInError) || !err.isLogged) {
+            Log.warn('updateItemsByIdInCollection: item failed', { store: collectionName, id, error: err });
+          }
+          failures.push(failureEntryFromError(err, { id }));
+        }
       }
-      return modified;
+
+      return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
     } catch (error) {
-      return handleError(
-        `Failed to bulk-update items in collection: ${collectionName}`,
-        'updateItemsByIdInCollection',
-        { error },
-      );
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('updateItemsByIdInCollection failed', { store: collectionName, error });
+      }
+      return coreFailure([failureEntryFromError(error)]);
     }
   }
 
@@ -451,15 +533,14 @@ class DataManager extends EventEmitter {
   /**
    * Removes an item from a collection by ID.
    *
-   * Returns the number of documents deleted (1 if deleted, 0 if not found).
-   * Throws if the id is invalid or the operation fails.
-   *
-   * @param {string} collectionName - The name of the collection.
-   * @param {string} id - The ID of the item to remove.
-   * @returns {Promise<number>} Number of documents deleted (0 or 1).
-   * @throws {JustinError} If the id is invalid, the DataManager has not been initialized, or the operation fails.
+   * @param collectionName - The name of the collection.
+   * @param id - The ID of the item to remove.
+   * @returns A {@link CoreResult} with `successes: [null]` if deleted, or failure detail.
    */
-  public async removeItemFromCollection(collectionName: string, id: string): Promise<number> {
+  public async removeItemFromCollection(
+    collectionName: string,
+    id: string,
+  ): Promise<CoreResult<null>> {
     try {
       this.checkInitialization();
       const deletedCount = await this.db.removeItemFromCollection(collectionName, id);
@@ -468,68 +549,111 @@ class DataManager extends EventEmitter {
         this.emit('userDeleted', id);
       }
 
-      return deletedCount;
+      if (deletedCount === 0) {
+        return coreFailure([{ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` }]);
+      }
+      return coreSuccess([null]);
     } catch (error) {
-      return handleError(
-        `Failed to remove item from collection: ${collectionName}`,
-        'removeItemFromCollection',
-        { error },
-      );
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('removeItemFromCollection failed', { store: collectionName, id, error });
+      }
+      return coreFailure([failureEntryFromError(error, { id })]);
     }
   }
 
   /**
    * Removes multiple items from a collection by ID in a single bulk operation.
    *
-   * Uses adapter bulk delete if available; otherwise falls back to one-by-one.
-   * Partial success is acceptable — returns the count of documents actually deleted.
+   * Uses adapter bulk delete if available (`ordered: false` — continues on
+   * partial failure); otherwise falls back to one-by-one.
    *
-   * @param {string} collectionName - The name of the collection.
-   * @param {string[]} ids - IDs of the items to remove.
-   * @returns {Promise<number>} Number of documents actually deleted.
-   * @throws {JustinError} If the DataManager has not been initialized or the operation fails.
+   * @param collectionName - The name of the collection.
+   * @param ids - IDs of the items to remove.
+   * @returns A {@link CoreResult} with per-item success and failure detail.
    */
   public async removeItemsFromCollection(
     collectionName: string,
     ids: string[],
-  ): Promise<number> {
+  ): Promise<CoreResult<{ id: string }>> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return coreSuccess([]);
+    }
+
     try {
       this.checkInitialization();
 
-      if (!Array.isArray(ids) || ids.length === 0) return 0;
-
       if (typeof this.db.removeItemsFromCollection === 'function') {
-        return await this.db.removeItemsFromCollection(collectionName, ids);
+        const results = await this.db.removeItemsFromCollection(collectionName, ids);
+
+        const successes: Array<{ id: string }> = [];
+        const failures: FailureEntry[] = [];
+
+        for (const result of results) {
+          if ('error' in result) {
+            Log.warn('removeItemsFromCollection: item failed', { store: collectionName, id: result.id, reason: result.error });
+            failures.push({ id: result.id, code: JustinErrorCode.DB_ERROR, reason: result.error });
+          } else {
+            successes.push({ id: result.id });
+
+            if (collectionName === USERS) {
+              this.emit('userDeleted', result.id);
+            }
+          }
+        }
+
+        return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
       }
 
-      // Fallback: remove one-by-one.
-      let deletedCount = 0;
+      // Fallback: remove one-by-one, collect results.
+      const successes: Array<{ id: string }> = [];
+      const failures: FailureEntry[] = [];
+
       for (const id of ids) {
-        const result = await this.db.removeItemFromCollection(collectionName, id);
-        deletedCount += result;
+        try {
+          const deletedCount = await this.db.removeItemFromCollection(collectionName, id);
+          if (deletedCount > 0) {
+            successes.push({ id });
+
+            if (collectionName === USERS) {
+              this.emit('userDeleted', id);
+            }
+          } else {
+            Log.warn('removeItemsFromCollection: item not found', { store: collectionName, id });
+            failures.push({ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` });
+          }
+        } catch (err) {
+          if (!(err instanceof JustInError) || !err.isLogged) {
+            Log.warn('removeItemsFromCollection: item failed', { store: collectionName, id, error: err });
+          }
+          failures.push(failureEntryFromError(err, { id }));
+        }
       }
-      return deletedCount;
+
+      return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
     } catch (error) {
-      return handleError(
-        `Failed to bulk-remove items from collection: ${collectionName}`,
-        'removeItemsFromCollection',
-        { error },
-      );
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('removeItemsFromCollection failed', { store: collectionName, error });
+      }
+      return coreFailure([failureEntryFromError(error)]);
     }
   }
 
   /**
    * Clears all items in a collection.
-   * @param {string} collectionName - The name of the collection.
-   * @returns {Promise<void>} Resolves when the collection is cleared.
-   * @throws {JustinError} If the DataManager has not been initialized or the operation fails.
+   *
+   * @param collectionName - The name of the collection.
+   * @returns A {@link CoreResult} with `successes: [null]` on success, or failure detail.
    */
-  public async clearCollection(collectionName: string): Promise<void> {
+  public async clearCollection(collectionName: string): Promise<CoreResult<null>> {
     try {
       this.checkInitialization();
       await this.db.clearCollection(collectionName);
+      return coreSuccess([null]);
     } catch (error) {
-      return handleError(`Failed to clear collection: ${collectionName}`, 'clearCollection', { error });
+      if (!(error instanceof JustInError) || !error.isLogged) {
+        Log.error('clearCollection failed', { store: collectionName, error });
+      }
+      return coreFailure([failureEntryFromError(error)]);
     }
   }
 
@@ -539,20 +663,17 @@ class DataManager extends EventEmitter {
 
   /**
    * Checks if a collection is empty.
-   * @param {string} collectionName - The name of the collection.
-   * @returns {Promise<boolean>} Resolves with `true` if the collection is empty.
-   * @throws {JustinError} If the DataManager has not been initialized or the operation fails.
+   *
+   * @param collectionName - The name of the collection.
+   * @returns `true` if the collection is empty, `false` if not or if the query fails.
    */
   public async isCollectionEmpty(collectionName: string): Promise<boolean> {
     try {
       this.checkInitialization();
       return await this.db.isCollectionEmpty(collectionName);
     } catch (error) {
-      return handleError(
-        `Failed to check if collection is empty: ${collectionName}`,
-        'isCollectionEmpty',
-        { error },
-      );
+      Log.error(`Failed to check if collection is empty: ${collectionName}`, error);
+      return false;
     }
   }
 }
