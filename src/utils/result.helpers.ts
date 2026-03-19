@@ -156,17 +156,25 @@ const unwrapSuccess = <T, U>(
  *
  * @example
  * ```ts
- * const collector = makeLoopFailureCollector<JUser>('createUserRecords', { uniqueIdentifier });
+ * // Per-record collector — identity varies per iteration so construct inside the loop
+ * const allFailures: FailureEntry[] = [];
+ * for (const record of records) {
+ *   const uniqueIdentifier = record.uniqueIdentifier ?? '(unknown)';
+ *   const collector = makeLoopFailureCollector<JUser>('createUserRecords', { uniqueIdentifier });
  *
- * if (!isPlainObject(record)) {
- *   collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object');
- *   continue;
+ *   if (!isPlainObject(record)) {
+ *     collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object');
+ *     allFailures.push(...collector.failures);
+ *     continue;
+ *   }
  * }
  *
- * // at end of loop:
- * return collector.hasFailures
- *   ? coreFailure(collector.failures, successes)
- *   : coreSuccess(successes);
+ * // Shared-identity collector — identity is constant for the whole loop
+ * const collector = makeLoopFailureCollector<ProtectedAttributesRecord>(
+ *   'setProtectedAttributesByUniqueIdentifier',
+ *   { uniqueIdentifier },
+ * );
+ * collector.push(JustinErrorCode.VALIDATION_ERROR, 'namespace must be a non-empty string', { namespace });
  * ```
  */
 const makeLoopFailureCollector = <T>(

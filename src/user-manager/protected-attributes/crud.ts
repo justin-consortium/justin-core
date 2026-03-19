@@ -1,8 +1,8 @@
 import { DataManager, PROTECTED_ATTRIBUTES } from '../../data-manager';
-import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector, failureEntryFromError } from '../../utils';
+import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector } from '../../utils';
 import { JustinErrorCode } from '../../errors';
 import type { NamespacedAttributes, ProtectedAttributesRecord } from '../types';
-import type { CoreResult, FailureEntry } from '../../types';
+import type { CoreResult } from '../../types';
 import {
   assertNoReservedKeysDeep,
   isNonEmptyString,

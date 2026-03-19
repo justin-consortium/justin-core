@@ -1,5 +1,3 @@
-import { JustinErrorCode } from './types';
-
 /**
  * Standard errors class for the Justin package.
  *

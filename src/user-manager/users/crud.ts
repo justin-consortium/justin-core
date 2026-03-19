@@ -1,5 +1,5 @@
 import { DataManager, USERS } from '../../data-manager';
-import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector, failureEntryFromError } from '../../utils';
+import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector } from '../../utils';
 import { JustinErrorCode } from '../../errors';
 import type { JUser, NewUserRecord } from '../types';
 import type { CoreResult } from '../../types';
@@ -93,31 +93,34 @@ const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<J
   }
 
   const successes: JUser[] = [];
-  const collector = makeLoopFailureCollector<JUser>('createUserRecords');
+  const allFailures: import('../../types').FailureEntry[] = [];
 
   for (const record of records) {
-    // Extract uniqueIdentifier early for identity in failure entries
+    // Extract uniqueIdentifier early — identity varies per record so
+    // construct a fresh collector inside the loop with it baked in
     const uniqueIdentifier = isNonEmptyString((record as any)?.uniqueIdentifier)
       ? (record as any).uniqueIdentifier as string
       : '(unknown)';
 
-    if (!isPlainObject(record)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object', { uniqueIdentifier }); continue; }
-    if (!isNonEmptyString(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier }); continue; }
+    const collector = makeLoopFailureCollector<JUser>('createUserRecords', { uniqueIdentifier });
+
+    if (!isPlainObject(record)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object'); allFailures.push(...collector.failures); continue; }
+    if (!isNonEmptyString(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string'); allFailures.push(...collector.failures); continue; }
 
     const attrs = (record as any).attributes;
-    if (!isPlainObject(attrs)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object', { uniqueIdentifier }); continue; }
-    if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes contains reserved keys (id, uniqueIdentifier)', { uniqueIdentifier }); continue; }
-    if (!isIdentifierUnique(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, `uniqueIdentifier (${uniqueIdentifier}) already exists`, { uniqueIdentifier }); continue; }
+    if (!isPlainObject(attrs)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object'); allFailures.push(...collector.failures); continue; }
+    if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes contains reserved keys (id, uniqueIdentifier)'); allFailures.push(...collector.failures); continue; }
+    if (!isIdentifierUnique(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, `uniqueIdentifier (${uniqueIdentifier}) already exists`); allFailures.push(...collector.failures); continue; }
 
     const userResult = await createUserRecord(record);
     if (userResult.ok) {
       successes.push(userResult.successes[0]);
     } else {
-      collector.failures.push(...userResult.failures);
+      allFailures.push(...userResult.failures);
     }
   }
 
-  return collector.hasFailures ? coreFailure(collector.failures, successes) : coreSuccess(successes);
+  return allFailures.length > 0 ? coreFailure(allFailures, successes) : coreSuccess(successes);
 };
 
 /**
