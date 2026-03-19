@@ -1,5 +1,12 @@
 import { DataManager, USERS } from '../../data-manager';
-import { checkInitialized, coreSuccess, coreFailure, coreFailureResult, unwrapSuccess, makeLoopFailureCollector } from '../../utils';
+import {
+  checkInitialized,
+  coreSuccess,
+  coreFailure,
+  coreFailureResult,
+  unwrapSuccess,
+  makeLoopFailureCollector,
+} from '../../utils';
 import { JustinErrorCode } from '../../errors';
 import type { JUser, NewUserRecord } from '../types';
 import type { CoreResult } from '../../types';
@@ -47,16 +54,46 @@ const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser
   _checkInitialization();
 
   const uid = isNonEmptyString((record as any)?.uniqueIdentifier)
-    ? (record as any).uniqueIdentifier as string
+    ? ((record as any).uniqueIdentifier as string)
     : '(unknown)';
 
-  if (!isPlainObject(record)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object', { uniqueIdentifier: uid });
-  if (!isNonEmptyString(record.uniqueIdentifier)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier: uid });
+  if (!isPlainObject(record))
+    return coreFailureResult(
+      'createUserRecord',
+      JustinErrorCode.VALIDATION_ERROR,
+      'record must be a plain object',
+      { uniqueIdentifier: uid },
+    );
+  if (!isNonEmptyString(record.uniqueIdentifier))
+    return coreFailureResult(
+      'createUserRecord',
+      JustinErrorCode.VALIDATION_ERROR,
+      'uniqueIdentifier must be a non-empty string',
+      { uniqueIdentifier: uid },
+    );
 
   const attrs = (record as any).attributes;
-  if (!isPlainObject(attrs)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object', { uniqueIdentifier: uid });
-  if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, 'attributes contains reserved keys (id, uniqueIdentifier)', { uniqueIdentifier: uid });
-  if (!isIdentifierUnique(record.uniqueIdentifier)) return coreFailureResult('createUserRecord', JustinErrorCode.VALIDATION_ERROR, `uniqueIdentifier (${uid}) already exists`, { uniqueIdentifier: uid });
+  if (!isPlainObject(attrs))
+    return coreFailureResult(
+      'createUserRecord',
+      JustinErrorCode.VALIDATION_ERROR,
+      'attributes must be a plain object',
+      { uniqueIdentifier: uid },
+    );
+  if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier']))
+    return coreFailureResult(
+      'createUserRecord',
+      JustinErrorCode.VALIDATION_ERROR,
+      'attributes contains reserved keys (id, uniqueIdentifier)',
+      { uniqueIdentifier: uid },
+    );
+  if (!isIdentifierUnique(record.uniqueIdentifier))
+    return coreFailureResult(
+      'createUserRecord',
+      JustinErrorCode.VALIDATION_ERROR,
+      `uniqueIdentifier (${uid}) already exists`,
+      { uniqueIdentifier: uid },
+    );
 
   const convertedUser: Record<string, any> = {
     uniqueIdentifier: record.uniqueIdentifier,
@@ -99,18 +136,47 @@ const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<J
     // Extract uniqueIdentifier early — identity varies per record so
     // construct a fresh collector inside the loop with it baked in
     const uniqueIdentifier = isNonEmptyString((record as any)?.uniqueIdentifier)
-      ? (record as any).uniqueIdentifier as string
+      ? ((record as any).uniqueIdentifier as string)
       : '(unknown)';
 
     const collector = makeLoopFailureCollector<JUser>('createUserRecords', { uniqueIdentifier });
 
-    if (!isPlainObject(record)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object'); allFailures.push(...collector.failures); continue; }
-    if (!isNonEmptyString(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string'); allFailures.push(...collector.failures); continue; }
+    if (!isPlainObject(record)) {
+      collector.push(JustinErrorCode.VALIDATION_ERROR, 'record must be a plain object');
+      allFailures.push(...collector.failures);
+      continue;
+    }
+    if (!isNonEmptyString(record.uniqueIdentifier)) {
+      collector.push(
+        JustinErrorCode.VALIDATION_ERROR,
+        'uniqueIdentifier must be a non-empty string',
+      );
+      allFailures.push(...collector.failures);
+      continue;
+    }
 
     const attrs = (record as any).attributes;
-    if (!isPlainObject(attrs)) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object'); allFailures.push(...collector.failures); continue; }
-    if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) { collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes contains reserved keys (id, uniqueIdentifier)'); allFailures.push(...collector.failures); continue; }
-    if (!isIdentifierUnique(record.uniqueIdentifier)) { collector.push(JustinErrorCode.VALIDATION_ERROR, `uniqueIdentifier (${uniqueIdentifier}) already exists`); allFailures.push(...collector.failures); continue; }
+    if (!isPlainObject(attrs)) {
+      collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object');
+      allFailures.push(...collector.failures);
+      continue;
+    }
+    if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier'])) {
+      collector.push(
+        JustinErrorCode.VALIDATION_ERROR,
+        'attributes contains reserved keys (id, uniqueIdentifier)',
+      );
+      allFailures.push(...collector.failures);
+      continue;
+    }
+    if (!isIdentifierUnique(record.uniqueIdentifier)) {
+      collector.push(
+        JustinErrorCode.VALIDATION_ERROR,
+        `uniqueIdentifier (${uniqueIdentifier}) already exists`,
+      );
+      allFailures.push(...collector.failures);
+      continue;
+    }
 
     const userResult = await createUserRecord(record);
     if (userResult.ok) {
@@ -166,15 +232,42 @@ const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
  * @param attributesToUpdate - Fields to update.
  * @returns Updated user, or null if input is invalid, user not found, or the DB operation fails.
  */
-const updateUserById = async (userId: string, attributesToUpdate: object): Promise<CoreResult<JUser>> => {
+const updateUserById = async (
+  userId: string,
+  attributesToUpdate: object,
+): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userId)) return coreFailureResult('updateUserById', JustinErrorCode.VALIDATION_ERROR, 'userId must be a non-empty string', { id: userId });
-  if (!isPlainObject(attributesToUpdate)) return coreFailureResult('updateUserById', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate must be a plain object', { id: userId });
-  if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier'])) return coreFailureResult('updateUserById', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate contains reserved keys (id, uniqueIdentifier)', { id: userId });
+  if (!isNonEmptyString(userId))
+    return coreFailureResult(
+      'updateUserById',
+      JustinErrorCode.VALIDATION_ERROR,
+      'userId must be a non-empty string',
+      { id: userId },
+    );
+  if (!isPlainObject(attributesToUpdate))
+    return coreFailureResult(
+      'updateUserById',
+      JustinErrorCode.VALIDATION_ERROR,
+      'attributesToUpdate must be a plain object',
+      { id: userId },
+    );
+  if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier']))
+    return coreFailureResult(
+      'updateUserById',
+      JustinErrorCode.VALIDATION_ERROR,
+      'attributesToUpdate contains reserved keys (id, uniqueIdentifier)',
+      { id: userId },
+    );
 
   const existingUser = getUserByIdFromCache(userId);
-  if (!existingUser) return coreFailureResult('updateUserById', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
+  if (!existingUser)
+    return coreFailureResult(
+      'updateUserById',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+    );
 
   const merged = { ...existingUser, ...attributesToUpdate };
   const dataToUpdate = omitKeys(merged as any, ['id', 'uniqueIdentifier'] as const);
@@ -204,12 +297,36 @@ const updateUserByUniqueIdentifier = async (
 ): Promise<CoreResult<JUser>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userUniqueIdentifier)) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier: userUniqueIdentifier });
-  if (!isPlainObject(attributesToUpdate)) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate must be a plain object', { uniqueIdentifier: userUniqueIdentifier });
-  if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier'])) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'attributesToUpdate contains reserved keys (id, uniqueIdentifier)', { uniqueIdentifier: userUniqueIdentifier });
+  if (!isNonEmptyString(userUniqueIdentifier))
+    return coreFailureResult(
+      'updateUserByUniqueIdentifier',
+      JustinErrorCode.VALIDATION_ERROR,
+      'uniqueIdentifier must be a non-empty string',
+      { uniqueIdentifier: userUniqueIdentifier },
+    );
+  if (!isPlainObject(attributesToUpdate))
+    return coreFailureResult(
+      'updateUserByUniqueIdentifier',
+      JustinErrorCode.VALIDATION_ERROR,
+      'attributesToUpdate must be a plain object',
+      { uniqueIdentifier: userUniqueIdentifier },
+    );
+  if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier']))
+    return coreFailureResult(
+      'updateUserByUniqueIdentifier',
+      JustinErrorCode.VALIDATION_ERROR,
+      'attributesToUpdate contains reserved keys (id, uniqueIdentifier)',
+      { uniqueIdentifier: userUniqueIdentifier },
+    );
 
   const user = getUserByUniqueIdentifierFromCache(userUniqueIdentifier);
-  if (!user) return coreFailureResult('updateUserByUniqueIdentifier', JustinErrorCode.NOT_FOUND, `user (${userUniqueIdentifier}) not found`, { uniqueIdentifier: userUniqueIdentifier });
+  if (!user)
+    return coreFailureResult(
+      'updateUserByUniqueIdentifier',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userUniqueIdentifier}) not found`,
+      { uniqueIdentifier: userUniqueIdentifier },
+    );
 
   return await updateUserById(user.id, attributesToUpdate);
 };

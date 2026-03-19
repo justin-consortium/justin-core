@@ -51,10 +51,7 @@ const isPlainObject = (value: unknown): value is Record<string, any> => {
  * @param reservedKeys - Keys that must not be present.
  * @returns `true` if no reserved keys are present; `false` if any reserved key is found.
  */
-const assertNoReservedKeys = (
-  obj: unknown,
-  reservedKeys: string[],
-): boolean => {
+const assertNoReservedKeys = (obj: unknown, reservedKeys: string[]): boolean => {
   if (!isPlainObject(obj)) return true;
 
   for (const key of reservedKeys) {
@@ -74,10 +71,7 @@ const assertNoReservedKeys = (
  * @param reservedKeys - Keys that must not appear anywhere in the tree.
  * @returns `true` if no reserved keys are present anywhere in the tree; `false` otherwise.
  */
-const assertNoReservedKeysDeep = (
-  value: unknown,
-  reservedKeys: string[],
-): boolean => {
+const assertNoReservedKeysDeep = (value: unknown, reservedKeys: string[]): boolean => {
   if (Array.isArray(value)) {
     return value.every((item) => assertNoReservedKeysDeep(item, reservedKeys));
   }
@@ -173,10 +167,7 @@ const setValueAtPath = (
  * @param path - The dot-notated path to delete.
  * @returns A new object with the value removed at the provided path.
  */
-const deleteValueAtPath = (
-  source: Record<string, any>,
-  path: string,
-): Record<string, any> => {
+const deleteValueAtPath = (source: Record<string, any>, path: string): Record<string, any> => {
   const segments = getPathSegments(path);
   if (segments.length === 0 || !isPlainObject(source)) {
     return isPlainObject(source) ? { ...source } : {};

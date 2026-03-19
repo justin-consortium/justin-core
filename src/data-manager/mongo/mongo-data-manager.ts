@@ -348,10 +348,7 @@ const findItemByIdInCollection = async (
  * @returns An array of normalized documents.
  * @throws {JustInError} If the MongoDBManager has not been initialized or the query fails.
  */
-const findItemsInCollection = async (
-  collectionName: string,
-  filter: object,
-): Promise<object[]> => {
+const findItemsInCollection = async (collectionName: string, filter: object): Promise<object[]> => {
   ensureInitialized();
 
   try {
@@ -422,11 +419,9 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
     const results = await _db!.collection(collectionName).find({}).toArray();
     return results.map(transformId);
   } catch (error) {
-    return handleError(
-      `Error getting all items in ${collectionName}`,
-      'getAllInCollection',
-      { error },
-    );
+    return handleError(`Error getting all items in ${collectionName}`, 'getAllInCollection', {
+      error,
+    });
   }
 };
 
@@ -455,11 +450,9 @@ const addItemToCollection = async (collectionName: string, item: object): Promis
     Log.debug(`Item added to ${collectionName}`, { id: insertedId.toString() });
     return insertedId.toString();
   } catch (error) {
-    return handleError(
-      `Error inserting item into ${collectionName}`,
-      'addItemToCollection',
-      { error },
-    );
+    return handleError(`Error inserting item into ${collectionName}`, 'addItemToCollection', {
+      error,
+    });
   }
 };
 
@@ -551,10 +544,7 @@ const updateItemInCollection = async (
 
   try {
     const coll = _db!.collection(collectionName);
-    const { matchedCount, modifiedCount } = await coll.updateOne(
-      { _id: objectId },
-      { $set: item },
-    );
+    const { matchedCount, modifiedCount } = await coll.updateOne({ _id: objectId }, { $set: item });
 
     if (matchedCount !== 1) {
       Log.warn(`Update failed for item with id ${id} in ${collectionName}: no match`);
@@ -616,14 +606,14 @@ const updateItemsInCollection = async (
       errorsByIndex.set(writeError.index, writeError.errmsg ?? 'Unknown error');
     }
 
-    const out: Array<{ id: string } | { id: string; error: string }> = updates.map(
-      ({ id }, i) => {
-        const err = errorsByIndex.get(i);
-        return err ? { id, error: err } : { id };
-      },
-    );
+    const out: Array<{ id: string } | { id: string; error: string }> = updates.map(({ id }, i) => {
+      const err = errorsByIndex.get(i);
+      return err ? { id, error: err } : { id };
+    });
 
-    Log.debug(`Bulk updated ${result.modifiedCount}/${updates.length} item(s) in ${collectionName}`);
+    Log.debug(
+      `Bulk updated ${result.modifiedCount}/${updates.length} item(s) in ${collectionName}`,
+    );
 
     return out;
   } catch (error) {
@@ -655,9 +645,7 @@ const removeItemFromCollection = async (collectionName: string, id: string): Pro
   const objectId = stringToMongoId(id);
 
   try {
-    const { deletedCount } = await _db!
-      .collection(collectionName)
-      .deleteOne({ _id: objectId });
+    const { deletedCount } = await _db!.collection(collectionName).deleteOne({ _id: objectId });
 
     if (deletedCount === 0) {
       Log.warn(`No deletion made for item with id ${id} in ${collectionName}: not found.`);
@@ -717,9 +705,7 @@ const removeItemsFromCollection = async (
       return err ? { id, error: err } : { id };
     });
 
-    Log.debug(
-      `Bulk removed ${result.deletedCount}/${ids.length} item(s) from ${collectionName}`,
-    );
+    Log.debug(`Bulk removed ${result.deletedCount}/${ids.length} item(s) from ${collectionName}`);
 
     return out;
   } catch (error) {
@@ -747,11 +733,7 @@ const clearCollection = async (collectionName: string): Promise<boolean> => {
     const { acknowledged } = await _db!.collection(collectionName).deleteMany({});
     return acknowledged;
   } catch (error) {
-    return handleError(
-      `Error clearing collection ${collectionName}`,
-      'clearCollection',
-      { error },
-    );
+    return handleError(`Error clearing collection ${collectionName}`, 'clearCollection', { error });
   }
 };
 
@@ -775,11 +757,9 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
     const count = await _db!.collection(collectionName).countDocuments({}, { limit: 1 });
     return count === 0;
   } catch (error) {
-    return handleError(
-      `Error counting documents in ${collectionName}`,
-      'isCollectionEmpty',
-      { error },
-    );
+    return handleError(`Error counting documents in ${collectionName}`, 'isCollectionEmpty', {
+      error,
+    });
   }
 };
 

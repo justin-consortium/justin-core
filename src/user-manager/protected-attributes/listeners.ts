@@ -1,4 +1,8 @@
-import { ChangeListenerManager, PROTECTED_ATTRIBUTES, CollectionChangeType } from '../../data-manager';
+import {
+  ChangeListenerManager,
+  PROTECTED_ATTRIBUTES,
+  CollectionChangeType,
+} from '../../data-manager';
 import { ProtectedAttributesRecord } from '../types';
 import {
   deleteProtectedAttributesDocByIdFromCache,

@@ -38,7 +38,10 @@ const refreshProtectedAttributesCache = async (): Promise<void> => {
   const docs = await dm.getAllInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES);
   docs.forEach((doc: ProtectedAttributesRecord) => {
     if (!doc?.uniqueIdentifier || !doc?.namespace) {
-      Log.error('refreshProtectedAttributesCache: skipping malformed record — missing uniqueIdentifier or namespace', { record: doc });
+      Log.error(
+        'refreshProtectedAttributesCache: skipping malformed record — missing uniqueIdentifier or namespace',
+        { record: doc },
+      );
       return;
     }
 
@@ -62,7 +65,10 @@ const refreshProtectedAttributesCache = async (): Promise<void> => {
  */
 const upsertProtectedAttributesInCache = (doc: ProtectedAttributesRecord): void => {
   if (!doc?.uniqueIdentifier || !doc?.namespace) {
-    Log.error('upsertProtectedAttributesInCache: skipping malformed record — missing uniqueIdentifier or namespace', { record: doc });
+    Log.error(
+      'upsertProtectedAttributesInCache: skipping malformed record — missing uniqueIdentifier or namespace',
+      { record: doc },
+    );
     return;
   }
 

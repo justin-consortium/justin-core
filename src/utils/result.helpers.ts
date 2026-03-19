@@ -77,9 +77,8 @@ const failureEntryFromError = (
   details?: Record<string, any>,
 ): FailureEntry => {
   const code = error instanceof JustInError ? error.code : JustinErrorCode.DB_ERROR;
-  const reason = error instanceof JustInError
-    ? error.message
-    : String((error as any)?.message ?? error);
+  const reason =
+    error instanceof JustInError ? error.message : String((error as any)?.message ?? error);
 
   return {
     ...identity,
@@ -197,5 +196,11 @@ const makeLoopFailureCollector = <T>(
   };
 };
 
-
-export { coreSuccess, coreFailure, coreFailureResult, failureEntryFromError, unwrapSuccess, makeLoopFailureCollector };
+export {
+  coreSuccess,
+  coreFailure,
+  coreFailureResult,
+  failureEntryFromError,
+  unwrapSuccess,
+  makeLoopFailureCollector,
+};

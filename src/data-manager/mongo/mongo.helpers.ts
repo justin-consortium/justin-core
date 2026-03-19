@@ -12,10 +12,14 @@ import { JustinErrorCode } from '../../errors';
  */
 const stringToMongoId = (id: string | null | undefined): mongoDB.ObjectId => {
   if (!id || typeof id !== 'string') {
-    return handleError(`Invalid ObjectId — expected a non-empty string, received: ${id}`, 'stringToMongoId', {
-      code: JustinErrorCode.VALIDATION_ERROR,
-      data: { id },
-    });
+    return handleError(
+      `Invalid ObjectId — expected a non-empty string, received: ${id}`,
+      'stringToMongoId',
+      {
+        code: JustinErrorCode.VALIDATION_ERROR,
+        data: { id },
+      },
+    );
   }
 
   try {

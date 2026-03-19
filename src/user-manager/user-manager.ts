@@ -1,5 +1,11 @@
-import { DataManager, ChangeListenerManager, PROTECTED_ATTRIBUTES, USERS, CollectionChangeType  } from '../data-manager';
-import {checkInitialized, coreFailureResult, coreSuccess} from '../utils';
+import {
+  DataManager,
+  ChangeListenerManager,
+  PROTECTED_ATTRIBUTES,
+  USERS,
+  CollectionChangeType,
+} from '../data-manager';
+import { checkInitialized, coreFailureResult, coreSuccess } from '../utils';
 import { JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './types';
@@ -149,13 +155,20 @@ const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => 
   const items = Array.isArray(record?.protectedAttributes) ? record.protectedAttributes : [];
   if (items.length === 0) return coreSuccess([user]);
 
-  const setPAResult = await setProtectedAttributesByUniqueIdentifier(uniqueIdentifier, items as NamespacedAttributes[]);
+  const setPAResult = await setProtectedAttributesByUniqueIdentifier(
+    uniqueIdentifier,
+    items as NamespacedAttributes[],
+  );
   if (!setPAResult.ok) {
     setPAResult.failures.forEach(({ code, reason, details }) => {
-      Log.warn('createUser: PA set failed', { uniqueIdentifier, code, reason, namespace: details?.namespace });
+      Log.warn('createUser: PA set failed', {
+        uniqueIdentifier,
+        code,
+        reason,
+        namespace: details?.namespace,
+      });
     });
   }
-
 
   return coreSuccess([user]);
 };
@@ -188,10 +201,22 @@ const createUsers = async (records: NewUserRecord[]): Promise<CoreResult<JUser>>
 const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(userId)) return coreFailureResult('deleteUserById', JustinErrorCode.VALIDATION_ERROR, 'userId must be a non-empty string', { id: userId });
+  if (!isNonEmptyString(userId))
+    return coreFailureResult(
+      'deleteUserById',
+      JustinErrorCode.VALIDATION_ERROR,
+      'userId must be a non-empty string',
+      { id: userId },
+    );
 
   const existing = getUserByIdFromCache(userId);
-  if (!existing?.uniqueIdentifier) return coreFailureResult('deleteUserById', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
+  if (!existing?.uniqueIdentifier)
+    return coreFailureResult(
+      'deleteUserById',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+    );
 
   await deleteAllProtectedAttributesByUniqueIdentifier(existing.uniqueIdentifier);
 
@@ -209,13 +234,27 @@ const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
  * @param uniqueIdentifier - The user's unique identifier.
  * @returns True if the user was deleted.
  */
-const deleteUserByUniqueIdentifier = async (uniqueIdentifier: string): Promise<CoreResult<null>> => {
+const deleteUserByUniqueIdentifier = async (
+  uniqueIdentifier: string,
+): Promise<CoreResult<null>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return coreFailureResult('deleteUserByUniqueIdentifier', JustinErrorCode.VALIDATION_ERROR, 'uniqueIdentifier must be a non-empty string', { uniqueIdentifier });
+  if (!isNonEmptyString(uniqueIdentifier))
+    return coreFailureResult(
+      'deleteUserByUniqueIdentifier',
+      JustinErrorCode.VALIDATION_ERROR,
+      'uniqueIdentifier must be a non-empty string',
+      { uniqueIdentifier },
+    );
 
   const existing = getUserByUniqueIdentifierFromCache(uniqueIdentifier);
-  if (!existing) return coreFailureResult('deleteUserByUniqueIdentifier', JustinErrorCode.NOT_FOUND, `user (${uniqueIdentifier}) not found`, { uniqueIdentifier });
+  if (!existing)
+    return coreFailureResult(
+      'deleteUserByUniqueIdentifier',
+      JustinErrorCode.NOT_FOUND,
+      `user (${uniqueIdentifier}) not found`,
+      { uniqueIdentifier },
+    );
 
   return await deleteUserById(existing.id);
 };
@@ -249,7 +288,10 @@ const getAllProtectedAttributesForUser = (userId: string): ProtectedAttributesRe
 
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid) {
-    Log.warn('getAllProtectedAttributesForUser: userId invalid or user not found', { userId, code: JustinErrorCode.NOT_FOUND });
+    Log.warn('getAllProtectedAttributesForUser: userId invalid or user not found', {
+      userId,
+      code: JustinErrorCode.NOT_FOUND,
+    });
     return [];
   }
 
@@ -272,7 +314,10 @@ const getProtectedAttributesForUser = (
 
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid) {
-    Log.warn('getProtectedAttributesForUser: userId invalid or user not found', { userId, code: JustinErrorCode.NOT_FOUND });
+    Log.warn('getProtectedAttributesForUser: userId invalid or user not found', {
+      userId,
+      code: JustinErrorCode.NOT_FOUND,
+    });
     return [];
   }
 
@@ -297,7 +342,13 @@ const setProtectedAttributesForUser = async (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return coreFailureResult('setProtectedAttributesForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
+  if (!uid)
+    return coreFailureResult(
+      'setProtectedAttributesForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+    );
 
   return await setProtectedAttributesByUniqueIdentifier(uid, input);
 };
@@ -324,7 +375,14 @@ const updateProtectedAttributeForUser = async (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return coreFailureResult('updateProtectedAttributeForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace, keyPath });
+  if (!uid)
+    return coreFailureResult(
+      'updateProtectedAttributeForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+      { namespace, keyPath },
+    );
 
   return await updateProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath, value);
 };
@@ -345,7 +403,14 @@ const updateProtectedAttributesForUser = async (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return coreFailureResult('updateProtectedAttributesForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace });
+  if (!uid)
+    return coreFailureResult(
+      'updateProtectedAttributesForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+      { namespace },
+    );
 
   return await updateProtectedAttributesByUniqueIdentifier(uid, namespace, updates);
 };
@@ -368,7 +433,13 @@ const deleteProtectedAttributesForUser = async (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return coreFailureResult('deleteProtectedAttributesForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId });
+  if (!uid)
+    return coreFailureResult(
+      'deleteProtectedAttributesForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+    );
 
   return await deleteProtectedAttributesByUniqueIdentifier(uid, namespaces);
 };
@@ -383,7 +454,10 @@ const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void
 
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid) {
-    Log.warn('deleteAllProtectedAttributesForUser: userId invalid or user not found', { userId, code: JustinErrorCode.NOT_FOUND });
+    Log.warn('deleteAllProtectedAttributesForUser: userId invalid or user not found', {
+      userId,
+      code: JustinErrorCode.NOT_FOUND,
+    });
     return;
   }
 
@@ -406,7 +480,14 @@ const deleteProtectedAttributeForUser = async (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return coreFailureResult('deleteProtectedAttributeForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace, keyPath });
+  if (!uid)
+    return coreFailureResult(
+      'deleteProtectedAttributeForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+      { namespace, keyPath },
+    );
 
   return await deleteProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath);
 };
@@ -427,7 +508,14 @@ const deleteProtectedAttributesFromNamespaceForUser = async (
   _checkInitialization();
 
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) return coreFailureResult('deleteProtectedAttributesFromNamespaceForUser', JustinErrorCode.NOT_FOUND, `user (${userId}) not found`, { id: userId }, { namespace });
+  if (!uid)
+    return coreFailureResult(
+      'deleteProtectedAttributesFromNamespaceForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+      { namespace },
+    );
 
   return await deleteProtectedAttributesFromNamespaceByUniqueIdentifier(uid, namespace, keyPaths);
 };

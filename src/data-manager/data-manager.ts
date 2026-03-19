@@ -152,11 +152,7 @@ class DataManager extends EventEmitter {
       this.checkInitialization();
       await this.db.ensureStore(collectionName, options);
     } catch (error) {
-      return handleError(
-        `Failed to ensure store: ${collectionName}`,
-        'ensureStore',
-        { error },
-      );
+      return handleError(`Failed to ensure store: ${collectionName}`, 'ensureStore', { error });
     }
   }
 
@@ -173,11 +169,9 @@ class DataManager extends EventEmitter {
       this.checkInitialization();
       await this.db.ensureIndexes(collectionName, indexes);
     } catch (error) {
-      return handleError(
-        `Failed to ensure indexes on: ${collectionName}`,
-        'ensureIndexes',
-        { error },
-      );
+      return handleError(`Failed to ensure indexes on: ${collectionName}`, 'ensureIndexes', {
+        error,
+      });
     }
   }
 
@@ -212,10 +206,7 @@ class DataManager extends EventEmitter {
    * @param id - The ID of the item to find.
    * @returns The found item or `null` if not found or if the query fails.
    */
-  public async findItemByIdInCollection<T>(
-    collectionName: string,
-    id: string,
-  ): Promise<T | null> {
+  public async findItemByIdInCollection<T>(collectionName: string, id: string): Promise<T | null> {
     try {
       this.checkInitialization();
       const item = await this.db.findItemByIdInCollection(collectionName, id);
@@ -264,10 +255,7 @@ class DataManager extends EventEmitter {
    * @param ids - IDs to look up.
    * @returns Found items (could be fewer than requested if some ids do not exist), or an empty array if the query fails.
    */
-  public async findItemsByIdsInCollection<T>(
-    collectionName: string,
-    ids: string[],
-  ): Promise<T[]> {
+  public async findItemsByIdsInCollection<T>(collectionName: string, ids: string[]): Promise<T[]> {
     try {
       this.checkInitialization();
 
@@ -382,7 +370,10 @@ class DataManager extends EventEmitter {
               this.emit('userAdded', inserted);
             }
           } else {
-            Log.warn('addItemsToCollection: item failed', { store: collectionName, reason: result.error });
+            Log.warn('addItemsToCollection: item failed', {
+              store: collectionName,
+              reason: result.error,
+            });
             failures.push({ code: JustinErrorCode.DB_ERROR, reason: result.error });
           }
         }
@@ -446,7 +437,9 @@ class DataManager extends EventEmitter {
       }
 
       if (!updatedItem) {
-        return coreFailure([{ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` }]);
+        return coreFailure([
+          { id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` },
+        ]);
       }
       return coreSuccess([updatedItem]);
     } catch (error) {
@@ -486,7 +479,11 @@ class DataManager extends EventEmitter {
 
         for (const result of results) {
           if ('error' in result) {
-            Log.warn('updateItemsByIdInCollection: item failed', { store: collectionName, id: result.id, reason: result.error });
+            Log.warn('updateItemsByIdInCollection: item failed', {
+              store: collectionName,
+              id: result.id,
+              reason: result.error,
+            });
             failures.push({ id: result.id, code: JustinErrorCode.DB_ERROR, reason: result.error });
           } else {
             successes.push({ id: result.id });
@@ -507,11 +504,19 @@ class DataManager extends EventEmitter {
             successes.push({ id });
           } else {
             Log.warn('updateItemsByIdInCollection: item not found', { store: collectionName, id });
-            failures.push({ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` });
+            failures.push({
+              id,
+              code: JustinErrorCode.NOT_FOUND,
+              reason: `Item with id (${id}) not found`,
+            });
           }
         } catch (err) {
           if (!(err instanceof JustInError) || !err.isLogged) {
-            Log.warn('updateItemsByIdInCollection: item failed', { store: collectionName, id, error: err });
+            Log.warn('updateItemsByIdInCollection: item failed', {
+              store: collectionName,
+              id,
+              error: err,
+            });
           }
           failures.push(failureEntryFromError(err, { id }));
         }
@@ -550,7 +555,9 @@ class DataManager extends EventEmitter {
       }
 
       if (deletedCount === 0) {
-        return coreFailure([{ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` }]);
+        return coreFailure([
+          { id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` },
+        ]);
       }
       return coreSuccess([null]);
     } catch (error) {
@@ -590,7 +597,11 @@ class DataManager extends EventEmitter {
 
         for (const result of results) {
           if ('error' in result) {
-            Log.warn('removeItemsFromCollection: item failed', { store: collectionName, id: result.id, reason: result.error });
+            Log.warn('removeItemsFromCollection: item failed', {
+              store: collectionName,
+              id: result.id,
+              reason: result.error,
+            });
             failures.push({ id: result.id, code: JustinErrorCode.DB_ERROR, reason: result.error });
           } else {
             successes.push({ id: result.id });
@@ -619,11 +630,19 @@ class DataManager extends EventEmitter {
             }
           } else {
             Log.warn('removeItemsFromCollection: item not found', { store: collectionName, id });
-            failures.push({ id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` });
+            failures.push({
+              id,
+              code: JustinErrorCode.NOT_FOUND,
+              reason: `Item with id (${id}) not found`,
+            });
           }
         } catch (err) {
           if (!(err instanceof JustInError) || !err.isLogged) {
-            Log.warn('removeItemsFromCollection: item failed', { store: collectionName, id, error: err });
+            Log.warn('removeItemsFromCollection: item failed', {
+              store: collectionName,
+              id,
+              error: err,
+            });
           }
           failures.push(failureEntryFromError(err, { id }));
         }
