@@ -25,6 +25,11 @@ type ReadableWithCleanup = Readable & {
  * Closes a stream, running the adapter cleanup hook first if present.
  * Always resolves — never throws.
  *
+ * Before destroying, ensures the stream has at least one error listener so
+ * that any error emitted during or after destruction (e.g. a Mongo
+ * ChangeStream firing after the replica set stops) is absorbed rather than
+ * becoming an unhandled rejection at the process level.
+ *
  * @param stream - The stream to close.
  * @private
  */
@@ -35,9 +40,15 @@ async function _closeStream(stream: ReadableWithCleanup): Promise<void> {
     if (maybeCleanup) {
       await maybeCleanup();
     }
-  } catch {
-    // swallow — best-effort close
+  } catch (error) {
+    Log.error('Stream close failed', { error });
   } finally {
+    // Ensure there is always an error listener before destroying.
+    // Without this, Node treats any post-destruction error event as an
+    // unhandled rejection and crashes the process / fails the test suite.
+    if (stream.listenerCount('error') === 0) {
+      stream.on('error', () => {});
+    }
     stream.destroy();
   }
 }
