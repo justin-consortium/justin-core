@@ -1,6 +1,3 @@
-import { handleError } from '../data-manager/helpers';
-import { JustinErrorCode } from '../errors';
-
 /**
  * Returns true if `value` is a string with at least one non-whitespace character.
  *
@@ -47,70 +44,52 @@ const isPlainObject = (value: unknown): value is Record<string, any> => {
 };
 
 /**
- * Asserts that the provided object does NOT include any reserved keys.
- * This is considered a programmer error / invariant violation and should throw.
+ * Returns false if the provided object includes any reserved keys.
+ *
  *
  * @param obj - The object to check.
  * @param reservedKeys - Keys that must not be present.
- * @param errorMessage - Optional custom error message.
- * @throws {JustinError} If any reserved key is present in `obj`.
+ * @returns `true` if no reserved keys are present; `false` if any reserved key is found.
  */
 const assertNoReservedKeys = (
   obj: unknown,
   reservedKeys: string[],
-  errorMessage?: string,
-): void => {
-  if (!isPlainObject(obj)) return;
+): boolean => {
+  if (!isPlainObject(obj)) return true;
 
   for (const key of reservedKeys) {
-    if (key in obj) {
-      const message = errorMessage ?? `Cannot update reserved field "${key}".`;
-      handleError(message, 'assertNoReservedKeys', {
-        code: JustinErrorCode.VALIDATION_ERROR,
-        data: { key },
-      });
-    }
+    if (key in obj) return false;
   }
+
+  return true;
 };
 
 /**
- * Recursively asserts that the provided value tree does NOT include any reserved keys.
+ * Returns false if the provided value tree includes any reserved keys.
  *
  * Plain objects are traversed by key. Arrays are traversed by element. Primitive
  * values are ignored.
  *
  * @param value - The value tree to inspect.
  * @param reservedKeys - Keys that must not appear anywhere in the tree.
- * @param errorMessage - Optional custom error message.
- * @throws {JustinError} If any reserved key is present anywhere in the value tree.
+ * @returns `true` if no reserved keys are present anywhere in the tree; `false` otherwise.
  */
 const assertNoReservedKeysDeep = (
   value: unknown,
   reservedKeys: string[],
-  errorMessage?: string,
-): void => {
+): boolean => {
   if (Array.isArray(value)) {
-    for (const item of value) {
-      assertNoReservedKeysDeep(item, reservedKeys, errorMessage);
-    }
-    return;
+    return value.every((item) => assertNoReservedKeysDeep(item, reservedKeys));
   }
 
-  if (!isPlainObject(value)) {
-    return;
-  }
+  if (!isPlainObject(value)) return true;
 
   for (const [key, nestedValue] of Object.entries(value)) {
-    if (reservedKeys.includes(key)) {
-      const message = errorMessage ?? `Cannot update reserved field "${key}".`;
-      handleError(message, 'assertNoReservedKeysDeep', {
-        code: JustinErrorCode.VALIDATION_ERROR,
-        data: { key },
-      });
-    }
-
-    assertNoReservedKeysDeep(nestedValue, reservedKeys, errorMessage);
+    if (reservedKeys.includes(key)) return false;
+    if (!assertNoReservedKeysDeep(nestedValue, reservedKeys)) return false;
   }
+
+  return true;
 };
 
 /**
