@@ -5,7 +5,9 @@ import DataManager from '../../data-manager/data-manager';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
 import { UserManager, TestingUserManager } from '../user-manager';
 import { DBType, USERS, PROTECTED_ATTRIBUTES } from '../../data-manager/constants';
-import { waitForMongoReady } from '../../testing';
+import { waitForMongoReady, expectOk, expectFailed, expectFailedWithCode } from '../../testing';
+import type { CoreResult } from '../../types';
+import type { JUser } from '../types';
 
 
 /**
@@ -13,16 +15,19 @@ import { waitForMongoReady } from '../../testing';
  *
  * Goals:
  * - Exercise every public UserManager API against real Mongo infrastructure.
- * - Cover happy paths, edge cases, and errors/invalid-input paths.
+ * - Cover happy paths, edge cases, and invalid-input paths.
  * - Verify cache consistency after every mutation.
  * - Verify DB state directly via DataManager as a secondary assertion source.
- *
+ * - Assert CoreResult shape (ok, successes, failures) on every write operation.
  */
 
 jest.setTimeout(120_000);
 
-describe('User Manager public API e2e', () => {
+// ---------------------------------------------------------------------------
+// Suite
+// ---------------------------------------------------------------------------
 
+describe('UserManager public API — e2e', () => {
   let repl: MongoMemoryReplSet;
   let dm: DataManager;
   let sb: sinon.SinonSandbox;
@@ -43,6 +48,10 @@ describe('User Manager public API e2e', () => {
   });
 
   afterAll(async () => {
+    // Shutdown order matters: UserManager closes change streams first (while
+    // Mongo is still running), then DataManager disconnects, then the replica
+    // set stops. _closeStream in ChangeListenerManager ensures no post-destroy
+    // error events become unhandled rejections.
     try { await UserManager.shutdown(); } catch {}
     try { await dm.close(); } catch {}
     try { await repl.stop(); } catch {}
@@ -56,376 +65,426 @@ describe('User Manager public API e2e', () => {
     await TestingUserManager.refreshProtectedAttributesCache();
   });
 
+  /** Creates a user and asserts success — convenience for test setup. */
   async function createUser(
     uniqueIdentifier: string,
     attributes: Record<string, any> = {},
-  ) {
-    return UserManager.createUser({ uniqueIdentifier, attributes });
+  ): Promise<JUser> {
+    const result = await UserManager.createUser({ uniqueIdentifier, attributes });
+    return expectOk(result);
   }
 
-  describe("users", () => {
+  // ===========================================================================
+  // createUser
+  // ===========================================================================
 
-    describe('createUser', () => {
-      it('creates a user and returns it with an id', async () => {
-        const user = await createUser('u1', { name: 'Alice' });
+  describe('createUser', () => {
+    it('returns ok:true with the created user', async () => {
+      const result = await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: { name: 'Alice' } });
 
-        expect(user).not.toBeNull();
-        expect(user!.id).toEqual(expect.any(String));
-        expect(user!.uniqueIdentifier).toBe('u1');
-        expect(user!.name).toBe('Alice');
-      });
-
-      it('persists the user to the DB', async () => {
-        await createUser('u1');
-
-        const all = await dm.getAllInCollection<any>(USERS);
-        expect(all).toHaveLength(1);
-        expect(all[0].uniqueIdentifier).toBe('u1');
-      });
-
-      it('does not expose _id — only id', async () => {
-        const user = await createUser('u1');
-
-        expect((user as any)._id).toBeUndefined();
-        expect(user!.id).toEqual(expect.any(String));
-      });
-
-      it('returns null for duplicate uniqueIdentifier', async () => {
-        await createUser('u1');
-        const duplicate = await createUser('u1');
-
-        expect(duplicate).toBeNull();
-      });
-
-      it('returns null for invalid input', async () => {
-        // @ts-expect-errors intentional
-        expect(await UserManager.createUser(null)).toBeNull();
-        // @ts-expect-errors intentional
-        expect(await UserManager.createUser({})).toBeNull();
-        expect(await UserManager.createUser({ uniqueIdentifier: '', attributes: {} })).toBeNull();
-      });
-
-      it('throws if attributes contain reserved key "id"', async () => {
-        await expect(
-          UserManager.createUser({ uniqueIdentifier: 'u1', attributes: { id: 'hack' } }),
-        ).rejects.toThrow();
-      });
-
-      it('throws if attributes contain reserved key "uniqueIdentifier"', async () => {
-        await expect(
-          UserManager.createUser({
-            uniqueIdentifier: 'u1',
-            attributes: { uniqueIdentifier: 'hack' },
-          }),
-        ).rejects.toThrow();
-      });
-
-      it('preserves uniqueIdentifier with spaces exactly as provided', async () => {
-        const user = await createUser('test mark');
-
-        expect(user).not.toBeNull();
-        expect(user!.uniqueIdentifier).toBe('test mark');
-      });
-
-      it('creates user with protected attributes in one call', async () => {
-        const user = await UserManager.createUser({
-          uniqueIdentifier: 'u-with-pa',
-          attributes: { name: 'Bob' },
-          protectedAttributes: [
-            { namespace: 'health', protectedAttributes: { steps: 1000 } },
-          ],
-        });
-
-        expect(user).not.toBeNull();
-
-        const pa = UserManager.getAllProtectedAttributesForUser(user!.id);
-        expect(pa).toHaveLength(1);
-        expect(pa[0].namespace).toBe('health');
-        expect(pa[0].protectedAttributes).toMatchObject({ steps: 1000 });
-      });
+      expect(result.ok).toBe(true);
+      expect(result.successes).toHaveLength(1);
+      const user = result.successes[0];
+      expect(user.id).toEqual(expect.any(String));
+      expect(user.uniqueIdentifier).toBe('u1');
+      expect(user.name).toBe('Alice');
     });
 
-    describe('createUsers', () => {
-      it('creates multiple users and returns them all', async () => {
-        const users = await UserManager.createUsers([
-          { uniqueIdentifier: 'bulk-1', attributes: { x: 1 } },
-          { uniqueIdentifier: 'bulk-2', attributes: { x: 2 } },
-          { uniqueIdentifier: 'bulk-3', attributes: { x: 3 } },
-        ]);
+    it('persists the user to DB', async () => {
+      await createUser('u1');
 
-        expect(users).toHaveLength(3);
-        expect(users.map((u) => u.uniqueIdentifier).sort()).toEqual(['bulk-1', 'bulk-2', 'bulk-3']);
-      });
-
-      it('skips invalid records and returns only valid ones', async () => {
-        const users = await UserManager.createUsers([
-          { uniqueIdentifier: 'valid-1', attributes: {} },
-          // @ts-expect-errors intentional
-          null,
-          { uniqueIdentifier: 'valid-2', attributes: {} },
-        ]);
-
-        expect(users).toHaveLength(2);
-      });
-
-      it('throws for empty array', async () => {
-        await expect(UserManager.createUsers([])).rejects.toThrow();
-      });
-
-      it('persists all created users to DB', async () => {
-        await UserManager.createUsers([
-          { uniqueIdentifier: 'p1', attributes: {} },
-          { uniqueIdentifier: 'p2', attributes: {} },
-        ]);
-
-        const all = await dm.getAllInCollection<any>(USERS);
-        expect(all).toHaveLength(2);
-      });
+      const all = await dm.getAllInCollection<any>(USERS);
+      expect(all).toHaveLength(1);
+      expect(all[0].uniqueIdentifier).toBe('u1');
     });
 
-    describe('getUserById / getUserByUniqueIdentifier / getAllUsers', () => {
-      it('getUserById returns the user from cache', async () => {
-        const created = await createUser('u1', { name: 'Alice' });
+    it('does not expose _id — only id', async () => {
+      const result = await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: {} });
+      const user = expectOk(result);
 
-        const found = UserManager.getUserById(created!.id);
-        expect(found).not.toBeNull();
-        expect(found!.uniqueIdentifier).toBe('u1');
-      });
-
-      it('getUserById returns null for unknown id', () => {
-        expect(UserManager.getUserById('nonexistent-id')).toBeNull();
-      });
-
-      it('getUserById returns null for empty string', () => {
-        expect(UserManager.getUserById('')).toBeNull();
-      });
-
-      it('getUserByUniqueIdentifier returns the user from cache', async () => {
-        await createUser('u1', { name: 'Alice' });
-
-        const found = UserManager.getUserByUniqueIdentifier('u1');
-        expect(found).not.toBeNull();
-        expect(found!.name).toBe('Alice');
-      });
-
-      it('getUserByUniqueIdentifier returns null for unknown identifier', () => {
-        expect(UserManager.getUserByUniqueIdentifier('nobody')).toBeNull();
-      });
-
-      it('getUserByUniqueIdentifier matches exactly — does not trim', async () => {
-        await createUser('test mark');
-
-        expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
-        expect(UserManager.getUserByUniqueIdentifier('testmark')).toBeNull();
-        expect(UserManager.getUserByUniqueIdentifier(' test mark ')).toBeNull();
-      });
-
-      it('getAllUsers returns all cached users', async () => {
-        await UserManager.createUsers([
-          { uniqueIdentifier: 'a1', attributes: {} },
-          { uniqueIdentifier: 'a2', attributes: {} },
-        ]);
-
-        const all = UserManager.getAllUsers();
-        expect(all).toHaveLength(2);
-      });
-
-      it('getAllUsers returns empty array when no users exist', () => {
-        expect(UserManager.getAllUsers()).toEqual([]);
-      });
+      expect((user as any)._id).toBeUndefined();
+      expect(user.id).toEqual(expect.any(String));
     });
 
-    describe('isIdentifierUnique', () => {
-      it('returns true for an identifier that does not exist', () => {
-        expect(UserManager.isIdentifierUnique('brand-new')).toBe(true);
-      });
+    it('returns ok:false with VALIDATION_ERROR for duplicate uniqueIdentifier', async () => {
+      await createUser('u1');
+      const duplicate = await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: {} });
 
-      it('returns false after a user with that identifier is created', async () => {
-        await createUser('taken');
-        expect(UserManager.isIdentifierUnique('taken')).toBe(false);
-      });
-
-      it('throws for empty string', () => {
-        expect(() => UserManager.isIdentifierUnique('')).toThrow();
-      });
+      const failure = expectFailedWithCode(duplicate, 'VALIDATION_ERROR');
+      expect(failure.uniqueIdentifier).toBe('u1');
+      if (!duplicate.ok) expect(duplicate.successes).toHaveLength(0);
     });
 
-    describe('updateUserById', () => {
-      it('updates user attributes and returns the updated user', async () => {
-        const user = await createUser('u1', { score: 10 });
-
-        const updated = await UserManager.updateUserById(user!.id, { score: 20 });
-        expect(updated.score).toBe(20);
-        expect(updated.uniqueIdentifier).toBe('u1');
-      });
-
-      it('merges attributes — does not wipe unrelated fields', async () => {
-        const user = await createUser('u1', { a: 1, b: 2 });
-
-        const updated = await UserManager.updateUserById(user!.id, { b: 99 });
-        expect(updated.a).toBe(1);
-        expect(updated.b).toBe(99);
-      });
-
-      it('updates the cache so subsequent reads reflect the change', async () => {
-        const user = await createUser('u1', { score: 10 });
-        await UserManager.updateUserById(user!.id, { score: 42 });
-
-        const fromCache = UserManager.getUserById(user!.id);
-        expect(fromCache!.score).toBe(42);
-      });
-
-      it('persists the update to DB', async () => {
-        const user = await createUser('u1', { score: 10 });
-        await UserManager.updateUserById(user!.id, { score: 99 });
-
-        const all = await dm.getAllInCollection<any>(USERS);
-        expect(all[0].score).toBe(99);
-      });
-
-      it('throws for invalid userId', async () => {
-        await expect(UserManager.updateUserById('', { score: 1 })).rejects.toThrow();
-      });
-
-      it('throws if user is not found', async () => {
-        await expect(UserManager.updateUserById('nonexistent', { score: 1 })).rejects.toThrow();
-      });
-
-      it('throws when trying to update reserved field "id"', async () => {
-        const user = await createUser('u1');
-        await expect(
-          UserManager.updateUserById(user!.id, { id: 'hack' }),
-        ).rejects.toThrow();
-      });
-
-      it('throws when trying to update reserved field "uniqueIdentifier"', async () => {
-        const user = await createUser('u1');
-        await expect(
-          UserManager.updateUserById(user!.id, { uniqueIdentifier: 'hack' }),
-        ).rejects.toThrow();
-      });
+    it('returns ok:false for null input', async () => {
+      // @ts-expect-error intentional
+      expectFailed(await UserManager.createUser(null));
     });
 
-    describe('updateUserByUniqueIdentifier', () => {
-      it('updates user attributes by uniqueIdentifier', async () => {
-        await createUser('u1', { score: 5 });
-
-        const updated = await UserManager.updateUserByUniqueIdentifier('u1', { score: 50 });
-        expect(updated).not.toBeNull();
-        expect(updated!.score).toBe(50);
-      });
-
-      it('returns null for unknown uniqueIdentifier', async () => {
-        const result = await UserManager.updateUserByUniqueIdentifier('nobody', { score: 1 });
-        expect(result).toBeNull();
-      });
-
-      it('returns null for empty uniqueIdentifier', async () => {
-        const result = await UserManager.updateUserByUniqueIdentifier('', { score: 1 });
-        expect(result).toBeNull();
-      });
-
-      it('does not match on trimmed version — exact match required', async () => {
-        await createUser('test mark');
-
-        const result = await UserManager.updateUserByUniqueIdentifier(' test mark ', { x: 1 });
-        expect(result).toBeNull();
-      });
+    it('returns ok:false with VALIDATION_ERROR for empty uniqueIdentifier', async () => {
+      expectFailedWithCode(
+        await UserManager.createUser({ uniqueIdentifier: '', attributes: {} }),
+        'VALIDATION_ERROR',
+      );
     });
 
-    describe('deleteUserById', () => {
-      it('deletes the user and returns true', async () => {
-        const user = await createUser('u1');
-        const result = await UserManager.deleteUserById(user!.id);
-
-        expect(result).toBe(true);
-      });
-
-      it('removes user from cache after deletion', async () => {
-        const user = await createUser('u1');
-        await UserManager.deleteUserById(user!.id);
-
-        expect(UserManager.getUserById(user!.id)).toBeNull();
-        expect(UserManager.getUserByUniqueIdentifier('u1')).toBeNull();
-      });
-
-      it('removes user from DB after deletion', async () => {
-        const user = await createUser('u1');
-        await UserManager.deleteUserById(user!.id);
-
-        const all = await dm.getAllInCollection<any>(USERS);
-        expect(all).toHaveLength(0);
-      });
-
-      it('cascades and deletes all protected attributes', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'ns1', protectedAttributes: { x: 1 } },
-          { namespace: 'ns2', protectedAttributes: { y: 2 } },
-        ]);
-
-        await UserManager.deleteUserById(user!.id);
-
-        const paDocs = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
-        expect(paDocs).toHaveLength(0);
-      });
-
-      it('returns false for unknown userId', async () => {
-        const result = await UserManager.deleteUserById('nonexistent');
-        expect(result).toBe(false);
-      });
-
-      it('returns false for empty userId', async () => {
-        expect(await UserManager.deleteUserById('')).toBe(false);
-      });
+    it('returns ok:false with VALIDATION_ERROR for reserved attribute key "id"', async () => {
+      expectFailedWithCode(
+        await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: { id: 'hack' } }),
+        'VALIDATION_ERROR',
+      );
     });
 
-    describe('deleteUserByUniqueIdentifier', () => {
-      it('deletes user by uniqueIdentifier', async () => {
-        await createUser('u1');
-        const result = await UserManager.deleteUserByUniqueIdentifier('u1');
-
-        expect(result).toBe(true);
-        expect(UserManager.getUserByUniqueIdentifier('u1')).toBeNull();
-      });
-
-      it('returns false for unknown uniqueIdentifier', async () => {
-        expect(await UserManager.deleteUserByUniqueIdentifier('nobody')).toBe(false);
-      });
-
-      it('requires exact match — does not trim', async () => {
-        await createUser('test mark');
-        const result = await UserManager.deleteUserByUniqueIdentifier(' test mark ');
-        expect(result).toBe(false);
-
-        // user still exists
-        expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
-      });
-
-      it('cascades protected attribute deletion', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'health', protectedAttributes: { steps: 500 } },
-        ]);
-
-        await UserManager.deleteUserByUniqueIdentifier('u1');
-
-        const paDocs = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
-        expect(paDocs).toHaveLength(0);
-      });
+    it('returns ok:false with VALIDATION_ERROR for reserved attribute key "uniqueIdentifier"', async () => {
+      expectFailedWithCode(
+        await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: { uniqueIdentifier: 'hack' } }),
+        'VALIDATION_ERROR',
+      );
     });
 
-    describe('deleteAllUsers', () => {
-    it('clears all users and protected attributes', async () => {
+    it('preserves uniqueIdentifier with spaces exactly as provided', async () => {
+      const user = await createUser('test mark');
+      expect(user.uniqueIdentifier).toBe('test mark');
+    });
+
+    it('creates user with protected attributes in one call', async () => {
+      const result = await UserManager.createUser({
+        uniqueIdentifier: 'u-with-pa',
+        attributes: { name: 'Bob' },
+        protectedAttributes: [
+          { namespace: 'health', protectedAttributes: { steps: 1000 } },
+        ],
+      });
+
+      const user = expectOk(result);
+      const pa = UserManager.getAllProtectedAttributesForUser(user.id);
+      expect(pa).toHaveLength(1);
+      expect(pa[0].namespace).toBe('health');
+      expect(pa[0].protectedAttributes).toMatchObject({ steps: 1000 });
+    });
+  });
+
+  // ===========================================================================
+  // createUsers
+  // ===========================================================================
+
+  describe('createUsers', () => {
+    it('returns ok:true with all created users when all succeed', async () => {
+      const result = await UserManager.createUsers([
+        { uniqueIdentifier: 'bulk-1', attributes: { x: 1 } },
+        { uniqueIdentifier: 'bulk-2', attributes: { x: 2 } },
+        { uniqueIdentifier: 'bulk-3', attributes: { x: 3 } },
+      ]);
+
+      expect(result.ok).toBe(true);
+      expect(result.successes).toHaveLength(3);
+      expect(result.successes.map((u) => u.uniqueIdentifier).sort()).toEqual(['bulk-1', 'bulk-2', 'bulk-3']);
+    });
+
+    it('returns ok:false with partial successes when some records are invalid', async () => {
+      const result = await UserManager.createUsers([
+        { uniqueIdentifier: 'valid-1', attributes: {} },
+        // @ts-expect-error intentional
+        null,
+        { uniqueIdentifier: 'valid-2', attributes: {} },
+      ]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.successes).toHaveLength(2);
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0].code).toBe('VALIDATION_ERROR');
+      }
+    });
+
+    it('returns ok:true with empty successes for empty input', async () => {
+      const result = await UserManager.createUsers([]);
+      expect(result.ok).toBe(true);
+      expect(result.successes).toHaveLength(0);
+    });
+
+    it('persists all created users to DB', async () => {
+      await UserManager.createUsers([
+        { uniqueIdentifier: 'p1', attributes: {} },
+        { uniqueIdentifier: 'p2', attributes: {} },
+      ]);
+
+      expect(await dm.getAllInCollection<any>(USERS)).toHaveLength(2);
+    });
+
+    it('failure entries include uniqueIdentifier for traceability', async () => {
+      await createUser('existing');
+
+      const result = await UserManager.createUsers([
+        { uniqueIdentifier: 'new-one', attributes: {} },
+        { uniqueIdentifier: 'existing', attributes: {} },
+      ]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.successes).toHaveLength(1);
+        expect(result.failures[0].uniqueIdentifier).toBe('existing');
+        expect(result.failures[0].code).toBe('VALIDATION_ERROR');
+      }
+    });
+  });
+
+  // ===========================================================================
+  // Read ops — return T | null / T[] directly, not CoreResult
+  // ===========================================================================
+
+  describe('getUserById / getUserByUniqueIdentifier / getAllUsers', () => {
+    it('getUserById returns the user from cache', async () => {
+      const user = await createUser('u1', { name: 'Alice' });
+      const found = UserManager.getUserById(user.id);
+
+      expect(found).not.toBeNull();
+      expect(found!.uniqueIdentifier).toBe('u1');
+    });
+
+    it('getUserById returns null for unknown id', () => {
+      expect(UserManager.getUserById('nonexistent-id')).toBeNull();
+    });
+
+    it('getUserById returns null for empty string', () => {
+      expect(UserManager.getUserById('')).toBeNull();
+    });
+
+    it('getUserByUniqueIdentifier returns the user from cache', async () => {
+      await createUser('u1', { name: 'Alice' });
+      const found = UserManager.getUserByUniqueIdentifier('u1');
+
+      expect(found).not.toBeNull();
+      expect(found!.name).toBe('Alice');
+    });
+
+    it('getUserByUniqueIdentifier returns null for unknown identifier', () => {
+      expect(UserManager.getUserByUniqueIdentifier('nobody')).toBeNull();
+    });
+
+    it('getUserByUniqueIdentifier matches exactly — does not trim', async () => {
+      await createUser('test mark');
+
+      expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
+      expect(UserManager.getUserByUniqueIdentifier('testmark')).toBeNull();
+      expect(UserManager.getUserByUniqueIdentifier(' test mark ')).toBeNull();
+    });
+
+    it('getAllUsers returns all cached users', async () => {
+      await UserManager.createUsers([
+        { uniqueIdentifier: 'a1', attributes: {} },
+        { uniqueIdentifier: 'a2', attributes: {} },
+      ]);
+      expect(UserManager.getAllUsers()).toHaveLength(2);
+    });
+
+    it('getAllUsers returns empty array when no users exist', () => {
+      expect(UserManager.getAllUsers()).toEqual([]);
+    });
+  });
+
+  // ===========================================================================
+  // isIdentifierUnique
+  // ===========================================================================
+
+  describe('isIdentifierUnique', () => {
+    it('returns true for an identifier that does not exist', () => {
+      expect(UserManager.isIdentifierUnique('brand-new')).toBe(true);
+    });
+
+    it('returns false after a user with that identifier is created', async () => {
+      await createUser('taken');
+      expect(UserManager.isIdentifierUnique('taken')).toBe(false);
+    });
+
+    it('returns false for empty string', () => {
+      expect(UserManager.isIdentifierUnique('')).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // updateUserById
+  // ===========================================================================
+
+  describe('updateUserById', () => {
+    it('returns ok:true with the updated user', async () => {
+      const user = await createUser('u1', { score: 10 });
+      const updated = expectOk(await UserManager.updateUserById(user.id, { score: 20 }));
+
+      expect(updated.score).toBe(20);
+      expect(updated.uniqueIdentifier).toBe('u1');
+    });
+
+    it('merges attributes — does not wipe unrelated fields', async () => {
+      const user = await createUser('u1', { a: 1, b: 2 });
+      const updated = expectOk(await UserManager.updateUserById(user.id, { b: 99 }));
+
+      expect(updated.a).toBe(1);
+      expect(updated.b).toBe(99);
+    });
+
+    it('updates the cache so subsequent reads reflect the change', async () => {
+      const user = await createUser('u1', { score: 10 });
+      await UserManager.updateUserById(user.id, { score: 42 });
+
+      expect(UserManager.getUserById(user.id)!.score).toBe(42);
+    });
+
+    it('persists the update to DB', async () => {
+      const user = await createUser('u1', { score: 10 });
+      await UserManager.updateUserById(user.id, { score: 99 });
+
+      const all = await dm.getAllInCollection<any>(USERS);
+      expect(all[0].score).toBe(99);
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for empty userId', async () => {
+      expectFailedWithCode(await UserManager.updateUserById('', { score: 1 }), 'VALIDATION_ERROR');
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(await UserManager.updateUserById('nonexistent', { score: 1 }), 'NOT_FOUND');
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for reserved field "id"', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(await UserManager.updateUserById(user.id, { id: 'hack' }), 'VALIDATION_ERROR');
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for reserved field "uniqueIdentifier"', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(await UserManager.updateUserById(user.id, { uniqueIdentifier: 'hack' }), 'VALIDATION_ERROR');
+    });
+
+    it('failure entry carries id for traceability', async () => {
+      const result = await UserManager.updateUserById('ghost-id', { score: 1 });
+      if (!result.ok) expect(result.failures[0].id).toBe('ghost-id');
+    });
+  });
+
+  // ===========================================================================
+  // updateUserByUniqueIdentifier
+  // ===========================================================================
+
+  describe('updateUserByUniqueIdentifier', () => {
+    it('returns ok:true with the updated user', async () => {
+      await createUser('u1', { score: 5 });
+      const updated = expectOk(await UserManager.updateUserByUniqueIdentifier('u1', { score: 50 }));
+
+      expect(updated.score).toBe(50);
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown uniqueIdentifier', async () => {
+      expectFailedWithCode(await UserManager.updateUserByUniqueIdentifier('nobody', { score: 1 }), 'NOT_FOUND');
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for empty uniqueIdentifier', async () => {
+      expectFailedWithCode(await UserManager.updateUserByUniqueIdentifier('', { score: 1 }), 'VALIDATION_ERROR');
+    });
+
+    it('does not match trimmed version — exact match required', async () => {
+      await createUser('test mark');
+      expectFailedWithCode(
+        await UserManager.updateUserByUniqueIdentifier(' test mark ', { x: 1 }),
+        'NOT_FOUND',
+      );
+    });
+  });
+
+  // ===========================================================================
+  // deleteUserById
+  // ===========================================================================
+
+  describe('deleteUserById', () => {
+    it('returns ok:true on successful deletion', async () => {
+      const user = await createUser('u1');
+      expect((await UserManager.deleteUserById(user.id)).ok).toBe(true);
+    });
+
+    it('removes user from cache after deletion', async () => {
+      const user = await createUser('u1');
+      await UserManager.deleteUserById(user.id);
+
+      expect(UserManager.getUserById(user.id)).toBeNull();
+      expect(UserManager.getUserByUniqueIdentifier('u1')).toBeNull();
+    });
+
+    it('removes user from DB after deletion', async () => {
+      const user = await createUser('u1');
+      await UserManager.deleteUserById(user.id);
+
+      expect(await dm.getAllInCollection<any>(USERS)).toHaveLength(0);
+    });
+
+    it('cascades and deletes all protected attributes', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'ns1', protectedAttributes: { x: 1 } },
+        { namespace: 'ns2', protectedAttributes: { y: 2 } },
+      ]);
+
+      await UserManager.deleteUserById(user.id);
+
+      expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(await UserManager.deleteUserById('nonexistent'), 'NOT_FOUND');
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for empty userId', async () => {
+      expectFailedWithCode(await UserManager.deleteUserById(''), 'VALIDATION_ERROR');
+    });
+
+    it('failure entry carries id for traceability', async () => {
+      const result = await UserManager.deleteUserById('ghost-id');
+      if (!result.ok) expect(result.failures[0].id).toBe('ghost-id');
+    });
+  });
+
+  // ===========================================================================
+  // deleteUserByUniqueIdentifier
+  // ===========================================================================
+
+  describe('deleteUserByUniqueIdentifier', () => {
+    it('returns ok:true on successful deletion', async () => {
+      await createUser('u1');
+      expect((await UserManager.deleteUserByUniqueIdentifier('u1')).ok).toBe(true);
+      expect(UserManager.getUserByUniqueIdentifier('u1')).toBeNull();
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown uniqueIdentifier', async () => {
+      expectFailedWithCode(await UserManager.deleteUserByUniqueIdentifier('nobody'), 'NOT_FOUND');
+    });
+
+    it('requires exact match — does not trim', async () => {
+      await createUser('test mark');
+      expectFailedWithCode(await UserManager.deleteUserByUniqueIdentifier(' test mark '), 'NOT_FOUND');
+      expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
+    });
+
+    it('cascades protected attribute deletion', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'health', protectedAttributes: { steps: 500 } },
+      ]);
+
+      await UserManager.deleteUserByUniqueIdentifier('u1');
+
+      expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
+    });
+  });
+
+  // ===========================================================================
+  // deleteAllUsers
+  // ===========================================================================
+
+  describe('deleteAllUsers', () => {
+    it('clears all users and protected attributes, empties the cache', async () => {
       const u1 = await createUser('u1');
       const u2 = await createUser('u2');
 
-      await UserManager.setProtectedAttributesForUser(u1!.id, [
-        { namespace: 'ns', protectedAttributes: { a: 1 } },
-      ]);
-      await UserManager.setProtectedAttributesForUser(u2!.id, [
-        { namespace: 'ns', protectedAttributes: { b: 2 } },
-      ]);
+      await UserManager.setProtectedAttributesForUser(u1.id, [{ namespace: 'ns', protectedAttributes: { a: 1 } }]);
+      await UserManager.setProtectedAttributesForUser(u2.id, [{ namespace: 'ns', protectedAttributes: { b: 2 } }]);
 
       await UserManager.deleteAllUsers();
 
@@ -434,584 +493,634 @@ describe('User Manager public API e2e', () => {
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
   });
-  })
 
-  describe('ProtectedAttributes', () => {
+  // ===========================================================================
+  // setProtectedAttributesForUser
+  // ===========================================================================
 
-    describe('setProtectedAttributesForUser', () => {
-      it('creates a new protected attributes record', async () => {
-        const user = await createUser('u1');
-
-        const results = await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'health',
-          protectedAttributes: { steps: 1000 },
-        });
-
-        expect(results).toHaveLength(1);
-        expect(results[0].namespace).toBe('health');
-        expect(results[0].protectedAttributes).toMatchObject({ steps: 1000 });
+  describe('setProtectedAttributesForUser', () => {
+    it('returns ok:true with the created record', async () => {
+      const user = await createUser('u1');
+      const result = await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'health',
+        protectedAttributes: { steps: 1000 },
       });
 
-      it('shallow-merges into existing record', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'health',
-          protectedAttributes: { steps: 1000, weight: 70 },
-        });
-
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'health',
-          protectedAttributes: { steps: 2000 },
-        });
-
-        const pa = UserManager.getProtectedAttributesForUser(user!.id, ['health']);
-        expect(pa[0].protectedAttributes).toMatchObject({ steps: 2000, weight: 70 });
-      });
-
-      it('creates multiple namespaces in one call', async () => {
-        const user = await createUser('u1');
-
-        const results = await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'ns1', protectedAttributes: { a: 1 } },
-          { namespace: 'ns2', protectedAttributes: { b: 2 } },
-        ]);
-
-        expect(results).toHaveLength(2);
-        const all = UserManager.getAllProtectedAttributesForUser(user!.id);
-        expect(all).toHaveLength(2);
-      });
-
-      it('persists to DB', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { secret: 'abc' },
-        });
-
-        const all = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
-        expect(all).toHaveLength(1);
-        expect(all[0].protectedAttributes).toMatchObject({ secret: 'abc' });
-      });
-
-      it('returns empty array for unknown userId', async () => {
-        const result = await UserManager.setProtectedAttributesForUser('nonexistent', {
-          namespace: 'ns',
-          protectedAttributes: { x: 1 },
-        });
-        expect(result).toEqual([]);
-      });
-
-      it('skips items with invalid namespace', async () => {
-        const user = await createUser('u1');
-
-        const results = await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: '', protectedAttributes: { x: 1 } },
-          { namespace: 'valid', protectedAttributes: { y: 2 } },
-        ]);
-
-        expect(results).toHaveLength(1);
-        expect(results[0].namespace).toBe('valid');
-      });
-
-      it('preserves namespace with spaces exactly as provided', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'my namespace',
-          protectedAttributes: { x: 1 },
-        });
-
-        const pa = UserManager.getProtectedAttributesForUser(user!.id, ['my namespace']);
-        expect(pa).toHaveLength(1);
-      });
-
-      it('throws if protectedAttributes contain reserved key', async () => {
-        const user = await createUser('u1');
-
-        await expect(
-          UserManager.setProtectedAttributesForUser(user!.id, {
-            namespace: 'ns',
-            protectedAttributes: { id: 'hack' },
-          }),
-        ).rejects.toThrow();
-      });
+      expect(result.ok).toBe(true);
+      expect(result.successes).toHaveLength(1);
+      expect(result.successes[0].namespace).toBe('health');
+      expect(result.successes[0].protectedAttributes).toMatchObject({ steps: 1000 });
     });
 
-    describe('getProtectedAttributesForUser / getAllProtectedAttributesForUser', () => {
-      it('getProtectedAttributesForUser returns only requested namespaces', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'ns1', protectedAttributes: { a: 1 } },
-          { namespace: 'ns2', protectedAttributes: { b: 2 } },
-          { namespace: 'ns3', protectedAttributes: { c: 3 } },
-        ]);
-
-        const pa = UserManager.getProtectedAttributesForUser(user!.id, ['ns1', 'ns3']);
-        expect(pa).toHaveLength(2);
-        expect(pa.map((r) => r.namespace).sort()).toEqual(['ns1', 'ns3']);
+    it('shallow-merges into existing record', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'health',
+        protectedAttributes: { steps: 1000, weight: 70 },
       });
 
-      it('getAllProtectedAttributesForUser returns every namespace', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'a', protectedAttributes: {} },
-          { namespace: 'b', protectedAttributes: {} },
-          { namespace: 'c', protectedAttributes: {} },
-        ]);
-
-        const all = UserManager.getAllProtectedAttributesForUser(user!.id);
-        expect(all).toHaveLength(3);
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'health',
+        protectedAttributes: { steps: 2000 },
       });
 
-      it('returns empty array for user with no protected attributes', async () => {
-        const user = await createUser('u1');
-        expect(UserManager.getAllProtectedAttributesForUser(user!.id)).toEqual([]);
+      const pa = UserManager.getProtectedAttributesForUser(user.id, ['health']);
+      expect(pa[0].protectedAttributes).toMatchObject({ steps: 2000, weight: 70 });
+    });
+
+    it('creates multiple namespaces in one call', async () => {
+      const user = await createUser('u1');
+      const result = await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'ns1', protectedAttributes: { a: 1 } },
+        { namespace: 'ns2', protectedAttributes: { b: 2 } },
+      ]);
+
+      expect(result.ok).toBe(true);
+      expect(result.successes).toHaveLength(2);
+      expect(UserManager.getAllProtectedAttributesForUser(user.id)).toHaveLength(2);
+    });
+
+    it('persists to DB', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { secret: 'abc' },
       });
 
-      it('returns empty array for unknown userId', () => {
-        expect(UserManager.getProtectedAttributesForUser('nobody', ['ns'])).toEqual([]);
-        expect(UserManager.getAllProtectedAttributesForUser('nobody')).toEqual([]);
-      });
+      const all = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
+      expect(all).toHaveLength(1);
+      expect(all[0].protectedAttributes).toMatchObject({ secret: 'abc' });
+    });
 
-      it('filters out invalid namespaces silently', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'real',
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.setProtectedAttributesForUser('nonexistent', {
+          namespace: 'ns',
           protectedAttributes: { x: 1 },
-        });
-
-        const pa = UserManager.getProtectedAttributesForUser(user!.id, ['real', '', 'nonexistent']);
-        expect(pa).toHaveLength(1);
-        expect(pa[0].namespace).toBe('real');
-      });
+        }),
+        'NOT_FOUND',
+      );
     });
 
-    describe('updateProtectedAttributeForUser', () => {
-      it('sets a top-level key', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { a: 1, b: 2 },
-        });
+    it('returns ok:false with partial successes when some namespaces are invalid', async () => {
+      const user = await createUser('u1');
+      const result = await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: '', protectedAttributes: { x: 1 } },
+        { namespace: 'valid', protectedAttributes: { y: 2 } },
+      ]);
 
-        const updated = await UserManager.updateProtectedAttributeForUser(user!.id, 'ns', 'a', 99);
-        expect(updated).not.toBeNull();
-        expect(updated!.protectedAttributes).toMatchObject({ a: 99, b: 2 });
-      });
-
-      it('sets a nested key via dot notation', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { daily: { steps: 100 } },
-        });
-
-        const updated = await UserManager.updateProtectedAttributeForUser(
-          user!.id,
-          'ns',
-          'daily.steps',
-          9999,
-        );
-        expect(updated!.protectedAttributes.daily.steps).toBe(9999);
-      });
-
-      it('creates intermediate objects for deep paths', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: {},
-        });
-
-        const updated = await UserManager.updateProtectedAttributeForUser(
-          user!.id,
-          'ns',
-          'a.b.c',
-          'deep',
-        );
-        expect(updated!.protectedAttributes.a.b.c).toBe('deep');
-      });
-
-      it('updates the cache', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { x: 0 },
-        });
-
-        await UserManager.updateProtectedAttributeForUser(user!.id, 'ns', 'x', 42);
-
-        const pa = UserManager.getProtectedAttributesForUser(user!.id, ['ns']);
-        expect(pa[0].protectedAttributes.x).toBe(42);
-      });
-
-      it('returns null for unknown userId', async () => {
-        const result = await UserManager.updateProtectedAttributeForUser(
-          'nonexistent',
-          'ns',
-          'x',
-          1,
-        );
-        expect(result).toBeNull();
-      });
-
-      it('returns null if namespace does not exist', async () => {
-        const user = await createUser('u1');
-        const result = await UserManager.updateProtectedAttributeForUser(
-          user!.id,
-          'nonexistent-ns',
-          'x',
-          1,
-        );
-        expect(result).toBeNull();
-      });
-
-      it('throws if path contains reserved key', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: {},
-        });
-
-        await expect(
-          UserManager.updateProtectedAttributeForUser(user!.id, 'ns', 'id', 'hack'),
-        ).rejects.toThrow();
-
-        await expect(
-          UserManager.updateProtectedAttributeForUser(user!.id, 'ns', 'namespace', 'hack'),
-        ).rejects.toThrow();
-      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.successes).toHaveLength(1);
+        expect(result.successes[0].namespace).toBe('valid');
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0].code).toBe('VALIDATION_ERROR');
+      }
     });
 
-    describe('updateProtectedAttributesForUser', () => {
-      it('updates multiple key paths in one call', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { a: 1, b: 2, c: 3 },
-        });
-
-        const updated = await UserManager.updateProtectedAttributesForUser(user!.id, 'ns', {
-          a: 10,
-          'b': 20,
-        });
-
-        expect(updated!.protectedAttributes).toMatchObject({ a: 10, b: 20, c: 3 });
+    it('preserves namespace with spaces exactly as provided', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'my namespace',
+        protectedAttributes: { x: 1 },
       });
 
-      it('supports dot-notation paths in the updates object', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { daily: { steps: 0, calories: 0 } },
-        });
+      expect(UserManager.getProtectedAttributesForUser(user.id, ['my namespace'])).toHaveLength(1);
+    });
 
-        const updated = await UserManager.updateProtectedAttributesForUser(user!.id, 'ns', {
+    it('returns ok:false with VALIDATION_ERROR for reserved key in protectedAttributes — failure carries namespace in details', async () => {
+      const user = await createUser('u1');
+      const result = await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { id: 'hack' },
+      });
+
+      const failure = expectFailedWithCode(result, 'VALIDATION_ERROR');
+      expect(failure.details?.namespace).toBe('ns');
+    });
+  });
+
+  // ===========================================================================
+  // getProtectedAttributesForUser / getAllProtectedAttributesForUser
+  // ===========================================================================
+
+  describe('getProtectedAttributesForUser / getAllProtectedAttributesForUser', () => {
+    it('returns only requested namespaces', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'ns1', protectedAttributes: { a: 1 } },
+        { namespace: 'ns2', protectedAttributes: { b: 2 } },
+        { namespace: 'ns3', protectedAttributes: { c: 3 } },
+      ]);
+
+      const pa = UserManager.getProtectedAttributesForUser(user.id, ['ns1', 'ns3']);
+      expect(pa).toHaveLength(2);
+      expect(pa.map((r) => r.namespace).sort()).toEqual(['ns1', 'ns3']);
+    });
+
+    it('getAllProtectedAttributesForUser returns every namespace', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'a', protectedAttributes: {} },
+        { namespace: 'b', protectedAttributes: {} },
+        { namespace: 'c', protectedAttributes: {} },
+      ]);
+
+      expect(UserManager.getAllProtectedAttributesForUser(user.id)).toHaveLength(3);
+    });
+
+    it('returns empty array for user with no protected attributes', async () => {
+      const user = await createUser('u1');
+      expect(UserManager.getAllProtectedAttributesForUser(user.id)).toEqual([]);
+    });
+
+    it('returns empty array for unknown userId', () => {
+      expect(UserManager.getProtectedAttributesForUser('nobody', ['ns'])).toEqual([]);
+      expect(UserManager.getAllProtectedAttributesForUser('nobody')).toEqual([]);
+    });
+
+    it('filters out invalid namespaces silently', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'real',
+        protectedAttributes: { x: 1 },
+      });
+
+      const pa = UserManager.getProtectedAttributesForUser(user.id, ['real', '', 'nonexistent']);
+      expect(pa).toHaveLength(1);
+      expect(pa[0].namespace).toBe('real');
+    });
+  });
+
+  // ===========================================================================
+  // updateProtectedAttributeForUser
+  // ===========================================================================
+
+  describe('updateProtectedAttributeForUser', () => {
+    it('returns ok:true — sets a top-level key', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { a: 1, b: 2 },
+      });
+
+      const updated = expectOk(await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'a', 99));
+      expect(updated.protectedAttributes).toMatchObject({ a: 99, b: 2 });
+    });
+
+    it('sets a nested key via dot notation', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { daily: { steps: 100 } },
+      });
+
+      const updated = expectOk(
+        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'daily.steps', 9999),
+      );
+      expect(updated.protectedAttributes.daily.steps).toBe(9999);
+    });
+
+    it('creates intermediate objects for deep paths', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: {},
+      });
+
+      const updated = expectOk(
+        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'a.b.c', 'deep'),
+      );
+      expect(updated.protectedAttributes.a.b.c).toBe('deep');
+    });
+
+    it('updates the cache', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { x: 0 },
+      });
+
+      await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'x', 42);
+      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.x).toBe(42);
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.updateProtectedAttributeForUser('nonexistent', 'ns', 'x', 1),
+        'NOT_FOUND',
+      );
+    });
+
+    it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(
+        await UserManager.updateProtectedAttributeForUser(user.id, 'no-such-ns', 'x', 1),
+        'NOT_FOUND',
+      );
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for reserved keyPath — failure carries namespace and keyPath in details', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, { namespace: 'ns', protectedAttributes: {} });
+
+      const result = await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'id', 'hack');
+      const failure = expectFailedWithCode(result, 'VALIDATION_ERROR');
+      expect(failure.details?.namespace).toBe('ns');
+      expect(failure.details?.keyPath).toBe('id');
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for reserved keyPath "namespace"', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, { namespace: 'ns', protectedAttributes: {} });
+
+      expectFailedWithCode(
+        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'namespace', 'hack'),
+        'VALIDATION_ERROR',
+      );
+    });
+  });
+
+  // ===========================================================================
+  // updateProtectedAttributesForUser
+  // ===========================================================================
+
+  describe('updateProtectedAttributesForUser', () => {
+    it('returns ok:true — updates multiple key paths in one call', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { a: 1, b: 2, c: 3 },
+      });
+
+      const updated = expectOk(
+        await UserManager.updateProtectedAttributesForUser(user.id, 'ns', { a: 10, b: 20 }),
+      );
+      expect(updated.protectedAttributes).toMatchObject({ a: 10, b: 20, c: 3 });
+    });
+
+    it('supports dot-notation paths', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { daily: { steps: 0, calories: 0 } },
+      });
+
+      const updated = expectOk(
+        await UserManager.updateProtectedAttributesForUser(user.id, 'ns', {
           'daily.steps': 5000,
           'daily.calories': 200,
-        });
-
-        expect(updated!.protectedAttributes.daily).toMatchObject({ steps: 5000, calories: 200 });
-      });
-
-      it('returns null for unknown userId', async () => {
-        const result = await UserManager.updateProtectedAttributesForUser('nobody', 'ns', { x: 1 });
-        expect(result).toBeNull();
-      });
-
-      it('returns null if namespace does not exist', async () => {
-        const user = await createUser('u1');
-        const result = await UserManager.updateProtectedAttributesForUser(user!.id, 'ns', { x: 1 });
-        expect(result).toBeNull();
-      });
-
-      it('throws if any path contains a reserved key', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: {},
-        });
-
-        await expect(
-          UserManager.updateProtectedAttributesForUser(user!.id, 'ns', { id: 'hack' }),
-        ).rejects.toThrow();
-      });
+        }),
+      );
+      expect(updated.protectedAttributes.daily).toMatchObject({ steps: 5000, calories: 200 });
     });
 
-    describe('deleteProtectedAttributesForUser', () => {
-      it('deletes a single namespace', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'ns1', protectedAttributes: { a: 1 } },
-          { namespace: 'ns2', protectedAttributes: { b: 2 } },
-        ]);
-
-        const result = await UserManager.deleteProtectedAttributesForUser(user!.id, 'ns1');
-        expect(result).toBe(true);
-
-        const remaining = UserManager.getAllProtectedAttributesForUser(user!.id);
-        expect(remaining).toHaveLength(1);
-        expect(remaining[0].namespace).toBe('ns2');
-      });
-
-      it('deletes multiple namespaces at once', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'ns1', protectedAttributes: {} },
-          { namespace: 'ns2', protectedAttributes: {} },
-          { namespace: 'ns3', protectedAttributes: {} },
-        ]);
-
-        const result = await UserManager.deleteProtectedAttributesForUser(user!.id, ['ns1', 'ns2']);
-        expect(result).toBe(true);
-
-        const remaining = UserManager.getAllProtectedAttributesForUser(user!.id);
-        expect(remaining).toHaveLength(1);
-        expect(remaining[0].namespace).toBe('ns3');
-      });
-
-      it('updates cache after deletion', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { x: 1 },
-        });
-
-        await UserManager.deleteProtectedAttributesForUser(user!.id, 'ns');
-
-        expect(UserManager.getProtectedAttributesForUser(user!.id, ['ns'])).toEqual([]);
-      });
-
-      it('removes from DB', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: {},
-        });
-
-        await UserManager.deleteProtectedAttributesForUser(user!.id, 'ns');
-
-        expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
-      });
-
-      it('returns false for unknown userId', async () => {
-        expect(await UserManager.deleteProtectedAttributesForUser('nobody', 'ns')).toBe(false);
-      });
-
-      it('returns false if namespace does not exist', async () => {
-        const user = await createUser('u1');
-        expect(await UserManager.deleteProtectedAttributesForUser(user!.id, 'no-such-ns')).toBe(false);
-      });
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.updateProtectedAttributesForUser('nobody', 'ns', { x: 1 }),
+        'NOT_FOUND',
+      );
     });
 
-    describe('deleteAllProtectedAttributesForUser', () => {
-      it('deletes all namespaces for the user', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, [
-          { namespace: 'ns1', protectedAttributes: {} },
-          { namespace: 'ns2', protectedAttributes: {} },
-        ]);
-
-        await UserManager.deleteAllProtectedAttributesForUser(user!.id);
-
-        expect(UserManager.getAllProtectedAttributesForUser(user!.id)).toHaveLength(0);
-        expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
-      });
-
-      it('is a no-op for a user with no protected attributes', async () => {
-        const user = await createUser('u1');
-        await expect(
-          UserManager.deleteAllProtectedAttributesForUser(user!.id),
-        ).resolves.not.toThrow();
-      });
-
-      it('does not affect other users protected attributes', async () => {
-        const u1 = await createUser('u1');
-        const u2 = await createUser('u2');
-
-        await UserManager.setProtectedAttributesForUser(u1!.id, {
-          namespace: 'ns',
-          protectedAttributes: { a: 1 },
-        });
-        await UserManager.setProtectedAttributesForUser(u2!.id, {
-          namespace: 'ns',
-          protectedAttributes: { b: 2 },
-        });
-
-        await UserManager.deleteAllProtectedAttributesForUser(u1!.id);
-
-        expect(UserManager.getAllProtectedAttributesForUser(u2!.id)).toHaveLength(1);
-      });
+    it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(
+        await UserManager.updateProtectedAttributesForUser(user.id, 'ns', { x: 1 }),
+        'NOT_FOUND',
+      );
     });
 
-    describe('deleteProtectedAttributeForUser', () => {
-      it('removes a top-level key', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { a: 1, b: 2 },
-        });
-
-        const updated = await UserManager.deleteProtectedAttributeForUser(user!.id, 'ns', 'a');
-        expect(updated!.protectedAttributes).not.toHaveProperty('a');
-        expect(updated!.protectedAttributes.b).toBe(2);
+    it('skips reserved keyPaths, applies valid ones — returns ok:false with partial successes', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { safe: 0 },
       });
 
-      it('removes a nested key via dot notation', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { daily: { steps: 100, calories: 200 } },
-        });
-
-        const updated = await UserManager.deleteProtectedAttributeForUser(
-          user!.id,
-          'ns',
-          'daily.steps',
-        );
-        expect(updated!.protectedAttributes.daily).not.toHaveProperty('steps');
-        expect(updated!.protectedAttributes.daily.calories).toBe(200);
+      const result = await UserManager.updateProtectedAttributesForUser(user.id, 'ns', {
+        id: 'hack',
+        safe: 99,
       });
 
-      it('updates cache after key deletion', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { x: 1, y: 2 },
-        });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.successes).toHaveLength(1);
+        expect(result.successes[0].protectedAttributes.safe).toBe(99);
+        expect(result.successes[0].protectedAttributes).not.toHaveProperty('id');
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0].code).toBe('VALIDATION_ERROR');
+        expect(result.failures[0].details?.keyPath).toBe('id');
+      }
+    });
+  });
 
-        await UserManager.deleteProtectedAttributeForUser(user!.id, 'ns', 'x');
+  // ===========================================================================
+  // deleteProtectedAttributesForUser
+  // ===========================================================================
 
-        const pa = UserManager.getProtectedAttributesForUser(user!.id, ['ns']);
-        expect(pa[0].protectedAttributes).not.toHaveProperty('x');
-      });
+  describe('deleteProtectedAttributesForUser', () => {
+    it('returns ok:true — deletes a single namespace', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'ns1', protectedAttributes: { a: 1 } },
+        { namespace: 'ns2', protectedAttributes: { b: 2 } },
+      ]);
 
-      it('returns null for unknown userId', async () => {
-        const result = await UserManager.deleteProtectedAttributeForUser('nobody', 'ns', 'x');
-        expect(result).toBeNull();
-      });
+      expect((await UserManager.deleteProtectedAttributesForUser(user.id, 'ns1')).ok).toBe(true);
 
-      it('returns null if namespace does not exist', async () => {
-        const user = await createUser('u1');
-        const result = await UserManager.deleteProtectedAttributeForUser(user!.id, 'no-ns', 'x');
-        expect(result).toBeNull();
-      });
-
-      it('throws if path contains reserved key', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: {},
-        });
-
-        await expect(
-          UserManager.deleteProtectedAttributeForUser(user!.id, 'ns', 'id'),
-        ).rejects.toThrow();
-      });
+      const remaining = UserManager.getAllProtectedAttributesForUser(user.id);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].namespace).toBe('ns2');
     });
 
-    describe('deleteProtectedAttributesFromNamespaceForUser', () => {
-      it('removes multiple key paths from a namespace', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { a: 1, b: 2, c: 3 },
-        });
+    it('deletes multiple namespaces at once', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'ns1', protectedAttributes: {} },
+        { namespace: 'ns2', protectedAttributes: {} },
+        { namespace: 'ns3', protectedAttributes: {} },
+      ]);
 
-        const updated = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
-          user!.id,
-          'ns',
-          ['a', 'b'],
-        );
+      await UserManager.deleteProtectedAttributesForUser(user.id, ['ns1', 'ns2']);
 
-        expect(updated!.protectedAttributes).not.toHaveProperty('a');
-        expect(updated!.protectedAttributes).not.toHaveProperty('b');
-        expect(updated!.protectedAttributes.c).toBe(3);
-      });
-
-      it('accepts a single string path as well as an array', async () => {
-        const user = await createUser('u1');
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { x: 1, y: 2 },
-        });
-
-        const updated = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
-          user!.id,
-          'ns',
-          'x',
-        );
-        expect(updated!.protectedAttributes).not.toHaveProperty('x');
-        expect(updated!.protectedAttributes.y).toBe(2);
-      });
-
-      it('returns null for unknown userId', async () => {
-        const result = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
-          'nobody',
-          'ns',
-          ['x'],
-        );
-        expect(result).toBeNull();
-      });
-
-      it('returns null if namespace does not exist', async () => {
-        const user = await createUser('u1');
-        const result = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
-          user!.id,
-          'no-ns',
-          ['x'],
-        );
-        expect(result).toBeNull();
-      });
+      const remaining = UserManager.getAllProtectedAttributesForUser(user.id);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].namespace).toBe('ns3');
     });
 
-    describe('cache vs DB consistency', () => {
-      it('cache reflects DB state after a simulated restart (re-init)', async () => {
-        await UserManager.createUsers([
-          { uniqueIdentifier: 'r1', attributes: { val: 1 } },
-          { uniqueIdentifier: 'r2', attributes: { val: 2 } },
-        ]);
-        const u1 = UserManager.getUserByUniqueIdentifier('r1')!;
-        await UserManager.setProtectedAttributesForUser(u1.id, {
-          namespace: 'ns',
-          protectedAttributes: { secret: 'xyz' },
-        });
-
-        // Simulate restart
-        await UserManager.shutdown();
-        await UserManager.init();
-
-        // Users should be back in cache
-        expect(UserManager.getAllUsers()).toHaveLength(2);
-        expect(UserManager.getUserByUniqueIdentifier('r1')).not.toBeNull();
-
-        // Protected attributes should be back in cache
-        const reloadedU1 = UserManager.getUserByUniqueIdentifier('r1')!;
-        const pa = UserManager.getAllProtectedAttributesForUser(reloadedU1.id);
-        expect(pa).toHaveLength(1);
-        expect(pa[0].protectedAttributes).toMatchObject({ secret: 'xyz' });
+    it('updates cache after deletion', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { x: 1 },
       });
 
-      it('DB and cache agree after a series of mutations', async () => {
-        const user = await createUser('u1', { score: 0 });
+      await UserManager.deleteProtectedAttributesForUser(user.id, 'ns');
+      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])).toEqual([]);
+    });
 
-        await UserManager.updateUserById(user!.id, { score: 10 });
-        await UserManager.setProtectedAttributesForUser(user!.id, {
-          namespace: 'ns',
-          protectedAttributes: { key: 'value' },
-        });
-        await UserManager.updateProtectedAttributeForUser(user!.id, 'ns', 'key', 'updated');
-
-        // Cache
-        const fromCache = UserManager.getUserById(user!.id);
-        expect(fromCache!.score).toBe(10);
-        const paFromCache = UserManager.getProtectedAttributesForUser(user!.id, ['ns']);
-        expect(paFromCache[0].protectedAttributes.key).toBe('updated');
-
-        // DB
-        const dbUsers = await dm.getAllInCollection<any>(USERS);
-        expect(dbUsers[0].score).toBe(10);
-        const dbPa = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
-        expect(dbPa[0].protectedAttributes.key).toBe('updated');
+    it('removes from DB', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: {},
       });
+
+      await UserManager.deleteProtectedAttributesForUser(user.id, 'ns');
+      expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(await UserManager.deleteProtectedAttributesForUser('nobody', 'ns'), 'NOT_FOUND');
+    });
+
+    it('returns ok:false with NOT_FOUND when namespace does not exist', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributesForUser(user.id, 'no-such-ns'),
+        'NOT_FOUND',
+      );
+    });
+  });
+
+  // ===========================================================================
+  // deleteAllProtectedAttributesForUser
+  // ===========================================================================
+
+  describe('deleteAllProtectedAttributesForUser', () => {
+    it('deletes all namespaces for the user', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, [
+        { namespace: 'ns1', protectedAttributes: {} },
+        { namespace: 'ns2', protectedAttributes: {} },
+      ]);
+
+      await UserManager.deleteAllProtectedAttributesForUser(user.id);
+
+      expect(UserManager.getAllProtectedAttributesForUser(user.id)).toHaveLength(0);
+      expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
+    });
+
+    it('is a no-op for a user with no protected attributes', async () => {
+      const user = await createUser('u1');
+      await expect(UserManager.deleteAllProtectedAttributesForUser(user.id)).resolves.not.toThrow();
+    });
+
+    it('does not affect other users protected attributes', async () => {
+      const u1 = await createUser('u1');
+      const u2 = await createUser('u2');
+
+      await UserManager.setProtectedAttributesForUser(u1.id, { namespace: 'ns', protectedAttributes: { a: 1 } });
+      await UserManager.setProtectedAttributesForUser(u2.id, { namespace: 'ns', protectedAttributes: { b: 2 } });
+
+      await UserManager.deleteAllProtectedAttributesForUser(u1.id);
+
+      expect(UserManager.getAllProtectedAttributesForUser(u2.id)).toHaveLength(1);
+    });
+  });
+
+  // ===========================================================================
+  // deleteProtectedAttributeForUser
+  // ===========================================================================
+
+  describe('deleteProtectedAttributeForUser', () => {
+    it('returns ok:true — removes a top-level key', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { a: 1, b: 2 },
+      });
+
+      const updated = expectOk(await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'a'));
+      expect(updated.protectedAttributes).not.toHaveProperty('a');
+      expect(updated.protectedAttributes.b).toBe(2);
+    });
+
+    it('removes a nested key via dot notation', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { daily: { steps: 100, calories: 200 } },
+      });
+
+      const updated = expectOk(
+        await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'daily.steps'),
+      );
+      expect(updated.protectedAttributes.daily).not.toHaveProperty('steps');
+      expect(updated.protectedAttributes.daily.calories).toBe(200);
+    });
+
+    it('updates cache after key deletion', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { x: 1, y: 2 },
+      });
+
+      await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'x');
+      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes).not.toHaveProperty('x');
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributeForUser('nobody', 'ns', 'x'),
+        'NOT_FOUND',
+      );
+    });
+
+    it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributeForUser(user.id, 'no-ns', 'x'),
+        'NOT_FOUND',
+      );
+    });
+
+    it('returns ok:false with VALIDATION_ERROR for reserved keyPath "id"', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, { namespace: 'ns', protectedAttributes: {} });
+
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'id'),
+        'VALIDATION_ERROR',
+      );
+    });
+  });
+
+  // ===========================================================================
+  // deleteProtectedAttributesFromNamespaceForUser
+  // ===========================================================================
+
+  describe('deleteProtectedAttributesFromNamespaceForUser', () => {
+    it('returns ok:true — removes multiple key paths from a namespace', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { a: 1, b: 2, c: 3 },
+      });
+
+      const updated = expectOk(
+        await UserManager.deleteProtectedAttributesFromNamespaceForUser(user.id, 'ns', ['a', 'b']),
+      );
+      expect(updated.protectedAttributes).not.toHaveProperty('a');
+      expect(updated.protectedAttributes).not.toHaveProperty('b');
+      expect(updated.protectedAttributes.c).toBe(3);
+    });
+
+    it('accepts a single string path as well as an array', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { x: 1, y: 2 },
+      });
+
+      const updated = expectOk(
+        await UserManager.deleteProtectedAttributesFromNamespaceForUser(user.id, 'ns', 'x'),
+      );
+      expect(updated.protectedAttributes).not.toHaveProperty('x');
+      expect(updated.protectedAttributes.y).toBe(2);
+    });
+
+    it('returns ok:false with partial successes when some paths are reserved', async () => {
+      const user = await createUser('u1');
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { safe: 1 },
+      });
+
+      const result = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
+        user.id, 'ns', ['id', 'safe'],
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.successes).toHaveLength(1);
+        expect(result.successes[0].protectedAttributes).not.toHaveProperty('safe');
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0].code).toBe('VALIDATION_ERROR');
+        expect(result.failures[0].details?.keyPath).toBe('id');
+      }
+    });
+
+    it('returns ok:false with NOT_FOUND for unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributesFromNamespaceForUser('nobody', 'ns', ['x']),
+        'NOT_FOUND',
+      );
+    });
+
+    it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
+      const user = await createUser('u1');
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributesFromNamespaceForUser(user.id, 'no-ns', ['x']),
+        'NOT_FOUND',
+      );
+    });
+  });
+
+  // ===========================================================================
+  // Cache vs DB consistency
+  // ===========================================================================
+
+  describe('cache vs DB consistency', () => {
+    it('cache reflects DB state after a simulated restart (re-init)', async () => {
+      await UserManager.createUsers([
+        { uniqueIdentifier: 'r1', attributes: { val: 1 } },
+        { uniqueIdentifier: 'r2', attributes: { val: 2 } },
+      ]);
+      const u1 = UserManager.getUserByUniqueIdentifier('r1')!;
+      await UserManager.setProtectedAttributesForUser(u1.id, {
+        namespace: 'ns',
+        protectedAttributes: { secret: 'xyz' },
+      });
+
+      // Simulate restart
+      await UserManager.shutdown();
+      await UserManager.init();
+
+      expect(UserManager.getAllUsers()).toHaveLength(2);
+      expect(UserManager.getUserByUniqueIdentifier('r1')).not.toBeNull();
+
+      const reloadedU1 = UserManager.getUserByUniqueIdentifier('r1')!;
+      const pa = UserManager.getAllProtectedAttributesForUser(reloadedU1.id);
+      expect(pa).toHaveLength(1);
+      expect(pa[0].protectedAttributes).toMatchObject({ secret: 'xyz' });
+    });
+
+    it('DB and cache agree after a series of mutations', async () => {
+      const user = await createUser('u1', { score: 0 });
+
+      await UserManager.updateUserById(user.id, { score: 10 });
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: { key: 'value' },
+      });
+      await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'key', 'updated');
+
+      // Cache
+      expect(UserManager.getUserById(user.id)!.score).toBe(10);
+      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.key).toBe('updated');
+
+      // DB
+      const dbUsers = await dm.getAllInCollection<any>(USERS);
+      expect(dbUsers[0].score).toBe(10);
+      const dbPa = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
+      expect(dbPa[0].protectedAttributes.key).toBe('updated');
+    });
+
+    it('CoreResult shape is consistent across single and bulk operations', async () => {
+      const single = await UserManager.createUser({ uniqueIdentifier: 'shape-test', attributes: {} });
+      expect(single).toHaveProperty('ok');
+      expect(single).toHaveProperty('successes');
+      if (!single.ok) expect(single).toHaveProperty('failures');
+
+      const bulk = await UserManager.createUsers([
+        { uniqueIdentifier: 'bulk-shape-1', attributes: {} },
+        { uniqueIdentifier: 'bulk-shape-2', attributes: {} },
+      ]);
+      expect(bulk).toHaveProperty('ok');
+      expect(bulk).toHaveProperty('successes');
+      if (!bulk.ok) expect(bulk).toHaveProperty('failures');
     });
   });
 });
