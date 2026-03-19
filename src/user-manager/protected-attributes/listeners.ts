@@ -1,6 +1,4 @@
-import { ChangeListenerManager } from '../../data-manager/change-listener.manager';
-import { PROTECTED_ATTRIBUTES } from '../../data-manager/constants';
-import { CollectionChangeType } from '../../data-manager/types';
+import { ChangeListenerManager, PROTECTED_ATTRIBUTES, CollectionChangeType } from '../../data-manager';
 import { ProtectedAttributesRecord } from '../types';
 import {
   deleteProtectedAttributesDocByIdFromCache,
@@ -57,11 +55,12 @@ const setupProtectedAttributesChangeListeners = (): void => {
 
 /**
  * Removes protected-attributes change listeners.
+ * Awaits each removal to ensure underlying streams are fully closed.
  */
-const removeProtectedAttributesChangeListeners = (): void => {
-  clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.INSERT);
-  clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.UPDATE);
-  clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.DELETE);
+const removeProtectedAttributesChangeListeners = async (): Promise<void> => {
+  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.INSERT);
+  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.UPDATE);
+  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.DELETE);
 };
 
 export { setupProtectedAttributesChangeListeners, removeProtectedAttributesChangeListeners };
