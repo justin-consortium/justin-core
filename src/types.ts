@@ -9,7 +9,7 @@
  * and a human-readable `reason` for logging. Identity fields (`id`,
  * `uniqueIdentifier`) are optional so the same shape works across all managers
  * without requiring any particular domain model. Operation-specific context
- * (e.g. which namespace failed) goes in `details`.
+ * (e.g. which namespace failed, which key path was rejected) goes in `details`.
  *
  * @example
  * ```ts
@@ -44,11 +44,11 @@ export type FailureEntry = {
  * - `ok: true`  — every item succeeded. `successes` holds the results.
  *                 No `failures` field is present.
  * - `ok: false` — at least one item failed. `successes` holds any partial
- *                 results; `failures` holds structured detail for every
- *                 item that did not succeed.
+ *                 results; `failures` holds structured detail for every item
+ *                 that did not succeed.
  *
- * Single operations use the same shape — `successes` contains one element
- * on success, `failures` contains one element on failure.
+ * Single operations use the same shape — `successes` contains one element on
+ * success, `failures` contains one element on failure.
  *
  * @typeParam T - The type of each successfully processed item.
  *
@@ -64,17 +64,10 @@ export type FailureEntry = {
  *
  * // Bulk create
  * const result = await UserManager.createUsers(records);
- * console.log(result.successes); // JUser[]
  * if (!result.ok) {
  *   for (const { uniqueIdentifier, code, reason } of result.failures) {
  *     console.warn(`[${code}] (${uniqueIdentifier}): ${reason}`);
  *   }
- * }
- *
- * // Delete
- * const result = await UserManager.deleteUserById(userId);
- * if (!result.ok) {
- *   const [{ code, reason }] = result.failures;
  * }
  * ```
  */

@@ -1,4 +1,5 @@
-import { ChangeListenerManager, USERS, CollectionChangeType } from '../../data-manager';
+import { ChangeListenerManager, CollectionChangeTypeEnum } from '../../data-manager';
+import { USERS } from '../constants';
 import { JUser } from '../types';
 import { deleteUserFromCache, upsertUserInCache } from './cache';
 import { createLogger } from '../../logger';
@@ -18,7 +19,7 @@ const clm = ChangeListenerManager.getInstance();
 const setupUserChangeListeners = (
   onUserDeletedByUniqueIdentifier?: (uniqueIdentifier: string) => void,
 ): void => {
-  clm.addChangeListener(USERS, CollectionChangeType.INSERT, (jUser: JUser) => {
+  clm.addChangeListener(USERS, CollectionChangeTypeEnum.INSERT, (jUser: JUser) => {
     try {
       upsertUserInCache(jUser);
     } catch (error) {
@@ -26,7 +27,7 @@ const setupUserChangeListeners = (
     }
   });
 
-  clm.addChangeListener(USERS, CollectionChangeType.UPDATE, (jUser: JUser) => {
+  clm.addChangeListener(USERS, CollectionChangeTypeEnum.UPDATE, (jUser: JUser) => {
     try {
       upsertUserInCache(jUser);
     } catch (error) {
@@ -34,7 +35,7 @@ const setupUserChangeListeners = (
     }
   });
 
-  clm.addChangeListener(USERS, CollectionChangeType.DELETE, (userId: string) => {
+  clm.addChangeListener(USERS, CollectionChangeTypeEnum.DELETE, (userId: string) => {
     try {
       const uniqueIdentifier = deleteUserFromCache(userId);
 
@@ -52,9 +53,9 @@ const setupUserChangeListeners = (
  * Awaits each removal to ensure underlying streams are fully closed.
  */
 const removeUserChangeListeners = async (): Promise<void> => {
-  await clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
-  await clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
-  await clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
+  await clm.removeChangeListener(USERS, CollectionChangeTypeEnum.INSERT);
+  await clm.removeChangeListener(USERS, CollectionChangeTypeEnum.UPDATE);
+  await clm.removeChangeListener(USERS, CollectionChangeTypeEnum.DELETE);
 };
 
 export { setupUserChangeListeners, removeUserChangeListeners };

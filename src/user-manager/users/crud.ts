@@ -1,4 +1,4 @@
-import { DataManager, USERS } from '../../data-manager';
+import { DataManager } from '../../data-manager';
 import {
   checkInitialized,
   coreSuccess,
@@ -8,9 +8,10 @@ import {
   makeLoopFailureCollector,
 } from '../../utils';
 import { JustinErrorCode } from '../../errors';
+import type { CoreResult, FailureEntry } from '../../types';
 import type { JUser, NewUserRecord } from '../types';
-import type { CoreResult } from '../../types';
 import { assertNoReservedKeys, isNonEmptyString, isPlainObject, omitKeys } from '../helpers';
+import { USERS } from '../constants';
 import {
   getAllUsersFromCache,
   getUserByIdFromCache,
@@ -21,37 +22,42 @@ import {
 
 const dm = DataManager.getInstance();
 
-const _checkInitialization = (): void => {
-  checkInitialized(dm.getInitializationStatus(), 'UserManager');
-};
+const _checkInit = (): void => checkInitialized(dm.getInitializationStatus(), 'UserManager');
+
+// ---------------------------------------------------------------------------
+// Identifier uniqueness
+// ---------------------------------------------------------------------------
 
 /**
- * Checks whether a uniqueIdentifier is available (cache-backed).
+ * Checks whether a `uniqueIdentifier` is available, using the in-memory cache
+ * so no DB round-trip is needed.
  *
- * @param userUniqueIdentifier - The unique identifier to check.
- * @returns True if unique; false if it already exists or input is invalid.
+ * Returns `false` for empty or non-string input.
+ *
+ * @param uniqueIdentifier - The identifier to check.
  */
-const isIdentifierUnique = (userUniqueIdentifier: string): boolean => {
-  _checkInitialization();
-
-  if (!isNonEmptyString(userUniqueIdentifier)) return false;
-
-  const existingUserId = getUserIdByUniqueIdentifierFromCache(userUniqueIdentifier);
-  return !Boolean(existingUserId);
+export const isIdentifierUnique = (uniqueIdentifier: string): boolean => {
+  _checkInit();
+  if (!isNonEmptyString(uniqueIdentifier)) return false;
+  return !Boolean(getUserIdByUniqueIdentifierFromCache(uniqueIdentifier));
 };
 
+// ---------------------------------------------------------------------------
+// Create
+// ---------------------------------------------------------------------------
+
 /**
- * Creates a single user record in the USERS store.
+ * Persists a single new user record to the `users` collection and updates
+ * the in-memory cache on success.
  *
- * Persisted shape: { uniqueIdentifier, ...attributes }
- * Returns null on any validation failure or DB error — caller is responsible
- * for logging context since this is used both standalone and from createUserRecords.
+ * Validates the record shape, rejects reserved attribute keys, and checks
+ * `uniqueIdentifier` uniqueness against the cache before hitting the DB.
  *
- * @param record - New user record.
- * @returns The created user or null if input is invalid or the DB operation fails.
+ * @param record - New user data.
+ * @returns A {@link CoreResult} containing the created {@link JUser} on success.
  */
-const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
-  _checkInitialization();
+export const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
+  _checkInit();
 
   const uid = isNonEmptyString((record as any)?.uniqueIdentifier)
     ? ((record as any).uniqueIdentifier as string)
@@ -64,6 +70,7 @@ const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser
       'record must be a plain object',
       { uniqueIdentifier: uid },
     );
+
   if (!isNonEmptyString(record.uniqueIdentifier))
     return coreFailureResult(
       'createUserRecord',
@@ -80,6 +87,7 @@ const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser
       'attributes must be a plain object',
       { uniqueIdentifier: uid },
     );
+
   if (!assertNoReservedKeys(attrs, ['id', 'uniqueIdentifier']))
     return coreFailureResult(
       'createUserRecord',
@@ -87,6 +95,7 @@ const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser
       'attributes contains reserved keys (id, uniqueIdentifier)',
       { uniqueIdentifier: uid },
     );
+
   if (!isIdentifierUnique(record.uniqueIdentifier))
     return coreFailureResult(
       'createUserRecord',
@@ -95,46 +104,39 @@ const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser
       { uniqueIdentifier: uid },
     );
 
-  const convertedUser: Record<string, any> = {
-    uniqueIdentifier: record.uniqueIdentifier,
-    ...attrs,
-  };
+  const doc: Record<string, any> = { uniqueIdentifier: record.uniqueIdentifier, ...attrs };
 
-  const addResult = unwrapSuccess<typeof convertedUser & { id: string }, JUser>(
-    await dm.addItemToCollection(USERS, convertedUser),
+  const addResult = unwrapSuccess<typeof doc & { id: string }, JUser>(
+    await dm.addItemToCollection(USERS, doc),
     'createUserRecord',
     { uniqueIdentifier: uid },
   );
   if (!addResult.ok) return addResult;
 
-  const addedUser = addResult.successes[0] as JUser;
-  upsertUserInCache(addedUser);
-  return coreSuccess([addedUser]);
+  const created = addResult.successes[0] as JUser;
+  upsertUserInCache(created);
+  return coreSuccess([created]);
 };
 
 /**
- * Creates multiple user records.
+ * Persists multiple new user records, validating each individually and
+ * collecting per-record failures without stopping the batch.
  *
- * Validates each record individually and tracks per-record failures with
- * full identity context. Protected-attributes creation is intentionally NOT
- * handled here — cross-domain orchestration belongs in user-manager.ts.
+ * Protected-attributes creation is intentionally not handled here —
+ * cross-domain orchestration lives in `user-manager.ts`.
  *
- * @param records - Array of new user records.
+ * @param records - Array of new user data.
  * @returns A {@link CoreResult} with per-record success and failure detail.
  */
-const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
-  _checkInitialization();
+export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
+  _checkInit();
 
-  if (!Array.isArray(records) || records.length === 0) {
-    return coreSuccess([]);
-  }
+  if (!Array.isArray(records) || records.length === 0) return coreSuccess([]);
 
   const successes: JUser[] = [];
-  const allFailures: import('../../types').FailureEntry[] = [];
+  const allFailures: FailureEntry[] = [];
 
   for (const record of records) {
-    // Extract uniqueIdentifier early — identity varies per record so
-    // construct a fresh collector inside the loop with it baked in
     const uniqueIdentifier = isNonEmptyString((record as any)?.uniqueIdentifier)
       ? ((record as any).uniqueIdentifier as string)
       : '(unknown)';
@@ -178,65 +180,71 @@ const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<J
       continue;
     }
 
-    const userResult = await createUserRecord(record);
-    if (userResult.ok) {
-      successes.push(userResult.successes[0]);
+    const result = await createUserRecord(record);
+    if (result.ok) {
+      successes.push(result.successes[0]);
     } else {
-      allFailures.push(...userResult.failures);
+      allFailures.push(...result.failures);
     }
   }
 
   return allFailures.length > 0 ? coreFailure(allFailures, successes) : coreSuccess(successes);
 };
 
+// ---------------------------------------------------------------------------
+// Read (cache-backed)
+// ---------------------------------------------------------------------------
+
 /**
- * Retrieves all cached users.
+ * Returns all users from the in-memory cache.
  */
-const getAllUsers = (): JUser[] => {
-  _checkInitialization();
+export const getAllUsers = (): JUser[] => {
+  _checkInit();
   return getAllUsersFromCache();
 };
 
 /**
- * Retrieves a user by id from the cache.
+ * Returns the cached user with the given `id`, or `null` if not found.
  *
- * @param userId - The user's id.
- * @returns The user or null.
+ * @param userId - Primary key to look up.
  */
-const getUserById = (userId: string): JUser | null => {
-  _checkInitialization();
-
+export const getUserById = (userId: string): JUser | null => {
+  _checkInit();
   if (!isNonEmptyString(userId)) return null;
-
   return getUserByIdFromCache(userId);
 };
 
 /**
- * Retrieves a user by uniqueIdentifier from the cache.
+ * Returns the cached user whose `uniqueIdentifier` matches, or `null`.
  *
- * @param uniqueIdentifier - The unique identifier.
- * @returns The user or null.
+ * @param uniqueIdentifier - Unique identifier to look up.
  */
-const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
-  _checkInitialization();
-
+export const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
+  _checkInit();
   if (!isNonEmptyString(uniqueIdentifier)) return null;
-
   return getUserByUniqueIdentifierFromCache(uniqueIdentifier);
 };
 
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+
 /**
- * Updates a user's application-level fields by userId.
+ * Updates a user's application-level fields by `id`, merging the provided
+ * attributes onto the existing record. Reserved fields (`id`, `uniqueIdentifier`)
+ * are rejected.
  *
- * @param userId - The user's id.
- * @param attributesToUpdate - Fields to update.
- * @returns Updated user, or null if input is invalid, user not found, or the DB operation fails.
+ * Updates the cache on success.
+ *
+ * @param userId - Primary key of the user to update.
+ * @param attributesToUpdate - Partial application data to merge.
+ * @returns A {@link CoreResult} containing the updated {@link JUser} on success.
  */
-const updateUserById = async (
+export const updateUserById = async (
   userId: string,
   attributesToUpdate: object,
 ): Promise<CoreResult<JUser>> => {
-  _checkInitialization();
+  _checkInit();
 
   if (!isNonEmptyString(userId))
     return coreFailureResult(
@@ -245,6 +253,7 @@ const updateUserById = async (
       'userId must be a non-empty string',
       { id: userId },
     );
+
   if (!isPlainObject(attributesToUpdate))
     return coreFailureResult(
       'updateUserById',
@@ -252,6 +261,7 @@ const updateUserById = async (
       'attributesToUpdate must be a plain object',
       { id: userId },
     );
+
   if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier']))
     return coreFailureResult(
       'updateUserById',
@@ -260,8 +270,8 @@ const updateUserById = async (
       { id: userId },
     );
 
-  const existingUser = getUserByIdFromCache(userId);
-  if (!existingUser)
+  const existing = getUserByIdFromCache(userId);
+  if (!existing)
     return coreFailureResult(
       'updateUserById',
       JustinErrorCode.NOT_FOUND,
@@ -269,83 +279,71 @@ const updateUserById = async (
       { id: userId },
     );
 
-  const merged = { ...existingUser, ...attributesToUpdate };
-  const dataToUpdate = omitKeys(merged as any, ['id', 'uniqueIdentifier'] as const);
+  const merged = omitKeys(
+    { ...existing, ...attributesToUpdate } as any,
+    ['id', 'uniqueIdentifier'] as const,
+  );
 
   const updateResult = unwrapSuccess<object, JUser>(
-    await dm.updateItemByIdInCollection(USERS, userId, { ...dataToUpdate }),
+    await dm.updateItemByIdInCollection(USERS, userId, { ...merged }),
     'updateUserById',
     { id: userId },
   );
   if (!updateResult.ok) return updateResult;
 
-  const updatedUser = updateResult.successes[0] as JUser;
-  upsertUserInCache(updatedUser);
-  return coreSuccess([updatedUser]);
+  const updated = updateResult.successes[0] as JUser;
+  upsertUserInCache(updated);
+  return coreSuccess([updated]);
 };
 
 /**
- * Updates a user's application-level fields by uniqueIdentifier.
+ * Updates a user's application-level fields by `uniqueIdentifier`.
  *
- * @param userUniqueIdentifier - Unique identifier.
- * @param attributesToUpdate - Fields to update.
- * @returns Updated user, or null if not found, input is invalid, or the DB operation fails.
+ * Resolves the `uniqueIdentifier` to an `id` via the cache, then delegates
+ * to {@link updateUserById}.
+ *
+ * @param uniqueIdentifier - Unique identifier of the user to update.
+ * @param attributesToUpdate - Partial application data to merge.
+ * @returns A {@link CoreResult} containing the updated {@link JUser} on success.
  */
-const updateUserByUniqueIdentifier = async (
-  userUniqueIdentifier: string,
+export const updateUserByUniqueIdentifier = async (
+  uniqueIdentifier: string,
   attributesToUpdate: Record<string, any>,
 ): Promise<CoreResult<JUser>> => {
-  _checkInitialization();
+  _checkInit();
 
-  if (!isNonEmptyString(userUniqueIdentifier))
+  if (!isNonEmptyString(uniqueIdentifier))
     return coreFailureResult(
       'updateUserByUniqueIdentifier',
       JustinErrorCode.VALIDATION_ERROR,
       'uniqueIdentifier must be a non-empty string',
-      { uniqueIdentifier: userUniqueIdentifier },
+      { uniqueIdentifier },
     );
+
   if (!isPlainObject(attributesToUpdate))
     return coreFailureResult(
       'updateUserByUniqueIdentifier',
       JustinErrorCode.VALIDATION_ERROR,
       'attributesToUpdate must be a plain object',
-      { uniqueIdentifier: userUniqueIdentifier },
+      { uniqueIdentifier },
     );
+
   if (!assertNoReservedKeys(attributesToUpdate, ['id', 'uniqueIdentifier']))
     return coreFailureResult(
       'updateUserByUniqueIdentifier',
       JustinErrorCode.VALIDATION_ERROR,
       'attributesToUpdate contains reserved keys (id, uniqueIdentifier)',
-      { uniqueIdentifier: userUniqueIdentifier },
+      { uniqueIdentifier },
     );
 
-  const user = getUserByUniqueIdentifierFromCache(userUniqueIdentifier);
+  const user = getUserByUniqueIdentifierFromCache(uniqueIdentifier);
   if (!user)
     return coreFailureResult(
       'updateUserByUniqueIdentifier',
       JustinErrorCode.NOT_FOUND,
-      `user (${userUniqueIdentifier}) not found`,
-      { uniqueIdentifier: userUniqueIdentifier },
+      `user (${uniqueIdentifier}) not found`,
+      { uniqueIdentifier },
     );
 
-  return await updateUserById(user.id, attributesToUpdate);
-};
-
-export {
-  isIdentifierUnique,
-  createUserRecord,
-  createUserRecords,
-  getAllUsers,
-  getUserById,
-  getUserByUniqueIdentifier,
-  updateUserById,
-  updateUserByUniqueIdentifier,
-};
-
-/**
- * Testing exports for CRUD internals.
- * @private
- */
-export const __testing__userCrud = {
-  _checkInitialization,
+  return updateUserById(user.id, attributesToUpdate);
 };

@@ -1,4 +1,4 @@
-export { UserManager } from './user-manager';
+export { UserManager, TestingUserManager } from './user-manager';
 export type {
   JUser,
   BaseJUser,
@@ -7,3 +7,4 @@ export type {
   ProtectedAttributesRecord,
   BaseProtectedAttributes,
 } from './types';
+export { USERS, PROTECTED_ATTRIBUTES } from './constants';

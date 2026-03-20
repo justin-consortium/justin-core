@@ -1,4 +1,5 @@
-import { DataManager, PROTECTED_ATTRIBUTES } from '../../data-manager';
+import { DataManager } from '../../data-manager';
+import { PROTECTED_ATTRIBUTES } from '../constants';
 import {
   checkInitialized,
   coreSuccess,
@@ -20,8 +21,8 @@ import {
 } from '../helpers';
 import {
   deleteProtectedAttributesByUniqueIdentifierFromCache,
-  getAllProtectedAttributesFromCache,
-  getProtectedAttributesByNamespacesFromCache,
+  getAllProtectedAttributesByUniqueIdentifier as getAllProtectedAttributesFromCache,
+  getProtectedAttributesByUniqueIdentifier as getProtectedAttributesByNamespacesFromCache,
   upsertProtectedAttributesInCache,
 } from './cache';
 

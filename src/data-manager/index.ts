@@ -1,10 +1,11 @@
-export { default as DataManager } from './data-manager';
+export { default as DataManager, configureDB, getPendingConfig } from './data-manager';
 export { ChangeListenerManager } from './change-listener.manager';
-export { DBType, USERS, PROTECTED_ATTRIBUTES, NO_ID } from './constants';
-export {
-  SortDirection,
-  CollectionChangeType,
+export { DBType, NO_ID } from './constants';
+export type {
   DataManagerAdapter,
   CollectionChangeListener,
   CollectionChangeNotifier,
+  CollectionChangeType,
+  DBConfig,
 } from './types';
+export { CollectionChangeType as CollectionChangeTypeEnum } from './types';

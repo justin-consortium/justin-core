@@ -4,74 +4,32 @@
 export type BaseSeverity = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
 
 /**
- * Represents a single structured log entry emitted by the logging system.
+ * A single structured log entry emitted by the logging system.
  *
- * A `LoggerEntry` consists of:
- * - a severity level indicating importance,
- * - a human-readable message describing what occurred,
- * - optional structured fields providing event-specific details.
- *
- * This interface is intentionally minimal and transport-agnostic so that
- * log entries can be rendered to the console, serialized to JSON, or sent
- * to external logging systems without loss of meaning.
+ * Intentionally minimal and transport-agnostic — entries can be rendered
+ * to the console, serialized to JSON, or forwarded to an external logging
+ * system without loss of meaning. Structured context travels alongside
+ * the entry as the second argument to {@link EmitFn}.
  */
 export interface LoggerEntry<T extends string = BaseSeverity> {
   /**
-   * Severity level of the log entry.
-   *
-   * Used to classify the importance or urgency of the event (e.g. DEBUG, INFO,
-   * WARN, ERROR). Severity is typically used for filtering, alerting, and
-   * routing logs in production environments.
+   * Severity level of this entry. Used for filtering, alerting, and routing
+   * in production environments.
    */
   severity: T;
 
   /**
-   * Human-readable description of the event being logged.
-   *
-   * The message should describe *what happened* in a concise, stable way.
-   * Avoid embedding variable data directly in the message string; prefer
-   * structured metadata via {@link fields} for values that may change or
-   * need to be queried.
+   * Human-readable description of the event. Should describe *what happened*
+   * in a concise, stable way — avoid embedding variable data here; put it in
+   * the context object passed to {@link EmitFn} instead.
    */
   message: string;
-
-  /**
-   * Optional structured metadata for this log entry.
-   *
-   * Use `fields` to attach small, event-specific, and log-safe data that
-   * helps explain *this particular log event*.
-   *
-   * Prefer `fields` over string interpolation when including identifiers
-   * or values that may be useful for filtering or querying logs.
-   *
-   * Prefer structured fields instead:
-   * ```ts
-   * Log.debug("No results for handler", {
-   *   handlerName,
-   * });
-   * ```
-   *
-   * Typical uses:
-   * - identifiers (handlerName, userId, collectionName)
-   * - counts or sizes (requested, returned)
-   * - timing information (durationMs)
-   *
-   * Do NOT use `fields` for:
-   * - request-wide or module-wide context (use logger context instead)
-   * - large objects or raw payloads
-   * - sensitive or personally identifiable information
-   */
-  fields?: Record<string, unknown>;
 }
 
 /**
- * Function signature for emitters (console, remote, etc.).
- *
- * The logger calls this synchronously and does not await the result. Async
- * emitters are supported — the returned promise will be fire-and-forget. If
- * your emitter does async work (e.g. writing to a database or external
- * service), you are responsible for handling errors inside the function.
- * Any unhandled rejection will not be caught by the logger.
+ * Replaces the default console output. The logger calls this synchronously
+ * and does not await the result — async emitters are supported but run
+ * fire-and-forget. Handle all errors inside your function.
  *
  * @example
  * ```ts
@@ -80,15 +38,11 @@ export interface LoggerEntry<T extends string = BaseSeverity> {
  *     try {
  *       await myTransport.send({ ...entry, ...context });
  *     } catch (err) {
- *       console.error('Log transport failed', err);
+ *       console.error('transport failed', err);
  *     }
  *   },
  * });
  * ```
- *
- * @typeParam T - Severity union used by this emitter.
- * @param entry - The structured log entry to emit.
- * @param mergedContext - The merged global + instance context.
  */
 export type EmitFn<T extends string = BaseSeverity> = (
   entry: LoggerEntry<T>,
@@ -96,14 +50,9 @@ export type EmitFn<T extends string = BaseSeverity> = (
 ) => void;
 
 /**
- * Function signature for log callbacks (fire-and-forget).
- *
- * Called after the emitter runs. The logger does not await the result — async
- * callbacks are supported but run fire-and-forget. Errors thrown synchronously
- * are silently swallowed by the logger. If your callback does async work
- * (e.g. writing to a database or external service), you are responsible for
- * handling errors inside the function. Any unhandled rejection will not be
- * caught by the logger.
+ * Fires after the emitter runs. Useful for adding a second transport on top
+ * of the existing console output. Synchronous throws are silently swallowed;
+ * async functions run fire-and-forget — handle all errors inside your function.
  *
  * @example
  * ```ts
@@ -112,55 +61,38 @@ export type EmitFn<T extends string = BaseSeverity> = (
  *     try {
  *       await db.insertLog(entry);
  *     } catch (err) {
- *       console.error('Log callback failed', err);
+ *       console.error('callback failed', err);
  *     }
  *   },
  * });
  * ```
- *
- * @typeParam T - Severity union used by this callback.
- * @param entry - The structured log entry that was just emitted.
  */
 export type LoggerCallback<T extends string = BaseSeverity> = (entry: LoggerEntry<T>) => void;
 
 /**
- * Options for creating a logger instance.
- *
- * @typeParam T - Severity union for this logger.
+ * Options for creating a logger instance via {@link createLogger}.
  */
 export interface CreateLoggerOptions<T extends string = BaseSeverity> {
-  /**
-   * Per-logger (instance-level) context merged into every log entry.
-   */
+  /** Per-instance context merged into every log entry from this logger. */
   context?: Record<string, unknown>;
-  /**
-   * Minimum level for THIS logger (overrides global).
-   * Can be a severity string or numeric rank.
-   */
+  /** Minimum severity for this instance — overrides the global level. */
   emitLevel?: T | number;
-  /**
-   * Per-logger emit override (overrides global emit).
-   */
+  /** Per-instance emit override — overrides the global emit function. */
   emitFn?: EmitFn<T>;
-  /**
-   * Per-logger callback override (overrides global callback).
-   */
-  cb?: LoggerCallback<T>;
+  /** Per-instance callback override — overrides the global callback. */
+  callback?: LoggerCallback<T>;
 }
 
 /**
- * Public-facing logger shape returned by {@link createLogger}.
- * 3rd-party devs should rely on this surface.
- *
- * @typeParam T - Severity union for this logger.
+ * Public logger surface returned by {@link createLogger}.
  */
 export interface Logger<T extends string = BaseSeverity> {
   /**
    * Emit a log entry with an explicit severity.
    *
-   * @param severity - The severity to log at (case-insensitive).
+   * @param severity - Severity to log at (case-insensitive).
    * @param message - Human-readable log message.
-   * @param extras - Optional structured data to be normalized into fields.
+   * @param extras - Optional structured data normalized into the context.
    */
   emit(severity: T, message: string, extras?: unknown): void;
 
@@ -168,7 +100,7 @@ export interface Logger<T extends string = BaseSeverity> {
    * Emit a DEBUG-level log.
    *
    * @param message - Human-readable log message.
-   * @param extras - Optional structured data to be normalized into fields.
+   * @param extras - Optional structured data normalized into the context.
    */
   debug(message: string, extras?: unknown): void;
 
@@ -176,7 +108,7 @@ export interface Logger<T extends string = BaseSeverity> {
    * Emit an INFO-level log.
    *
    * @param message - Human-readable log message.
-   * @param extras - Optional structured data to be normalized into fields.
+   * @param extras - Optional structured data normalized into the context.
    */
   info(message: string, extras?: unknown): void;
 
@@ -184,7 +116,7 @@ export interface Logger<T extends string = BaseSeverity> {
    * Emit a WARNING-level log.
    *
    * @param message - Human-readable log message.
-   * @param extras - Optional structured data to be normalized into fields.
+   * @param extras - Optional structured data normalized into the context.
    */
   warn(message: string, extras?: unknown): void;
 
@@ -192,7 +124,7 @@ export interface Logger<T extends string = BaseSeverity> {
    * Emit an ERROR-level log.
    *
    * @param message - Human-readable log message.
-   * @param extras - Optional structured data to be normalized into fields.
+   * @param extras - Optional structured data normalized into the context.
    */
   error(message: string, extras?: unknown): void;
 
@@ -204,50 +136,40 @@ export interface Logger<T extends string = BaseSeverity> {
   setLevel(level: T | number): void;
 
   /**
-   * Merge additional instance-level context that will be included
-   * on every subsequent log entry from this logger.
+   * Merge additional context that will be included on every subsequent
+   * log entry from this logger instance.
    *
-   * @param next - Context values to merge.
+   * @param next - Context values to merge in.
    */
   setContext(next: Record<string, unknown>): void;
 
   /**
-   * Override this logger's emit function.
+   * Override the emit function for this logger instance.
    *
    * @param next - New emit function.
    */
   setEmitFn(next: EmitFn<T>): void;
 
   /**
-   * Override this logger's callback.
+   * Override the callback for this logger instance.
    *
-   * @param next - New callback, or undefined to clear.
+   * @param next - New callback, or `undefined` to clear.
    */
   setCallback(next?: LoggerCallback<T>): void;
 }
 
 /**
- * Configuration object accepted by {@link configureGlobalLoggerSettings}.
+ * Global logger configuration accepted by {@link configureLogger}.
  */
 export interface GlobalLoggerConfig {
-  /**
-   * Global minimum severity level.
-   */
+  /** Global minimum severity level. */
   level?: string;
-  /**
-   * Global context to be merged into every log entry.
-   */
+  /** Global context merged into every log entry — merged on top of existing global context. */
   context?: Record<string, unknown>;
-  /**
-   * Global emit override.
-   */
+  /** Replaces `defaultEmit` globally. */
   emitFn?: EmitFn<any>;
-  /**
-   * Global callback override.
-   */
+  /** Fires after `emitFn` on every entry globally. */
   callback?: LoggerCallback<any>;
-  /**
-   * Global severity ranking, for custom severities.
-   */
+  /** Custom severity → rank map for non-standard severity levels. */
   severityRanking?: Record<string, number>;
 }

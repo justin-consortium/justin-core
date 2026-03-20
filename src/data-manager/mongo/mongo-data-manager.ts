@@ -2,7 +2,7 @@ import * as mongoDB from 'mongodb';
 import { Readable } from 'stream';
 import { CollectionChangeType } from '../types';
 import { NO_ID } from '../constants';
-import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-data-manager.type';
+import { DeletedDocRecord, InsertedOrUpatedDocRecord, WithId } from './mongo-data-manager.types';
 import { handleError } from '../../utils';
 import { stringToMongoId, asIndexKey, normalizeIndexKey, transformId } from './mongo.helpers';
 import { DEFAULT_DB_NAME, DEFAULT_MONGO_URI } from './mongo.constants';
@@ -286,8 +286,14 @@ const getCollectionChangeReadable = (
   });
 
   changeStream.on('error', (error) => {
-    Log.error('Change stream error', error);
-    collectionChangeReadable.destroy(error);
+    // If the stream is already closed (e.g. the replica set stopped during
+    // test teardown) Mongo fires a ChangeStream is closed error here. We only
+    // forward the error to the Readable if it hasn't already been destroyed —
+    // otherwise we absorb it silently to prevent unhandled rejections.
+    if (!collectionChangeReadable.destroyed) {
+      Log.error('Change stream error', error);
+      collectionChangeReadable.destroy(error);
+    }
   });
 
   // Attach a cleanup hook so higher layers can explicitly close the stream.

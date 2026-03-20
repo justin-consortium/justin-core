@@ -1,9 +1,9 @@
 /**
- * Standard errors class for the Justin package.
+ * Standard error class for the just-in package.
  *
- * Extends `Error` with a `code` for programmatic branching, an `isLogged`
- * flag to ensure each error is logged exactly once at its origin, and a
- * `data` record for structured context that accumulates as the errors
+ * Extends `Error` with a machine-readable `code` for programmatic branching,
+ * an `isLogged` flag to ensure each error is logged exactly once at its origin,
+ * and a `data` record for structured context that accumulates as the error
  * propagates up through layers.
  */
 export class JustInError extends Error {

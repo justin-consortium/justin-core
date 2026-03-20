@@ -1,16 +1,17 @@
-import {
-  DataManager,
-  ChangeListenerManager,
-  PROTECTED_ATTRIBUTES,
-  USERS,
-  CollectionChangeType,
-} from '../data-manager';
+import { DataManager, ChangeListenerManager, CollectionChangeTypeEnum } from '../data-manager';
 import { checkInitialized, coreFailureResult, coreSuccess } from '../utils';
 import { JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
-import { JUser, NewUserRecord, NamespacedAttributes, ProtectedAttributesRecord } from './types';
+import { registerManager } from '../lifecycle';
+import type {
+  JUser,
+  NewUserRecord,
+  NamespacedAttributes,
+  ProtectedAttributesRecord,
+} from './types';
 import type { CoreResult } from '../types';
 import { isNonEmptyString } from './helpers';
+import { USERS, PROTECTED_ATTRIBUTES } from './constants';
 import {
   clearUsersCache,
   refreshUsersCache,
@@ -46,32 +47,22 @@ import {
 import { setupUserChangeListeners } from './users/listeners';
 import { setupProtectedAttributesChangeListeners } from './protected-attributes/listeners';
 
-const Log = createLogger({
-  context: {
-    source: 'user-manager',
-  },
-});
+const Log = createLogger({ context: { source: 'user-manager' } });
 
 const dm = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();
 
-const _checkInitialization = (): void => {
-  checkInitialized(dm.getInitializationStatus(), 'UserManager');
-};
+const _checkInit = (): void => checkInitialized(dm.getInitializationStatus(), 'UserManager');
 
 /**
- * Resolves a userId to its uniqueIdentifier via the cache.
- * Returns null if the userId is invalid or the user is not found.
+ * Resolves a `userId` to its `uniqueIdentifier` via the cache.
+ * Returns `null` if the userId is invalid or the user is not found.
  *
- * @param userId - The user's id.
- * @returns The user's uniqueIdentifier or null.
- * @private
+ * @param userId - The user's primary key.
  */
 const _resolveUniqueIdentifier = (userId: string): string | null => {
   if (!isNonEmptyString(userId)) return null;
-
-  const user = getUserByIdFromCache(userId);
-  return user?.uniqueIdentifier ?? null;
+  return getUserByIdFromCache(userId)?.uniqueIdentifier ?? null;
 };
 
 // ---------------------------------------------------------------------------
@@ -79,11 +70,17 @@ const _resolveUniqueIdentifier = (userId: string): string | null => {
 // ---------------------------------------------------------------------------
 
 /**
- * Initializes the UserManager:
- * - initializes DataManager
- * - ensures stores + indexes exist
- * - refreshes caches
- * - wires change listeners
+ * Initialises the UserManager.
+ *
+ * Ensures the `users` and `protected_attributes` collections and their indexes
+ * exist, populates the in-memory caches, and wires up change listeners so the
+ * cache stays consistent with the database.
+ *
+ * Also registers the manager with the lifecycle system so {@link shutdownCore}
+ * can tear it down gracefully without needing an explicit reference.
+ *
+ * Safe to call again after {@link shutdown} — useful for simulating restarts
+ * in tests.
  */
 const init = async (): Promise<void> => {
   await dm.init();
@@ -110,59 +107,60 @@ const init = async (): Promise<void> => {
   });
 
   setupProtectedAttributesChangeListeners();
+
+  // Auto-register so shutdownCore() can find this manager without an explicit reference.
+  registerManager({ shutdown });
 };
 
 /**
  * Shuts down the UserManager by removing all change listeners and awaiting
  * full stream teardown.
  *
- * Must be awaited before re-initializing to avoid racing against
- * still-closing Mongo change streams.
- *
- * @returns {Promise<void>}
+ * Must be awaited before re-initialising to avoid racing against still-closing
+ * change streams — particularly important in tests.
  */
 const shutdown = async (): Promise<void> => {
-  await clm.removeChangeListener(USERS, CollectionChangeType.INSERT);
-  await clm.removeChangeListener(USERS, CollectionChangeType.UPDATE);
-  await clm.removeChangeListener(USERS, CollectionChangeType.DELETE);
+  await clm.removeChangeListener(USERS, CollectionChangeTypeEnum.INSERT);
+  await clm.removeChangeListener(USERS, CollectionChangeTypeEnum.UPDATE);
+  await clm.removeChangeListener(USERS, CollectionChangeTypeEnum.DELETE);
 
-  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.INSERT);
-  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.UPDATE);
-  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeType.DELETE);
+  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeTypeEnum.INSERT);
+  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeTypeEnum.UPDATE);
+  await clm.removeChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeTypeEnum.DELETE);
 };
 
 // ---------------------------------------------------------------------------
-// User operations
+// User — write
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a user and optionally creates protected-attributes records.
+ * Creates a user and optionally creates protected-attributes records in a
+ * single call.
  *
- * Protected-attributes failures are logged but do not fail user creation.
+ * Protected-attributes failures are logged but do not fail the overall user
+ * creation — the user is returned regardless.
  *
- * @param record - New user record.
- * @returns The created user or null for invalid input.
+ * @param record - New user data including optional protected attributes.
+ * @returns A {@link CoreResult} containing the created {@link JUser} on success.
  */
 const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
-  _checkInitialization();
+  _checkInit();
 
   const userResult = await createUserRecord(record);
   if (!userResult.ok) return userResult;
 
   const user = userResult.successes[0];
-  const uniqueIdentifier = user.uniqueIdentifier;
-
   const items = Array.isArray(record?.protectedAttributes) ? record.protectedAttributes : [];
   if (items.length === 0) return coreSuccess([user]);
 
   const setPAResult = await setProtectedAttributesByUniqueIdentifier(
-    uniqueIdentifier,
+    user.uniqueIdentifier,
     items as NamespacedAttributes[],
   );
   if (!setPAResult.ok) {
     setPAResult.failures.forEach(({ code, reason, details }) => {
-      Log.warn('createUser: PA set failed', {
-        uniqueIdentifier,
+      Log.warn('createUser: protected attributes set failed', {
+        uniqueIdentifier: user.uniqueIdentifier,
         code,
         reason,
         namespace: details?.namespace,
@@ -174,32 +172,29 @@ const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => 
 };
 
 /**
- * Creates multiple users.
+ * Creates multiple users in a single call.
  *
- * Note: protected-attributes on batch creation are not currently supported.
- * Use {@link createUser} for individual creation with protected-attributes.
+ * Protected attributes on batch creation are not currently supported — use
+ * {@link createUser} for individual creation when protected attributes are needed.
  *
- * @param records - New user records.
+ * @param records - Array of new user data.
  * @returns A {@link CoreResult} with per-record success and failure detail.
  */
 const createUsers = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
-  _checkInitialization();
-
-  if (!Array.isArray(records) || records.length === 0) {
-    return coreSuccess([]);
-  }
-
-  return await createUserRecords(records);
+  _checkInit();
+  if (!Array.isArray(records) || records.length === 0) return coreSuccess([]);
+  return createUserRecords(records);
 };
 
 /**
- * Deletes a user by id and cascades protected-attributes deletion.
+ * Deletes a user by `id` and cascades the deletion to all their protected
+ * attributes.
  *
- * @param userId - The user's id.
- * @returns True if the user was deleted.
+ * @param userId - Primary key of the user to delete.
+ * @returns A {@link CoreResult} with `successes: [null]` on success.
  */
 const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
-  _checkInitialization();
+  _checkInit();
 
   if (!isNonEmptyString(userId))
     return coreFailureResult(
@@ -229,15 +224,16 @@ const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
 };
 
 /**
- * Deletes a user by uniqueIdentifier and cascades protected-attributes deletion.
+ * Deletes a user by `uniqueIdentifier` and cascades the deletion to all their
+ * protected attributes.
  *
- * @param uniqueIdentifier - The user's unique identifier.
- * @returns True if the user was deleted.
+ * @param uniqueIdentifier - Unique identifier of the user to delete.
+ * @returns A {@link CoreResult} with `successes: [null]` on success.
  */
 const deleteUserByUniqueIdentifier = async (
   uniqueIdentifier: string,
 ): Promise<CoreResult<null>> => {
-  _checkInitialization();
+  _checkInit();
 
   if (!isNonEmptyString(uniqueIdentifier))
     return coreFailureResult(
@@ -256,18 +252,19 @@ const deleteUserByUniqueIdentifier = async (
       { uniqueIdentifier },
     );
 
-  return await deleteUserById(existing.id);
+  return deleteUserById(existing.id);
 };
 
 /**
- * Deletes all users and all protected attributes (full reset).
+ * Deletes all users and all protected attributes — a full reset of both
+ * collections.
+ *
+ * Clears the in-memory caches after deletion.
  */
 const deleteAllUsers = async (): Promise<void> => {
-  _checkInitialization();
-
+  _checkInit();
   await dm.clearCollection(USERS);
   await dm.clearCollection(PROTECTED_ATTRIBUTES);
-
   clearUsersCache();
   clearProtectedAttributesCache();
 };
@@ -277,15 +274,14 @@ const deleteAllUsers = async (): Promise<void> => {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns all protected-attributes records for a user across every namespace.
- * Served from cache — no DB round-trip.
+ * Returns all cached protected-attributes records for the given user across
+ * every namespace. No DB round-trip.
  *
- * @param userId - The user's id.
+ * @param userId - Primary key of the user.
  * @returns All protected-attributes records for the user (may be empty).
  */
 const getAllProtectedAttributesForUser = (userId: string): ProtectedAttributesRecord[] => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid) {
     Log.warn('getAllProtectedAttributesForUser: userId invalid or user not found', {
@@ -294,24 +290,24 @@ const getAllProtectedAttributesForUser = (userId: string): ProtectedAttributesRe
     });
     return [];
   }
-
   return getAllProtectedAttributesByUniqueIdentifier(uid);
 };
 
 /**
- * Returns protected-attributes records for a user filtered to the requested namespaces.
- * Served from cache — no DB round-trip.
+ * Returns cached protected-attributes records for the given user, filtered
+ * to the specified namespaces. No DB round-trip.
  *
- * @param userId - The user's id.
- * @param namespaces - One or more namespaces to retrieve.
+ * Empty-string or non-existent namespaces are silently skipped.
+ *
+ * @param userId - Primary key of the user.
+ * @param namespaces - Namespaces to retrieve.
  * @returns Matching protected-attributes records (may be empty).
  */
 const getProtectedAttributesForUser = (
   userId: string,
   namespaces: string[],
 ): ProtectedAttributesRecord[] => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid) {
     Log.warn('getProtectedAttributesForUser: userId invalid or user not found', {
@@ -320,7 +316,6 @@ const getProtectedAttributesForUser = (
     });
     return [];
   }
-
   return getProtectedAttributesByUniqueIdentifier(uid, namespaces);
 };
 
@@ -331,16 +326,18 @@ const getProtectedAttributesForUser = (
 /**
  * Upserts one or more namespace-scoped protected-attributes records for a user.
  *
- * @param userId - The user's id.
+ * For each namespace, if a record already exists its `protectedAttributes` are
+ * shallow-merged; otherwise a new record is created.
+ *
+ * @param userId - Primary key of the user.
  * @param input - A single {@link NamespacedAttributes} or an array of them.
- * @returns Result with succeeded and failed records per namespace.
+ * @returns A {@link CoreResult} with per-namespace success and failure detail.
  */
 const setProtectedAttributesForUser = async (
   userId: string,
   input: NamespacedAttributes | NamespacedAttributes[],
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
@@ -349,8 +346,7 @@ const setProtectedAttributesForUser = async (
       `user (${userId}) not found`,
       { id: userId },
     );
-
-  return await setProtectedAttributesByUniqueIdentifier(uid, input);
+  return setProtectedAttributesByUniqueIdentifier(uid, input);
 };
 
 // ---------------------------------------------------------------------------
@@ -358,13 +354,14 @@ const setProtectedAttributesForUser = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Updates a single nested key path within a namespace-scoped protected-attributes record.
+ * Updates a single nested key path within a namespace-scoped protected-attributes
+ * record. Supports dot-notation paths (e.g. `'daily.steps'`).
  *
- * @param userId - The user's id.
- * @param namespace - The namespace of the record to patch.
+ * @param userId - Primary key of the user.
+ * @param namespace - Namespace of the record to patch.
  * @param keyPath - Dot-notated path of the key to set.
- * @param value - The value to set at the path.
- * @returns The updated record, or null if not found, input is invalid, or the operation fails.
+ * @param value - Value to set at the path.
+ * @returns A {@link CoreResult} containing the updated record on success.
  */
 const updateProtectedAttributeForUser = async (
   userId: string,
@@ -372,8 +369,7 @@ const updateProtectedAttributeForUser = async (
   keyPath: string,
   value: any,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
@@ -383,16 +379,20 @@ const updateProtectedAttributeForUser = async (
       { id: userId },
       { namespace, keyPath },
     );
-
-  return await updateProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath, value);
+  return updateProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath, value);
 };
 
 /**
- * Updates multiple nested key paths within a namespace-scoped protected-attributes record.
+ * Updates multiple nested key paths within a namespace-scoped protected-attributes
+ * record in a single call.
  *
- * @param userId - The user's id.
- * @param namespace - The namespace of the record to patch.
- * @param updates - An object whose keys are dot-notated paths and values are the values to set.
+ * Invalid or reserved key paths are skipped and reported as failures; valid
+ * paths are applied and the updated record is returned.
+ *
+ * @param userId - Primary key of the user.
+ * @param namespace - Namespace of the record to patch.
+ * @param updates - Object whose keys are dot-notated paths and values are the
+ * values to set.
  * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
 const updateProtectedAttributesForUser = async (
@@ -400,8 +400,7 @@ const updateProtectedAttributesForUser = async (
   namespace: string,
   updates: Record<string, any>,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
@@ -411,8 +410,7 @@ const updateProtectedAttributesForUser = async (
       { id: userId },
       { namespace },
     );
-
-  return await updateProtectedAttributesByUniqueIdentifier(uid, namespace, updates);
+  return updateProtectedAttributesByUniqueIdentifier(uid, namespace, updates);
 };
 
 // ---------------------------------------------------------------------------
@@ -422,16 +420,15 @@ const updateProtectedAttributesForUser = async (
 /**
  * Deletes one or more namespace-scoped protected-attributes records for a user.
  *
- * @param userId - The user's id.
- * @param namespaces - A single namespace string or an array of namespace strings to delete.
- * @returns True if at least one record was deleted.
+ * @param userId - Primary key of the user.
+ * @param namespaces - A single namespace string or an array of namespace strings.
+ * @returns A {@link CoreResult} with `successes: [null]` on success.
  */
 const deleteProtectedAttributesForUser = async (
   userId: string,
   namespaces: string | string[],
 ): Promise<CoreResult<null>> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
@@ -440,18 +437,16 @@ const deleteProtectedAttributesForUser = async (
       `user (${userId}) not found`,
       { id: userId },
     );
-
-  return await deleteProtectedAttributesByUniqueIdentifier(uid, namespaces);
+  return deleteProtectedAttributesByUniqueIdentifier(uid, namespaces);
 };
 
 /**
  * Deletes all protected-attributes records for a user across every namespace.
  *
- * @param userId - The user's id.
+ * @param userId - Primary key of the user.
  */
 const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid) {
     Log.warn('deleteAllProtectedAttributesForUser: userId invalid or user not found', {
@@ -460,25 +455,24 @@ const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void
     });
     return;
   }
-
   await deleteAllProtectedAttributesByUniqueIdentifier(uid);
 };
 
 /**
- * Deletes a single nested key path within a namespace-scoped protected-attributes record.
+ * Deletes a single nested key path within a namespace-scoped protected-attributes
+ * record.
  *
- * @param userId - The user's id.
- * @param namespace - The namespace of the record to patch.
+ * @param userId - Primary key of the user.
+ * @param namespace - Namespace of the record to patch.
  * @param keyPath - Dot-notated path of the key to delete.
- * @returns The updated record, or null if not found, input is invalid, or the operation fails.
+ * @returns A {@link CoreResult} containing the updated record on success.
  */
 const deleteProtectedAttributeForUser = async (
   userId: string,
   namespace: string,
   keyPath: string,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
@@ -488,15 +482,18 @@ const deleteProtectedAttributeForUser = async (
       { id: userId },
       { namespace, keyPath },
     );
-
-  return await deleteProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath);
+  return deleteProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath);
 };
 
 /**
- * Deletes multiple nested key paths within a namespace-scoped protected-attributes record.
+ * Deletes multiple nested key paths within a namespace-scoped protected-attributes
+ * record in a single call.
  *
- * @param userId - The user's id.
- * @param namespace - The namespace of the record to patch.
+ * Invalid or reserved paths are skipped and reported as failures; valid paths
+ * are deleted and the updated record is returned.
+ *
+ * @param userId - Primary key of the user.
+ * @param namespace - Namespace of the record to patch.
  * @param keyPaths - A single dot-notated path string or an array of them.
  * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
@@ -505,8 +502,7 @@ const deleteProtectedAttributesFromNamespaceForUser = async (
   namespace: string,
   keyPaths: string | string[],
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInitialization();
-
+  _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
@@ -516,49 +512,64 @@ const deleteProtectedAttributesFromNamespaceForUser = async (
       { id: userId },
       { namespace },
     );
-
-  return await deleteProtectedAttributesFromNamespaceByUniqueIdentifier(uid, namespace, keyPaths);
+  return deleteProtectedAttributesFromNamespaceByUniqueIdentifier(uid, namespace, keyPaths);
 };
 
 // ---------------------------------------------------------------------------
-// Public API surface
+// Public API
 // ---------------------------------------------------------------------------
 
-const UserManager = {
+export const UserManager = {
   init,
   shutdown,
 
-  // users
+  // users — write
   createUser,
   createUsers,
-  getAllUsers,
-  getUserById,
-  getUserByUniqueIdentifier,
-  updateUserById,
-  updateUserByUniqueIdentifier,
   deleteUserById,
   deleteUserByUniqueIdentifier,
   deleteAllUsers,
+
+  // users — read
+  getAllUsers,
+  getUserById,
+  getUserByUniqueIdentifier,
   isIdentifierUnique,
 
-  // protected attributes
+  // users — update
+  updateUserById,
+  updateUserByUniqueIdentifier,
+
+  // protected attributes — read
   getAllProtectedAttributesForUser,
   getProtectedAttributesForUser,
+
+  // protected attributes — upsert
   setProtectedAttributesForUser,
+
+  // protected attributes — key-level patch
   updateProtectedAttributeForUser,
   updateProtectedAttributesForUser,
+
+  // protected attributes — delete
   deleteProtectedAttributesForUser,
   deleteAllProtectedAttributesForUser,
   deleteProtectedAttributeForUser,
   deleteProtectedAttributesFromNamespaceForUser,
 };
 
-const TestingUserManager = {
+/**
+ * Extended UserManager surface for test environments only.
+ *
+ * Exposes cache refresh and clear methods so tests can drive cache state
+ * directly without going through the full init/shutdown cycle.
+ *
+ * @internal
+ */
+export const TestingUserManager = {
   ...UserManager,
   refreshUsersCache,
   refreshProtectedAttributesCache,
   clearUsersCache,
   clearProtectedAttributesCache,
 };
-
-export { UserManager, TestingUserManager };

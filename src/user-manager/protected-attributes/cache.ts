@@ -1,184 +1,170 @@
-import { DataManager, PROTECTED_ATTRIBUTES } from '../../data-manager';
+import { createCacheManager, CacheManager } from '../../cache-manager';
+import { DataManager } from '../../data-manager';
 import { checkInitialized } from '../../utils';
-import { ProtectedAttributesRecord } from '../types';
-import { isNonEmptyString } from '../helpers';
 import { createLogger } from '../../logger';
-
-const dm = DataManager.getInstance();
+import { ProtectedAttributesRecord } from '../types';
+import { PROTECTED_ATTRIBUTES } from '../constants';
 
 const Log = createLogger({ context: { source: 'protected-attributes-cache' } });
 
-const _checkInitialization = (): void => {
-  checkInitialized(dm.getInitializationStatus(), 'UserManager');
-};
+const dm = DataManager.getInstance();
+
+const _checkInit = (): void => checkInitialized(dm.getInitializationStatus(), 'UserManager');
 
 /**
- * In-memory cache for protected attributes.
- * Outer key: uniqueIdentifier / Inner key: namespace
- * @private
- */
-const _protectedAttributes: Map<string, Map<string, ProtectedAttributesRecord>> = new Map();
-
-/**
- * Clears the protected attributes cache.
- */
-const clearProtectedAttributesCache = (): void => {
-  _protectedAttributes.clear();
-};
-
-/**
- * Loads all protected attributes documents from the database into the in-memory cache.
+ * In-memory cache for protected-attributes records.
  *
- * @returns {Promise<void>} Resolves when protected attributes are loaded into the cache.
+ * Records are keyed by `id`. The `uniqueIdentifier` field is indexed so all
+ * records for a given user can be retrieved without a DB round-trip.
+ *
+ * Note: unlike the users cache, there can be multiple records per
+ * `uniqueIdentifier` (one per namespace), so index lookups return the first
+ * match only — use {@link getAllProtectedAttributesByUniqueIdentifier} to get
+ * all records for a user.
  */
-const refreshProtectedAttributesCache = async (): Promise<void> => {
-  _checkInitialization();
-  clearProtectedAttributesCache();
+const _cache: CacheManager<ProtectedAttributesRecord> =
+  createCacheManager<ProtectedAttributesRecord>().addIndex('uniqueIdentifier');
 
+// We maintain a separate map for multi-record lookups by uniqueIdentifier
+// since CacheManager indexes are 1:1. This supplements the cache for the
+// "get all for user" case.
+const _byUniqueIdentifier = new Map<string, Set<string>>(); // uid → Set<id>
+
+function _registerUid(record: ProtectedAttributesRecord): void {
+  const existing = _byUniqueIdentifier.get(record.uniqueIdentifier) ?? new Set();
+  existing.add(record.id);
+  _byUniqueIdentifier.set(record.uniqueIdentifier, existing);
+}
+
+function _deregisterUid(record: ProtectedAttributesRecord): void {
+  const ids = _byUniqueIdentifier.get(record.uniqueIdentifier);
+  if (!ids) return;
+  ids.delete(record.id);
+  if (ids.size === 0) _byUniqueIdentifier.delete(record.uniqueIdentifier);
+}
+
+// ---------------------------------------------------------------------------
+// Cache operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Loads all protected-attributes records from the database into the
+ * in-memory cache, replacing whatever was there before.
+ */
+export const refreshProtectedAttributesCache = async (): Promise<void> => {
+  _checkInit();
   const docs = await dm.getAllInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES);
-  docs.forEach((doc: ProtectedAttributesRecord) => {
-    if (!doc?.uniqueIdentifier || !doc?.namespace) {
-      Log.error(
-        'refreshProtectedAttributesCache: skipping malformed record — missing uniqueIdentifier or namespace',
-        { record: doc },
-      );
-      return;
+
+  _cache.clear();
+  _byUniqueIdentifier.clear();
+
+  for (const doc of docs) {
+    if (!doc?.id) {
+      Log.error('refreshProtectedAttributesCache: skipping malformed record — missing id', {
+        record: doc,
+      });
+      continue;
     }
-
-    const byNamespace =
-      _protectedAttributes.get(doc.uniqueIdentifier) ??
-      new Map<string, ProtectedAttributesRecord>();
-
-    byNamespace.set(doc.namespace, doc);
-    _protectedAttributes.set(doc.uniqueIdentifier, byNamespace);
-  });
+    _cache.upsert(doc);
+    _registerUid(doc);
+  }
 };
 
 /**
- * Upserts a protected attributes document into the in-memory cache.
- *
- * Note: intentionally does not call `_checkInitialization` — this is a pure
- * cache mutation used as a side-effect after confirmed write operations where
- * initialization has already been verified by the caller.
- *
- * @param {ProtectedAttributesRecord} doc - The protected attributes record to cache.
+ * Clears all protected-attributes records and indexes from the cache.
  */
-const upsertProtectedAttributesInCache = (doc: ProtectedAttributesRecord): void => {
-  if (!doc?.uniqueIdentifier || !doc?.namespace) {
-    Log.error(
-      'upsertProtectedAttributesInCache: skipping malformed record — missing uniqueIdentifier or namespace',
-      { record: doc },
-    );
+export const clearProtectedAttributesCache = (): void => {
+  _cache.clear();
+  _byUniqueIdentifier.clear();
+};
+
+/**
+ * Inserts or replaces a single protected-attributes record in the cache.
+ *
+ * @param record - Record to upsert.
+ */
+export const upsertProtectedAttributesInCache = (record: ProtectedAttributesRecord): void => {
+  _checkInit();
+  if (!record?.id) {
+    Log.error('upsertProtectedAttributesInCache: skipping malformed record — missing id', {
+      record,
+    });
     return;
   }
 
-  const byNamespace =
-    _protectedAttributes.get(doc.uniqueIdentifier) ?? new Map<string, ProtectedAttributesRecord>();
+  const existing = _cache.getById(record.id);
+  if (existing) _deregisterUid(existing);
 
-  byNamespace.set(doc.namespace, doc);
-  _protectedAttributes.set(doc.uniqueIdentifier, byNamespace);
+  _cache.upsert(record);
+  _registerUid(record);
 };
 
 /**
- * Deletes all protected attributes for a given uniqueIdentifier from cache.
+ * Removes a protected-attributes record from the cache by `id`.
  *
- * @param {string} uniqueIdentifier - The uniqueIdentifier to delete.
+ * @param id - Primary key of the record to remove.
  */
-const deleteProtectedAttributesByUniqueIdentifierFromCache = (uniqueIdentifier: string): void => {
-  _checkInitialization();
-
-  if (!isNonEmptyString(uniqueIdentifier)) return;
-
-  _protectedAttributes.delete(uniqueIdentifier);
+export const deleteProtectedAttributesByIdFromCache = (id: string): void => {
+  _checkInit();
+  const record = _cache.getById(id);
+  if (!record) return;
+  _deregisterUid(record);
+  _cache.delete(id);
 };
 
 /**
- * Deletes a protected attributes doc from cache by its document id.
+ * Removes all cached protected-attributes records for the given user.
  *
- * Note: delete change events currently provide only the doc id.
- *
- * @param {string} docId - The protected attributes doc id.
- * @returns {boolean} True if a doc was found and removed.
+ * @param uniqueIdentifier - User whose records should be evicted.
  */
-const deleteProtectedAttributesDocByIdFromCache = (docId: string): boolean => {
-  _checkInitialization();
+export const deleteProtectedAttributesByUniqueIdentifierFromCache = (
+  uniqueIdentifier: string,
+): void => {
+  _checkInit();
+  const ids = _byUniqueIdentifier.get(uniqueIdentifier);
+  if (!ids) return;
 
-  if (!isNonEmptyString(docId)) return false;
-
-  for (const [uniqueIdentifier, byNamespace] of _protectedAttributes.entries()) {
-    for (const [namespace, doc] of byNamespace.entries()) {
-      if ((doc as any)?.id === docId) {
-        byNamespace.delete(namespace);
-
-        if (byNamespace.size === 0) {
-          _protectedAttributes.delete(uniqueIdentifier);
-        } else {
-          _protectedAttributes.set(uniqueIdentifier, byNamespace);
-        }
-
-        return true;
-      }
-    }
-  }
-
-  return false;
+  for (const id of ids) _cache.delete(id);
+  _byUniqueIdentifier.delete(uniqueIdentifier);
 };
 
 /**
- * Retrieves all protected attributes documents for a user from cache.
+ * Returns all cached protected-attributes records for the given user.
  *
- * @param {string} uniqueIdentifier - The uniqueIdentifier to look up.
- * @returns {ProtectedAttributesRecord[]} All protected attributes records for the user.
+ * @param uniqueIdentifier - User whose records to retrieve.
  */
-const getAllProtectedAttributesFromCache = (
+export const getAllProtectedAttributesByUniqueIdentifier = (
   uniqueIdentifier: string,
 ): ProtectedAttributesRecord[] => {
-  const byNamespace = _protectedAttributes.get(uniqueIdentifier);
-  if (!byNamespace) return [];
-
-  return [...byNamespace.values()];
-};
-
-/**
- * Retrieves protected attributes documents for a user by namespaces from cache.
- *
- * @param {string} uniqueIdentifier - The uniqueIdentifier to look up.
- * @param {string[]} namespaces - Namespaces to retrieve.
- * @returns {ProtectedAttributesRecord[]} Matching protected attributes records.
- */
-const getProtectedAttributesByNamespacesFromCache = (
-  uniqueIdentifier: string,
-  namespaces: string[],
-): ProtectedAttributesRecord[] => {
-  if (!Array.isArray(namespaces) || namespaces.length === 0) return [];
-
-  const byNamespace = _protectedAttributes.get(uniqueIdentifier);
-  if (!byNamespace) return [];
+  _checkInit();
+  const ids = _byUniqueIdentifier.get(uniqueIdentifier);
+  if (!ids) return [];
 
   const results: ProtectedAttributesRecord[] = [];
-  for (const ns of namespaces) {
-    const doc = byNamespace.get(ns);
-    if (doc) results.push(doc);
+  for (const id of ids) {
+    const record = _cache.getById(id);
+    if (record) results.push(record);
   }
-
   return results;
 };
 
-export {
-  clearProtectedAttributesCache,
-  refreshProtectedAttributesCache,
-  upsertProtectedAttributesInCache,
-  deleteProtectedAttributesByUniqueIdentifierFromCache,
-  deleteProtectedAttributesDocByIdFromCache,
-  getAllProtectedAttributesFromCache,
-  getProtectedAttributesByNamespacesFromCache,
+/**
+ * Returns cached protected-attributes records for the given user, filtered
+ * to the specified namespaces. Empty-string or non-existent namespaces are
+ * silently skipped.
+ *
+ * @param uniqueIdentifier - User whose records to retrieve.
+ * @param namespaces - Namespaces to include.
+ */
+export const getProtectedAttributesByUniqueIdentifier = (
+  uniqueIdentifier: string,
+  namespaces: string[],
+): ProtectedAttributesRecord[] => {
+  _checkInit();
+  const all = getAllProtectedAttributesByUniqueIdentifier(uniqueIdentifier);
+  const nsSet = new Set(namespaces.filter(Boolean));
+  return all.filter((r) => nsSet.has(r.namespace));
 };
 
-/**
- * Testing exports for cache internals.
- * @private
- */
-export const __testing__protectedAttributesCache = {
-  _checkInitialization,
-  _protectedAttributes,
-};
+/** @internal — exposed for testing only */
+export const __testing__protectedAttributesCache = { _cache, _byUniqueIdentifier };

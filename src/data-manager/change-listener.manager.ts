@@ -36,6 +36,15 @@ type ReadableWithCleanup = Readable & {
 async function _closeStream(stream: ReadableWithCleanup): Promise<void> {
   const maybeCleanup = stream.cleanup;
 
+  // Attach the error absorber BEFORE calling cleanup. The cleanup hook closes
+  // the underlying Mongo change stream, which can synchronously or
+  // asynchronously emit an error on the Readable wrapper as it tears down.
+  // If the listener isn't in place first, that error becomes an unhandled
+  // rejection and crashes the test suite.
+  if (stream.listenerCount('error') === 0) {
+    stream.on('error', () => {});
+  }
+
   try {
     if (maybeCleanup) {
       await maybeCleanup();
@@ -43,12 +52,6 @@ async function _closeStream(stream: ReadableWithCleanup): Promise<void> {
   } catch (error) {
     Log.error('Stream close failed', { error });
   } finally {
-    // Ensure there is always an error listener before destroying.
-    // Without this, Node treats any post-destruction error event as an
-    // unhandled rejection and crashes the process / fails the test suite.
-    if (stream.listenerCount('error') === 0) {
-      stream.on('error', () => {});
-    }
     stream.destroy();
   }
 }

@@ -1,8 +1,8 @@
 /**
- * Base fields that are always present on a Justin user.
+ * Base fields that are always present on a just-in user record.
  *
- * These fields are reserved and should not be overridden by
- * application-level user data.
+ * These fields are reserved and must not be overridden by application-level
+ * user data passed through `attributes`.
  */
 export type BaseJUser = {
   id: string;
@@ -10,15 +10,22 @@ export type BaseJUser = {
 };
 
 /**
- * A Justin user record.
+ * A just-in user record.
  *
- * TUserData represents all additional user fields.
+ * Application-level data is flattened onto the record alongside the reserved
+ * base fields — there is no nested `attributes` object on the persisted shape.
+ *
+ * @typeParam TUserData - Additional fields the application stores per user.
  */
 export type JUser<TUserData extends Record<string, any> = Record<string, any>> = BaseJUser &
   TUserData;
 
 /**
  * Namespaced protected attributes payload for a user.
+ *
+ * Each namespace produces one isolated document in the protected-attributes
+ * collection. Use separate namespaces to partition sensitive data by concern
+ * (e.g. `'pii'`, `'fitbit'`, `'health'`).
  */
 export type NamespacedAttributes = {
   namespace: string;
@@ -26,12 +33,12 @@ export type NamespacedAttributes = {
 };
 
 /**
- * Shape used to create a new user.
+ * Input shape for creating a new user.
  *
- * Notes:
- * - `attributes` is an input wrapper; on persistence, these fields are flattened
- *   onto the user record alongside `uniqueIdentifier` (with reserved fields protected).
- * - `protectedAttributes` is optional and creates one protected-attributes doc per namespace.
+ * - `attributes` is flattened onto the persisted record alongside
+ *   `uniqueIdentifier`. Reserved keys (`id`, `uniqueIdentifier`) are rejected.
+ * - `protectedAttributes` is optional — one protected-attributes document is
+ *   created per namespace entry.
  */
 export type NewUserRecord = {
   uniqueIdentifier: string;
@@ -42,8 +49,7 @@ export type NewUserRecord = {
 /**
  * Base fields that are always present on a protected-attributes record.
  *
- * These fields are reserved and should not be overridden by
- * application-level protected attributes data.
+ * Reserved — must not be overridden by application-level data.
  */
 export type BaseProtectedAttributes = {
   id: string;
@@ -54,7 +60,10 @@ export type BaseProtectedAttributes = {
 /**
  * A protected-attributes record.
  *
- * We store the payload under `protectedAttributes` to avoid field collisions.
+ * The payload lives under the `protectedAttributes` key to avoid field
+ * collisions with the base fields.
+ *
+ * @typeParam TProtectedData - Shape of the protected payload.
  */
 export type ProtectedAttributesRecord<
   TProtectedData extends Record<string, any> = { protectedAttributes: Record<string, any> },

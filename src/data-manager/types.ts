@@ -1,15 +1,35 @@
 import { Readable } from 'stream';
 
-export enum SortDirection {
-  ASC = 1,
-  DESC = -1,
-}
-
 export enum CollectionChangeType {
   INSERT = 'insert',
   UPDATE = 'update',
   DELETE = 'delete',
 }
+
+// ---------------------------------------------------------------------------
+// DB config
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration passed to {@link configureDB} before any manager is initialised.
+ *
+ * The connection is lazy — it is not established until the first manager calls
+ * `init()`. All managers in the process share the same connection.
+ *
+ * @example
+ * ```ts
+ * configureDB({ dbType: DBType.MONGO, uri: process.env.MONGO_URI });
+ * await UserManager.init();
+ * ```
+ */
+export type DBConfig = {
+  /** Database type. Currently only `DBType.MONGO` is supported. */
+  dbType: import('./constants').DBType;
+  /** Connection string for the database. */
+  uri: string;
+  /** Database name. Falls back to the adapter default if omitted. */
+  dbName?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Adapter contract
@@ -18,15 +38,14 @@ export enum CollectionChangeType {
 /**
  * Minimal database adapter contract used by {@link DataManager}.
  *
- * This keeps DataManager database-agnostic while letting TypeScript
- * type-check calls against the active adapter.
+ * Keeps DataManager database-agnostic while letting TypeScript type-check
+ * calls against the active adapter.
  *
- * Adapter methods remain throw-based. Translation into {@link DbResult}
- * and {@link BulkResult} envelopes happens at the {@link DataManager} layer.
+ * Adapter methods remain throw-based — translation into {@link CoreResult}
+ * envelopes happens at the DataManager layer.
  *
- * Bulk methods marked optional (`?`) indicate the adapter may not support
- * them — {@link DataManager} will fall back to one-by-one operations in
- * that case.
+ * Bulk methods marked `?` are optional — DataManager falls back to one-by-one
+ * when the adapter does not provide them.
  */
 export type DataManagerAdapter = {
   init: (...args: any[]) => Promise<void>;
@@ -48,15 +67,6 @@ export type DataManagerAdapter = {
   findItemsByIdsInCollection?: (collectionName: string, ids: string[]) => Promise<object[]>;
 
   addItemToCollection: (collectionName: string, item: object) => Promise<string>;
-
-  /**
-   * Bulk insert. Returns per-item results so partial failures can be surfaced.
-   *
-   * Each entry in the returned array corresponds to the item at the same
-   * index in `items`:
-   * - `{ id: string }` on success.
-   * - `{ error: string }` on failure.
-   */
   addItemsToCollection?: (
     collectionName: string,
     items: object[],
@@ -67,14 +77,6 @@ export type DataManagerAdapter = {
     id: string,
     item: object,
   ) => Promise<object | null>;
-
-  /**
-   * Bulk update. Returns per-item results so partial failures can be surfaced.
-   *
-   * Each entry corresponds to the update at the same index in `updates`:
-   * - `{ id: string }` on success.
-   * - `{ id: string; error: string }` on failure.
-   */
   updateItemsInCollection?: (
     collectionName: string,
     updates: Array<{ id: string; update: object }>,
@@ -83,14 +85,6 @@ export type DataManagerAdapter = {
   getAllInCollection: (collectionName: string) => Promise<object[]>;
 
   removeItemFromCollection: (collectionName: string, id: string) => Promise<number>;
-
-  /**
-   * Bulk delete. Returns per-item results so partial failures can be surfaced.
-   *
-   * Each entry corresponds to the id at the same index in `ids`:
-   * - `{ id: string }` on success.
-   * - `{ id: string; error: string }` on failure.
-   */
   removeItemsFromCollection?: (
     collectionName: string,
     ids: string[],

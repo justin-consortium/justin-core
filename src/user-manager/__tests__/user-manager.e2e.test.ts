@@ -1,17 +1,22 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import sinon from 'sinon';
 
-import DataManager from '../../data-manager/data-manager';
+import { configureDB } from '../../lifecycle';
+import { DataManager, DBType } from '../../data-manager';
 import { MongoDBManager } from '../../data-manager/mongo/mongo-data-manager';
-import { UserManager, TestingUserManager } from '../user-manager';
-import { DBType, USERS, PROTECTED_ATTRIBUTES } from '../../data-manager/constants';
-import { waitForMongoReady, expectOk, expectFailed, expectFailedWithCode } from '../../testing';
-import type { CoreResult } from '../../types';
-import type { JUser } from '../types';
-
+import { UserManager, TestingUserManager } from '../../user-manager/user-manager';
+import { USERS, PROTECTED_ATTRIBUTES } from '../../user-manager/constants';
+import {
+  waitForMongoReady,
+  expectOk,
+  expectFailed,
+  expectFailedWithCode,
+  silenceLogger,
+} from '../../testing';
+import type { JUser } from '../../user-manager/types';
 
 /**
- * UserManager end-to-end tests
+ * UserManager end-to-end tests.
  *
  * Goals:
  * - Exercise every public UserManager API against real Mongo infrastructure.
@@ -23,27 +28,27 @@ import type { JUser } from '../types';
 
 jest.setTimeout(120_000);
 
-// ---------------------------------------------------------------------------
-// Suite
-// ---------------------------------------------------------------------------
-
 describe('UserManager public API — e2e', () => {
   let repl: MongoMemoryReplSet;
   let dm: DataManager;
   let sb: sinon.SinonSandbox;
+  let silenceLogs: { restore: () => void };
 
   beforeAll(async () => {
+    silenceLogs = silenceLogger();
     sb = sinon.createSandbox();
 
     repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     const uri = repl.getUri();
     await waitForMongoReady(uri);
 
+    // Wire configureDB so DataManager.init() connects to the in-memory replica set.
     const realInit = MongoDBManager.init.bind(MongoDBManager);
     sb.stub(MongoDBManager, 'init').callsFake(() => realInit(uri, 'user-manager-e2e'));
 
+    configureDB({ dbType: DBType.MONGO, uri });
+
     dm = DataManager.getInstance();
-    await dm.init(DBType.MONGO);
     await UserManager.init();
   });
 
@@ -52,10 +57,19 @@ describe('UserManager public API — e2e', () => {
     // Mongo is still running), then DataManager disconnects, then the replica
     // set stops. _closeStream in ChangeListenerManager ensures no post-destroy
     // error events become unhandled rejections.
-    try { await UserManager.shutdown(); } catch {}
-    try { await dm.close(); } catch {}
-    try { await repl.stop(); } catch {}
-    try { sb.restore(); } catch {}
+    try {
+      await UserManager.shutdown();
+    } catch {}
+    try {
+      await dm.close();
+    } catch {}
+    try {
+      await repl.stop();
+    } catch {}
+    try {
+      sb.restore();
+    } catch {}
+    silenceLogs.restore();
   });
 
   beforeEach(async () => {
@@ -80,7 +94,10 @@ describe('UserManager public API — e2e', () => {
 
   describe('createUser', () => {
     it('returns ok:true with the created user', async () => {
-      const result = await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: { name: 'Alice' } });
+      const result = await UserManager.createUser({
+        uniqueIdentifier: 'u1',
+        attributes: { name: 'Alice' },
+      });
 
       expect(result.ok).toBe(true);
       expect(result.successes).toHaveLength(1);
@@ -92,7 +109,6 @@ describe('UserManager public API — e2e', () => {
 
     it('persists the user to DB', async () => {
       await createUser('u1');
-
       const all = await dm.getAllInCollection<any>(USERS);
       expect(all).toHaveLength(1);
       expect(all[0].uniqueIdentifier).toBe('u1');
@@ -101,7 +117,6 @@ describe('UserManager public API — e2e', () => {
     it('does not expose _id — only id', async () => {
       const result = await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: {} });
       const user = expectOk(result);
-
       expect((user as any)._id).toBeUndefined();
       expect(user.id).toEqual(expect.any(String));
     });
@@ -109,7 +124,6 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:false with VALIDATION_ERROR for duplicate uniqueIdentifier', async () => {
       await createUser('u1');
       const duplicate = await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: {} });
-
       const failure = expectFailedWithCode(duplicate, 'VALIDATION_ERROR');
       expect(failure.uniqueIdentifier).toBe('u1');
       if (!duplicate.ok) expect(duplicate.successes).toHaveLength(0);
@@ -136,7 +150,10 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with VALIDATION_ERROR for reserved attribute key "uniqueIdentifier"', async () => {
       expectFailedWithCode(
-        await UserManager.createUser({ uniqueIdentifier: 'u1', attributes: { uniqueIdentifier: 'hack' } }),
+        await UserManager.createUser({
+          uniqueIdentifier: 'u1',
+          attributes: { uniqueIdentifier: 'hack' },
+        }),
         'VALIDATION_ERROR',
       );
     });
@@ -150,9 +167,7 @@ describe('UserManager public API — e2e', () => {
       const result = await UserManager.createUser({
         uniqueIdentifier: 'u-with-pa',
         attributes: { name: 'Bob' },
-        protectedAttributes: [
-          { namespace: 'health', protectedAttributes: { steps: 1000 } },
-        ],
+        protectedAttributes: [{ namespace: 'health', protectedAttributes: { steps: 1000 } }],
       });
 
       const user = expectOk(result);
@@ -177,7 +192,11 @@ describe('UserManager public API — e2e', () => {
 
       expect(result.ok).toBe(true);
       expect(result.successes).toHaveLength(3);
-      expect(result.successes.map((u) => u.uniqueIdentifier).sort()).toEqual(['bulk-1', 'bulk-2', 'bulk-3']);
+      expect(result.successes.map((u) => u.uniqueIdentifier).sort()).toEqual([
+        'bulk-1',
+        'bulk-2',
+        'bulk-3',
+      ]);
     });
 
     it('returns ok:false with partial successes when some records are invalid', async () => {
@@ -207,7 +226,6 @@ describe('UserManager public API — e2e', () => {
         { uniqueIdentifier: 'p1', attributes: {} },
         { uniqueIdentifier: 'p2', attributes: {} },
       ]);
-
       expect(await dm.getAllInCollection<any>(USERS)).toHaveLength(2);
     });
 
@@ -229,14 +247,13 @@ describe('UserManager public API — e2e', () => {
   });
 
   // ===========================================================================
-  // Read ops — return T | null / T[] directly, not CoreResult
+  // getUserById / getUserByUniqueIdentifier / getAllUsers
   // ===========================================================================
 
   describe('getUserById / getUserByUniqueIdentifier / getAllUsers', () => {
     it('getUserById returns the user from cache', async () => {
       const user = await createUser('u1', { name: 'Alice' });
       const found = UserManager.getUserById(user.id);
-
       expect(found).not.toBeNull();
       expect(found!.uniqueIdentifier).toBe('u1');
     });
@@ -252,7 +269,6 @@ describe('UserManager public API — e2e', () => {
     it('getUserByUniqueIdentifier returns the user from cache', async () => {
       await createUser('u1', { name: 'Alice' });
       const found = UserManager.getUserByUniqueIdentifier('u1');
-
       expect(found).not.toBeNull();
       expect(found!.name).toBe('Alice');
     });
@@ -263,7 +279,6 @@ describe('UserManager public API — e2e', () => {
 
     it('getUserByUniqueIdentifier matches exactly — does not trim', async () => {
       await createUser('test mark');
-
       expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
       expect(UserManager.getUserByUniqueIdentifier('testmark')).toBeNull();
       expect(UserManager.getUserByUniqueIdentifier(' test mark ')).toBeNull();
@@ -309,7 +324,6 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:true with the updated user', async () => {
       const user = await createUser('u1', { score: 10 });
       const updated = expectOk(await UserManager.updateUserById(user.id, { score: 20 }));
-
       expect(updated.score).toBe(20);
       expect(updated.uniqueIdentifier).toBe('u1');
     });
@@ -317,7 +331,6 @@ describe('UserManager public API — e2e', () => {
     it('merges attributes — does not wipe unrelated fields', async () => {
       const user = await createUser('u1', { a: 1, b: 2 });
       const updated = expectOk(await UserManager.updateUserById(user.id, { b: 99 }));
-
       expect(updated.a).toBe(1);
       expect(updated.b).toBe(99);
     });
@@ -325,14 +338,12 @@ describe('UserManager public API — e2e', () => {
     it('updates the cache so subsequent reads reflect the change', async () => {
       const user = await createUser('u1', { score: 10 });
       await UserManager.updateUserById(user.id, { score: 42 });
-
       expect(UserManager.getUserById(user.id)!.score).toBe(42);
     });
 
     it('persists the update to DB', async () => {
       const user = await createUser('u1', { score: 10 });
       await UserManager.updateUserById(user.id, { score: 99 });
-
       const all = await dm.getAllInCollection<any>(USERS);
       expect(all[0].score).toBe(99);
     });
@@ -342,17 +353,26 @@ describe('UserManager public API — e2e', () => {
     });
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
-      expectFailedWithCode(await UserManager.updateUserById('nonexistent', { score: 1 }), 'NOT_FOUND');
+      expectFailedWithCode(
+        await UserManager.updateUserById('nonexistent', { score: 1 }),
+        'NOT_FOUND',
+      );
     });
 
     it('returns ok:false with VALIDATION_ERROR for reserved field "id"', async () => {
       const user = await createUser('u1');
-      expectFailedWithCode(await UserManager.updateUserById(user.id, { id: 'hack' }), 'VALIDATION_ERROR');
+      expectFailedWithCode(
+        await UserManager.updateUserById(user.id, { id: 'hack' }),
+        'VALIDATION_ERROR',
+      );
     });
 
     it('returns ok:false with VALIDATION_ERROR for reserved field "uniqueIdentifier"', async () => {
       const user = await createUser('u1');
-      expectFailedWithCode(await UserManager.updateUserById(user.id, { uniqueIdentifier: 'hack' }), 'VALIDATION_ERROR');
+      expectFailedWithCode(
+        await UserManager.updateUserById(user.id, { uniqueIdentifier: 'hack' }),
+        'VALIDATION_ERROR',
+      );
     });
 
     it('failure entry carries id for traceability', async () => {
@@ -369,16 +389,21 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:true with the updated user', async () => {
       await createUser('u1', { score: 5 });
       const updated = expectOk(await UserManager.updateUserByUniqueIdentifier('u1', { score: 50 }));
-
       expect(updated.score).toBe(50);
     });
 
     it('returns ok:false with NOT_FOUND for unknown uniqueIdentifier', async () => {
-      expectFailedWithCode(await UserManager.updateUserByUniqueIdentifier('nobody', { score: 1 }), 'NOT_FOUND');
+      expectFailedWithCode(
+        await UserManager.updateUserByUniqueIdentifier('nobody', { score: 1 }),
+        'NOT_FOUND',
+      );
     });
 
     it('returns ok:false with VALIDATION_ERROR for empty uniqueIdentifier', async () => {
-      expectFailedWithCode(await UserManager.updateUserByUniqueIdentifier('', { score: 1 }), 'VALIDATION_ERROR');
+      expectFailedWithCode(
+        await UserManager.updateUserByUniqueIdentifier('', { score: 1 }),
+        'VALIDATION_ERROR',
+      );
     });
 
     it('does not match trimmed version — exact match required', async () => {
@@ -403,7 +428,6 @@ describe('UserManager public API — e2e', () => {
     it('removes user from cache after deletion', async () => {
       const user = await createUser('u1');
       await UserManager.deleteUserById(user.id);
-
       expect(UserManager.getUserById(user.id)).toBeNull();
       expect(UserManager.getUserByUniqueIdentifier('u1')).toBeNull();
     });
@@ -411,7 +435,6 @@ describe('UserManager public API — e2e', () => {
     it('removes user from DB after deletion', async () => {
       const user = await createUser('u1');
       await UserManager.deleteUserById(user.id);
-
       expect(await dm.getAllInCollection<any>(USERS)).toHaveLength(0);
     });
 
@@ -423,7 +446,6 @@ describe('UserManager public API — e2e', () => {
       ]);
 
       await UserManager.deleteUserById(user.id);
-
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
 
@@ -458,7 +480,10 @@ describe('UserManager public API — e2e', () => {
 
     it('requires exact match — does not trim', async () => {
       await createUser('test mark');
-      expectFailedWithCode(await UserManager.deleteUserByUniqueIdentifier(' test mark '), 'NOT_FOUND');
+      expectFailedWithCode(
+        await UserManager.deleteUserByUniqueIdentifier(' test mark '),
+        'NOT_FOUND',
+      );
       expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
     });
 
@@ -469,7 +494,6 @@ describe('UserManager public API — e2e', () => {
       ]);
 
       await UserManager.deleteUserByUniqueIdentifier('u1');
-
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
   });
@@ -483,8 +507,12 @@ describe('UserManager public API — e2e', () => {
       const u1 = await createUser('u1');
       const u2 = await createUser('u2');
 
-      await UserManager.setProtectedAttributesForUser(u1.id, [{ namespace: 'ns', protectedAttributes: { a: 1 } }]);
-      await UserManager.setProtectedAttributesForUser(u2.id, [{ namespace: 'ns', protectedAttributes: { b: 2 } }]);
+      await UserManager.setProtectedAttributesForUser(u1.id, [
+        { namespace: 'ns', protectedAttributes: { a: 1 } },
+      ]);
+      await UserManager.setProtectedAttributesForUser(u2.id, [
+        { namespace: 'ns', protectedAttributes: { b: 2 } },
+      ]);
 
       await UserManager.deleteAllUsers();
 
@@ -518,7 +546,6 @@ describe('UserManager public API — e2e', () => {
         namespace: 'health',
         protectedAttributes: { steps: 1000, weight: 70 },
       });
-
       await UserManager.setProtectedAttributesForUser(user.id, {
         namespace: 'health',
         protectedAttributes: { steps: 2000 },
@@ -584,17 +611,15 @@ describe('UserManager public API — e2e', () => {
         namespace: 'my namespace',
         protectedAttributes: { x: 1 },
       });
-
       expect(UserManager.getProtectedAttributesForUser(user.id, ['my namespace'])).toHaveLength(1);
     });
 
-    it('returns ok:false with VALIDATION_ERROR for reserved key in protectedAttributes — failure carries namespace in details', async () => {
+    it('returns ok:false with VALIDATION_ERROR for reserved key — failure carries namespace in details', async () => {
       const user = await createUser('u1');
       const result = await UserManager.setProtectedAttributesForUser(user.id, {
         namespace: 'ns',
         protectedAttributes: { id: 'hack' },
       });
-
       const failure = expectFailedWithCode(result, 'VALIDATION_ERROR');
       expect(failure.details?.namespace).toBe('ns');
     });
@@ -625,7 +650,6 @@ describe('UserManager public API — e2e', () => {
         { namespace: 'b', protectedAttributes: {} },
         { namespace: 'c', protectedAttributes: {} },
       ]);
-
       expect(UserManager.getAllProtectedAttributesForUser(user.id)).toHaveLength(3);
     });
 
@@ -645,7 +669,6 @@ describe('UserManager public API — e2e', () => {
         namespace: 'real',
         protectedAttributes: { x: 1 },
       });
-
       const pa = UserManager.getProtectedAttributesForUser(user.id, ['real', '', 'nonexistent']);
       expect(pa).toHaveLength(1);
       expect(pa[0].namespace).toBe('real');
@@ -664,7 +687,9 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { a: 1, b: 2 },
       });
 
-      const updated = expectOk(await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'a', 99));
+      const updated = expectOk(
+        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'a', 99),
+      );
       expect(updated.protectedAttributes).toMatchObject({ a: 99, b: 2 });
     });
 
@@ -702,7 +727,9 @@ describe('UserManager public API — e2e', () => {
       });
 
       await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'x', 42);
-      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.x).toBe(42);
+      expect(
+        UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.x,
+      ).toBe(42);
     });
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
@@ -722,7 +749,10 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with VALIDATION_ERROR for reserved keyPath — failure carries namespace and keyPath in details', async () => {
       const user = await createUser('u1');
-      await UserManager.setProtectedAttributesForUser(user.id, { namespace: 'ns', protectedAttributes: {} });
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: {},
+      });
 
       const result = await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'id', 'hack');
       const failure = expectFailedWithCode(result, 'VALIDATION_ERROR');
@@ -732,8 +762,10 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with VALIDATION_ERROR for reserved keyPath "namespace"', async () => {
       const user = await createUser('u1');
-      await UserManager.setProtectedAttributesForUser(user.id, { namespace: 'ns', protectedAttributes: {} });
-
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: {},
+      });
       expectFailedWithCode(
         await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'namespace', 'hack'),
         'VALIDATION_ERROR',
@@ -827,7 +859,6 @@ describe('UserManager public API — e2e', () => {
       ]);
 
       expect((await UserManager.deleteProtectedAttributesForUser(user.id, 'ns1')).ok).toBe(true);
-
       const remaining = UserManager.getAllProtectedAttributesForUser(user.id);
       expect(remaining).toHaveLength(1);
       expect(remaining[0].namespace).toBe('ns2');
@@ -842,7 +873,6 @@ describe('UserManager public API — e2e', () => {
       ]);
 
       await UserManager.deleteProtectedAttributesForUser(user.id, ['ns1', 'ns2']);
-
       const remaining = UserManager.getAllProtectedAttributesForUser(user.id);
       expect(remaining).toHaveLength(1);
       expect(remaining[0].namespace).toBe('ns3');
@@ -854,7 +884,6 @@ describe('UserManager public API — e2e', () => {
         namespace: 'ns',
         protectedAttributes: { x: 1 },
       });
-
       await UserManager.deleteProtectedAttributesForUser(user.id, 'ns');
       expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])).toEqual([]);
     });
@@ -865,13 +894,15 @@ describe('UserManager public API — e2e', () => {
         namespace: 'ns',
         protectedAttributes: {},
       });
-
       await UserManager.deleteProtectedAttributesForUser(user.id, 'ns');
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
-      expectFailedWithCode(await UserManager.deleteProtectedAttributesForUser('nobody', 'ns'), 'NOT_FOUND');
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributesForUser('nobody', 'ns'),
+        'NOT_FOUND',
+      );
     });
 
     it('returns ok:false with NOT_FOUND when namespace does not exist', async () => {
@@ -896,7 +927,6 @@ describe('UserManager public API — e2e', () => {
       ]);
 
       await UserManager.deleteAllProtectedAttributesForUser(user.id);
-
       expect(UserManager.getAllProtectedAttributesForUser(user.id)).toHaveLength(0);
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
@@ -910,11 +940,16 @@ describe('UserManager public API — e2e', () => {
       const u1 = await createUser('u1');
       const u2 = await createUser('u2');
 
-      await UserManager.setProtectedAttributesForUser(u1.id, { namespace: 'ns', protectedAttributes: { a: 1 } });
-      await UserManager.setProtectedAttributesForUser(u2.id, { namespace: 'ns', protectedAttributes: { b: 2 } });
+      await UserManager.setProtectedAttributesForUser(u1.id, {
+        namespace: 'ns',
+        protectedAttributes: { a: 1 },
+      });
+      await UserManager.setProtectedAttributesForUser(u2.id, {
+        namespace: 'ns',
+        protectedAttributes: { b: 2 },
+      });
 
       await UserManager.deleteAllProtectedAttributesForUser(u1.id);
-
       expect(UserManager.getAllProtectedAttributesForUser(u2.id)).toHaveLength(1);
     });
   });
@@ -931,7 +966,9 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { a: 1, b: 2 },
       });
 
-      const updated = expectOk(await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'a'));
+      const updated = expectOk(
+        await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'a'),
+      );
       expect(updated.protectedAttributes).not.toHaveProperty('a');
       expect(updated.protectedAttributes.b).toBe(2);
     });
@@ -958,7 +995,9 @@ describe('UserManager public API — e2e', () => {
       });
 
       await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'x');
-      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes).not.toHaveProperty('x');
+      expect(
+        UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes,
+      ).not.toHaveProperty('x');
     });
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
@@ -978,8 +1017,10 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with VALIDATION_ERROR for reserved keyPath "id"', async () => {
       const user = await createUser('u1');
-      await UserManager.setProtectedAttributesForUser(user.id, { namespace: 'ns', protectedAttributes: {} });
-
+      await UserManager.setProtectedAttributesForUser(user.id, {
+        namespace: 'ns',
+        protectedAttributes: {},
+      });
       expectFailedWithCode(
         await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'id'),
         'VALIDATION_ERROR',
@@ -1029,7 +1070,9 @@ describe('UserManager public API — e2e', () => {
       });
 
       const result = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
-        user.id, 'ns', ['id', 'safe'],
+        user.id,
+        'ns',
+        ['id', 'safe'],
       );
 
       expect(result.ok).toBe(false);
@@ -1074,15 +1117,14 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { secret: 'xyz' },
       });
 
-      // Simulate restart
       await UserManager.shutdown();
       await UserManager.init();
 
       expect(UserManager.getAllUsers()).toHaveLength(2);
       expect(UserManager.getUserByUniqueIdentifier('r1')).not.toBeNull();
 
-      const reloadedU1 = UserManager.getUserByUniqueIdentifier('r1')!;
-      const pa = UserManager.getAllProtectedAttributesForUser(reloadedU1.id);
+      const reloaded = UserManager.getUserByUniqueIdentifier('r1')!;
+      const pa = UserManager.getAllProtectedAttributesForUser(reloaded.id);
       expect(pa).toHaveLength(1);
       expect(pa[0].protectedAttributes).toMatchObject({ secret: 'xyz' });
     });
@@ -1097,11 +1139,11 @@ describe('UserManager public API — e2e', () => {
       });
       await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'key', 'updated');
 
-      // Cache
       expect(UserManager.getUserById(user.id)!.score).toBe(10);
-      expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.key).toBe('updated');
+      expect(
+        UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.key,
+      ).toBe('updated');
 
-      // DB
       const dbUsers = await dm.getAllInCollection<any>(USERS);
       expect(dbUsers[0].score).toBe(10);
       const dbPa = await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES);
@@ -1109,7 +1151,10 @@ describe('UserManager public API — e2e', () => {
     });
 
     it('CoreResult shape is consistent across single and bulk operations', async () => {
-      const single = await UserManager.createUser({ uniqueIdentifier: 'shape-test', attributes: {} });
+      const single = await UserManager.createUser({
+        uniqueIdentifier: 'shape-test',
+        attributes: {},
+      });
       expect(single).toHaveProperty('ok');
       expect(single).toHaveProperty('successes');
       if (!single.ok) expect(single).toHaveProperty('failures');

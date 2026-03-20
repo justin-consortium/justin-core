@@ -6,7 +6,7 @@ import * as HelpersModule from '../../utils';
 
 /**
  * Error shape thrown by the `handleError` stub in {@link makeCoreManagersSandbox}.
- * Includes the original db message passed to `handleError` as `dbMessage`.
+ * Includes the original message passed to `handleError` as `dbMessage`.
  */
 export type DbErrorWithMessage = Error & { dbMessage: string };
 
@@ -18,7 +18,7 @@ export function isDbErrorWithMessage(err: unknown): err is DbErrorWithMessage {
 }
 
 /**
- * Convenience accessor for the dbMessage (returns undefined if not present).
+ * Convenience accessor for the `dbMessage` field — returns `undefined` if not present.
  */
 export function getDbMessage(err: unknown): string | undefined {
   return isDbErrorWithMessage(err) ? err.dbMessage : undefined;
@@ -26,50 +26,52 @@ export function getDbMessage(err: unknown): string | undefined {
 
 export type CoreManagersSandbox = {
   /**
-   * The underlying Sinon sandbox. Prefer using `.restore()` on the returned object.
+   * The underlying Sinon sandbox. Prefer calling `.restore()` on the returned
+   * object rather than directly on this.
    */
   sb: SinonSandbox;
 
   /**
-   * Real singleton instance, with methods stubbed for unit tests.
+   * Real singleton instance with methods stubbed for unit tests.
    */
   dm: ReturnType<typeof DataManager.getInstance>;
 
   /**
-   * Real singleton instance, with methods stubbed for unit tests.
+   * Real singleton instance with methods stubbed for unit tests.
    */
   clm: ChangeListenerManager;
 
   /**
-   * Stubbed handleError that always throws the underlying errors (or a new Error).
-   * The thrown errors will include `dbMessage` (the first arg passed to handleError).
+   * Stubbed `handleError` that always throws the underlying error (or a new
+   * `Error`). The thrown error includes a `dbMessage` field set to the first
+   * argument originally passed to `handleError`.
    */
   handleErrorStub: SinonStub;
 
   /**
-   * Restore all sinon stubs/spies in this sandbox.
+   * Restores all Sinon stubs and spies in this sandbox.
    */
   restore(): void;
 };
 
 /**
- * Creates a shared sandbox for unit tests that depend on core singletons.
+ * Creates a shared Sinon sandbox for unit tests that depend on core singletons.
  *
- * This mirrors the "clean beforeEach" pattern:
- * - DataManager singleton with common methods stubbed
- * - ChangeListenerManager singleton with listener methods stubbed
- * - handleError stub that always throws
+ * Sets up safe stub defaults for `DataManager` and `ChangeListenerManager` so
+ * tests can override only the specific calls they care about without worrying
+ * about hitting a real database. Also stubs `handleError` to always throw,
+ * making error-path assertions straightforward.
  *
  * @example
  * ```ts
  * let t: CoreManagersSandbox;
  *
- * beforeEach(() => {
- *   t = makeCoreManagersSandbox();
- * });
+ * beforeEach(() => { t = makeCoreManagersSandbox(); });
+ * afterEach(() => { t.restore(); });
  *
- * afterEach(() => {
- *   t.restore();
+ * it('handles DB failure', () => {
+ *   t.dm.addItemToCollection.rejects(new Error('timeout'));
+ *   // ...
  * });
  * ```
  */
@@ -79,53 +81,44 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
   const dm = DataManager.getInstance();
   const clm = ChangeListenerManager.getInstance();
 
-  // DataManager stubs (baseline safe defaults)
+  // DataManager — safe defaults that resolve without hitting a DB.
   sb.stub(dm, 'init').resolves();
   sb.stub(dm, 'ensureStore').resolves();
   sb.stub(dm, 'ensureIndexes').resolves();
   sb.stub(dm, 'getInitializationStatus').returns(true);
 
-  // single-item CRUD
+  // Single-item CRUD
   sb.stub(dm, 'addItemToCollection').resolves(null as any);
   sb.stub(dm, 'updateItemByIdInCollection').resolves(null as any);
   sb.stub(dm, 'removeItemFromCollection').resolves(0 as any);
   sb.stub(dm, 'findItemByIdInCollection').resolves(null as any);
   sb.stub(dm, 'findItemsInCollection').resolves([] as any);
 
-  // bulk CRUD
+  // Bulk CRUD
   sb.stub(dm, 'addItemsToCollection').resolves([] as any);
   sb.stub(dm, 'updateItemsByIdInCollection').resolves(0 as any);
   sb.stub(dm, 'removeItemsFromCollection').resolves(0 as any);
   sb.stub(dm, 'findItemsByIdsInCollection').resolves([] as any);
 
-  // collection-level
+  // Collection-level
   sb.stub(dm, 'getAllInCollection').resolves([]);
   sb.stub(dm, 'clearCollection').resolves();
 
-  // ChangeListenerManager stubs
+  // ChangeListenerManager — no-ops by default.
   sb.stub(clm, 'addChangeListener');
-  sb.stub(clm, 'removeChangeListener');
-  sb.stub(clm, 'clearChangeListeners');
+  sb.stub(clm, 'removeChangeListener').resolves();
+  sb.stub(clm, 'clearChangeListeners').resolves();
 
-  /**
-   * handleError stub
-   *
-   * Supports both call styles:
-   *   handleError(message, errors)
-   *   handleError(message, methodName, errors)
-   *
-   * Always rethrows the underlying Error (if present), or a new Error(message).
-   */
+  // handleError — always throws so callers can assert on the thrown error without
+  // needing to set up a logger or parse structured output.
   const handleErrorStub = sb
     .stub(HelpersModule, 'handleError')
     .callsFake((...args: unknown[]): never => {
       const [message, , options] = args as [string, string, { error?: unknown } | undefined];
       const msg = String(message);
       const error = (options as any)?.error;
-
       const err = error instanceof Error ? error : new Error(String(error ?? msg));
       (err as DbErrorWithMessage).dbMessage = msg;
-
       throw err;
     });
 
