@@ -1,33 +1,28 @@
 import type { JUser, NewUserRecord } from '../../user-manager/types';
 
+// ---------------------------------------------------------------------------
+// User factories
+// ---------------------------------------------------------------------------
+
 /**
- * Creates a test JUser with optional overrides.
+ * Creates a test {@link JUser} with optional field overrides.
  *
- * Notes:
- * - JUser has no nested `attributes` field; application data is flattened.
- * - Reserved fields (`id`, `uniqueIdentifier`) are set explicitly, and any
- *   other override keys are spread onto the returned object.
+ * The `id` defaults to `'u1'` and `uniqueIdentifier` defaults to the `id`
+ * value. Application-level fields can be added via the overrides object.
+ *
+ * @param overrides - Optional fields to merge onto the default user shape.
  */
 export function makeTestJUser(overrides: Partial<JUser> = {}): JUser {
   const id = overrides.id ?? 'u1';
   const uniqueIdentifier = overrides.uniqueIdentifier ?? id;
-
   const { id: _id, uniqueIdentifier: _uid, ...rest } = overrides as Record<string, any>;
-
-  return {
-    id,
-    uniqueIdentifier,
-    ...rest,
-  } as JUser;
+  return { id, uniqueIdentifier, ...rest } as JUser;
 }
 
 /**
- * Creates a test NewUserRecord with optional overrides.
+ * Creates a test {@link NewUserRecord} with optional field overrides.
  *
- * Notes:
- * - NewUserRecord is now:
- *   { uniqueIdentifier, attributes, protectedAttributes? }
- * - `protectedAttributes` is an array of { namespace, protectedAttributes } objects.
+ * @param overrides - Optional fields to merge onto the default record shape.
  */
 export function makeTestNewUserRecord(overrides: Partial<NewUserRecord> = {}): NewUserRecord {
   return {
