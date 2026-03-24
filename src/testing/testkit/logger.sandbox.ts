@@ -4,17 +4,17 @@ import type { SinonSandbox, SinonSpy } from 'sinon';
 import type { LoggerEntry } from '../../logger/types';
 import * as GlobalLogger from '../../logger/global';
 
-export type CapturedEmit = {
+type CapturedEmit = {
   entry: LoggerEntry<string>;
   ctx: Record<string, unknown>;
 };
 
-export interface LoggerSandboxOptions {
+interface LoggerSandboxOptions {
   minLevel?: string;
   ctx?: Record<string, unknown>;
 }
 
-export type LoggerSandbox = {
+type LoggerSandbox = {
   sb: SinonSandbox;
   captured: CapturedEmit[];
   emitSpy: SinonSpy;
@@ -30,7 +30,7 @@ export type LoggerSandbox = {
  * - This file intentionally contains **no Jest expectations**.
  * - Tests can assert however they want (Jest, chai, etc.).
  */
-export function makeLoggerSandbox(options: LoggerSandboxOptions = {}): LoggerSandbox {
+function makeLoggerSandbox(options: LoggerSandboxOptions = {}): LoggerSandbox {
   const sb = sinon.createSandbox();
   const captured: CapturedEmit[] = [];
 
@@ -96,7 +96,7 @@ export function makeLoggerSandbox(options: LoggerSandboxOptions = {}): LoggerSan
  * restore();
  * ```
  */
-export function silenceLogger(sb?: SinonSandbox): { restore: () => void } {
+function silenceLogger(sb?: SinonSandbox): { restore: () => void } {
   const sandbox = sb ?? sinon.createSandbox();
   const noop = () => {};
 
@@ -109,3 +109,31 @@ export function silenceLogger(sb?: SinonSandbox): { restore: () => void } {
     },
   };
 }
+
+/**
+ * Resets all global logger state back to safe defaults.
+ *
+ * Call this in `afterEach` whenever a test touches `configureLogger` or any
+ * of the `setGlobal*` functions directly. Without this, state from one test
+ * leaks into the next because the global variables in `logger/global.ts` are
+ * module-level singletons.
+ *
+ * Safe to call even when no state has been changed — it is a no-op in that case.
+ *
+ * @example
+ * ```ts
+ * afterEach(() => {
+ *   resetGlobalLoggerState();
+ * });
+ * ```
+ */
+function resetGlobalLoggerState(): void {
+  GlobalLogger.setGlobalMinLogLevel('DEBUG');
+  GlobalLogger.clearGlobalLogContext();
+  GlobalLogger.setGlobalEmitFn(undefined);
+  GlobalLogger.setGlobalLogCallback(undefined);
+  GlobalLogger.setGlobalSeverityRanking(undefined);
+}
+
+export type { CapturedEmit, LoggerSandboxOptions, LoggerSandbox };
+export { makeLoggerSandbox, silenceLogger, resetGlobalLoggerState };

@@ -4,7 +4,7 @@ import { BaseSeverity, EmitFn, GlobalLoggerConfig, LoggerCallback, LoggerEntry }
  * Default console-based emitter. Used as the global fallback when no other
  * emitter is configured.
  */
-export function defaultEmit<T extends string = BaseSeverity>(
+function defaultEmit<T extends string = BaseSeverity>(
   entry: LoggerEntry<T>,
   mergedContext: Record<string, unknown>,
 ): void {
@@ -43,14 +43,14 @@ let _globalSeverityRanking: Record<string, number> | undefined;
  *
  * @param level - Minimum severity name (e.g. `'INFO'`).
  */
-export function setGlobalMinLogLevel(level: string): void {
+function setGlobalMinLogLevel(level: string): void {
   _globalMinLevel = level;
 }
 
 /**
  * Returns the current global minimum log level.
  */
-export function getGlobalMinLogLevel(): string {
+function getGlobalMinLogLevel(): string {
   return _globalMinLevel;
 }
 
@@ -62,7 +62,7 @@ export function getGlobalMinLogLevel(): string {
  *
  * @param next - Key-value pairs to merge into the global context.
  */
-export function setGlobalLogContext(next: Record<string, unknown>): void {
+function setGlobalLogContext(next: Record<string, unknown>): void {
   if (!next || typeof next !== 'object') return;
   _globalContext = { ..._globalContext, ...next };
 }
@@ -70,7 +70,7 @@ export function setGlobalLogContext(next: Record<string, unknown>): void {
 /**
  * Returns a shallow copy of the current global log context.
  */
-export function getGlobalLogContext(): Record<string, unknown> {
+function getGlobalLogContext(): Record<string, unknown> {
   return { ..._globalContext };
 }
 
@@ -78,21 +78,21 @@ export function getGlobalLogContext(): Record<string, unknown> {
  * Sets the global emit function. Falls back to {@link defaultEmit} if
  * `undefined` is passed.
  */
-export function setGlobalEmitFn<T extends string = BaseSeverity>(fn: EmitFn<T> | undefined): void {
+function setGlobalEmitFn<T extends string = BaseSeverity>(fn: EmitFn<T> | undefined): void {
   _globalEmitFn = (fn as EmitFn<any> | undefined) ?? defaultEmit;
 }
 
 /**
  * Returns the current global emit function.
  */
-export function getGlobalEmitFn<T extends string = BaseSeverity>(): EmitFn<T> {
+function getGlobalEmitFn<T extends string = BaseSeverity>(): EmitFn<T> {
   return _globalEmitFn as EmitFn<T>;
 }
 
 /**
  * Sets the global log callback.
  */
-export function setGlobalLogCallback<T extends string = BaseSeverity>(
+function setGlobalLogCallback<T extends string = BaseSeverity>(
   cb: LoggerCallback<T> | undefined,
 ): void {
   _globalCallback = cb as LoggerCallback<any> | undefined;
@@ -101,9 +101,7 @@ export function setGlobalLogCallback<T extends string = BaseSeverity>(
 /**
  * Returns the current global log callback, if any.
  */
-export function getGlobalLogCallback<T extends string = BaseSeverity>():
-  | LoggerCallback<T>
-  | undefined {
+function getGlobalLogCallback<T extends string = BaseSeverity>(): LoggerCallback<T> | undefined {
   return _globalCallback as LoggerCallback<T> | undefined;
 }
 
@@ -113,7 +111,7 @@ export function getGlobalLogCallback<T extends string = BaseSeverity>():
  *
  * @param ranking - Map from severity name to numeric rank.
  */
-export function setGlobalSeverityRanking(ranking: Record<string, number> | undefined): void {
+function setGlobalSeverityRanking(ranking: Record<string, number> | undefined): void {
   _globalSeverityRanking = ranking;
 }
 
@@ -121,7 +119,7 @@ export function setGlobalSeverityRanking(ranking: Record<string, number> | undef
  * Returns a copy of the current global severity ranking, or `undefined` if
  * none has been configured.
  */
-export function getGlobalSeverityRanking(): Record<string, number> | undefined {
+function getGlobalSeverityRanking(): Record<string, number> | undefined {
   return _globalSeverityRanking ? { ..._globalSeverityRanking } : undefined;
 }
 
@@ -137,10 +135,38 @@ export function getGlobalSeverityRanking(): Record<string, number> | undefined {
  *
  * @param config - Global logger configuration.
  */
-export function configureGlobalLoggerSettings(config: GlobalLoggerConfig): void {
+function configureGlobalLoggerSettings(config: GlobalLoggerConfig): void {
   if (config.level) setGlobalMinLogLevel(config.level);
   if (config.context) setGlobalLogContext(config.context);
   if (config.emitFn) setGlobalEmitFn(config.emitFn);
   if (config.callback) setGlobalLogCallback(config.callback);
   if (config.severityRanking) setGlobalSeverityRanking(config.severityRanking);
 }
+
+/**
+ * Clears the global log context entirely, replacing it with an empty object.
+ *
+ * Unlike {@link setGlobalLogContext} which merges, this is a full reset.
+ * Intended for test teardown — not for production use.
+ *
+ * @internal
+ */
+function clearGlobalLogContext(): void {
+  _globalContext = {};
+}
+
+export {
+  defaultEmit,
+  setGlobalMinLogLevel,
+  getGlobalMinLogLevel,
+  setGlobalLogContext,
+  getGlobalLogContext,
+  setGlobalEmitFn,
+  getGlobalEmitFn,
+  setGlobalLogCallback,
+  getGlobalLogCallback,
+  setGlobalSeverityRanking,
+  getGlobalSeverityRanking,
+  configureGlobalLoggerSettings,
+  clearGlobalLogContext,
+};
