@@ -73,11 +73,15 @@ describe('JustInError unit tests', () => {
     });
 
     it('accepts VALIDATION_ERROR', () => {
-      expect(new JustInError('bad input', JustinErrorCode.VALIDATION_ERROR).code).toBe('VALIDATION_ERROR');
+      expect(new JustInError('bad input', JustinErrorCode.VALIDATION_ERROR).code).toBe(
+        'VALIDATION_ERROR',
+      );
     });
 
     it('accepts NOT_INITIALIZED', () => {
-      expect(new JustInError('not ready', JustinErrorCode.NOT_INITIALIZED).code).toBe('NOT_INITIALIZED');
+      expect(new JustInError('not ready', JustinErrorCode.NOT_INITIALIZED).code).toBe(
+        'NOT_INITIALIZED',
+      );
     });
 
     it('accepts NOT_FOUND', () => {
@@ -85,7 +89,9 @@ describe('JustInError unit tests', () => {
     });
 
     it('accepts PARTIAL_SUCCESS', () => {
-      expect(new JustInError('partial', JustinErrorCode.PARTIAL_SUCCESS).code).toBe('PARTIAL_SUCCESS');
+      expect(new JustInError('partial', JustinErrorCode.PARTIAL_SUCCESS).code).toBe(
+        'PARTIAL_SUCCESS',
+      );
     });
 
     it('accepts arbitrary string codes for extensibility', () => {

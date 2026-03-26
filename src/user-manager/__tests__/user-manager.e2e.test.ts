@@ -41,10 +41,18 @@ describe('UserManager public API — e2e', () => {
   });
 
   afterAll(async () => {
-    try { await UserManager.shutdown(); } catch {}
-    try { await dm.close(); } catch {}
-    try { await repl.stop(); } catch {}
-    try { sb.restore(); } catch {}
+    try {
+      await UserManager.shutdown();
+    } catch {}
+    try {
+      await dm.close();
+    } catch {}
+    try {
+      await repl.stop();
+    } catch {}
+    try {
+      sb.restore();
+    } catch {}
     silenceLogs.restore();
   });
 
@@ -403,7 +411,9 @@ describe('UserManager public API — e2e', () => {
         'NOT_FOUND',
       );
       // exact trimmed value does match
-      const updated = expectOk(await UserManager.updateUserByUniqueIdentifier('test mark', { x: 1 }));
+      const updated = expectOk(
+        await UserManager.updateUserByUniqueIdentifier('test mark', { x: 1 }),
+      );
       expect(updated.uniqueIdentifier).toBe('test mark');
     });
   });

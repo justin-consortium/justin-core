@@ -1,9 +1,6 @@
 import sinon from 'sinon';
 import { createLogger } from '../logger';
-import {
-  setGlobalLogCallback,
-  setGlobalSeverityRanking,
-} from '../global';
+import { setGlobalLogCallback, setGlobalSeverityRanking } from '../global';
 import { loggerSpies, resetGlobalLoggerState } from '../../testing/testkit';
 import { expectLog } from '../../testing/helpers';
 import type { LoggerSpies } from '../../testing/testkit';
@@ -302,7 +299,9 @@ describe('createLogger unit tests', () => {
 
     it('a throwing callback is swallowed — does not affect the emit', () => {
       const Log = createLogger({
-        callback: () => { throw new Error('callback blew up'); },
+        callback: () => {
+          throw new Error('callback blew up');
+        },
       });
 
       expect(() => Log.info('test')).not.toThrow();

@@ -146,7 +146,7 @@ const shutdown = async (): Promise<void> => {
 const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
   _checkInit();
 
- const normalizedRecord: NewUserRecord = isNonEmptyString(record?.uniqueIdentifier)
+  const normalizedRecord: NewUserRecord = isNonEmptyString(record?.uniqueIdentifier)
     ? { ...record, uniqueIdentifier: record.uniqueIdentifier.trim() }
     : record;
 

@@ -154,11 +154,15 @@ describe('user-manager helpers unit tests', () => {
     });
 
     it('returns false when a reserved key is present', () => {
-      expect(assertNoReservedKeys({ id: 'hack', name: 'Alice' }, ['id', 'uniqueIdentifier'])).toBe(false);
+      expect(assertNoReservedKeys({ id: 'hack', name: 'Alice' }, ['id', 'uniqueIdentifier'])).toBe(
+        false,
+      );
     });
 
     it('returns false when uniqueIdentifier is present', () => {
-      expect(assertNoReservedKeys({ uniqueIdentifier: 'hack' }, ['id', 'uniqueIdentifier'])).toBe(false);
+      expect(assertNoReservedKeys({ uniqueIdentifier: 'hack' }, ['id', 'uniqueIdentifier'])).toBe(
+        false,
+      );
     });
 
     it('returns true for an empty object', () => {
@@ -215,7 +219,10 @@ describe('user-manager helpers unit tests', () => {
 
   describe('omitKeys', () => {
     it('returns a copy of the object without the specified keys', () => {
-      const result = omitKeys({ id: 'abc', uniqueIdentifier: 'alice', name: 'Alice' }, ['id', 'uniqueIdentifier']);
+      const result = omitKeys({ id: 'abc', uniqueIdentifier: 'alice', name: 'Alice' }, [
+        'id',
+        'uniqueIdentifier',
+      ]);
 
       expect(result).toEqual({ name: 'Alice' });
     });

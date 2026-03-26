@@ -70,18 +70,12 @@ describe('result helpers unit tests', () => {
     });
 
     it('includes partial successes when provided', () => {
-      const result = coreFailure(
-        [{ code: 'DB_ERROR', reason: 'one failed' }],
-        ['partial-success'],
-      );
+      const result = coreFailure([{ code: 'DB_ERROR', reason: 'one failed' }], ['partial-success']);
       expect(result.successes).toEqual(['partial-success']);
     });
 
     it('carries both failures and partial successes together', () => {
-      const result = coreFailure(
-        [{ code: 'VALIDATION_ERROR', reason: 'bad input' }],
-        ['ok-item'],
-      );
+      const result = coreFailure([{ code: 'VALIDATION_ERROR', reason: 'bad input' }], ['ok-item']);
       expect(result.ok).toBe(false);
       expect(result.successes).toHaveLength(1);
       if (!result.ok) expect(result.failures).toHaveLength(1);
@@ -108,7 +102,9 @@ describe('result helpers unit tests', () => {
     });
 
     it('includes uniqueIdentifier in the failure entry when provided', () => {
-      const result = coreFailureResult('myFn', 'NOT_FOUND', 'not found', { uniqueIdentifier: 'alice' });
+      const result = coreFailureResult('myFn', 'NOT_FOUND', 'not found', {
+        uniqueIdentifier: 'alice',
+      });
       if (!result.ok) expect(result.failures[0].uniqueIdentifier).toBe('alice');
     });
 

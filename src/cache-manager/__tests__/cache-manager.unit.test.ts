@@ -21,7 +21,6 @@ describe('CacheManager unit tests', () => {
     return { id, slug, ...(category ? { category } : {}) };
   }
 
-
   describe('createCacheManager', () => {
     it('starts empty', () => {
       const cache = createCacheManager<TestRecord>();
@@ -38,9 +37,7 @@ describe('CacheManager unit tests', () => {
     });
 
     it('supports chaining multiple addIndex calls', () => {
-      const cache = createCacheManager<TestRecord>()
-        .addIndex('slug')
-        .addIndex('category');
+      const cache = createCacheManager<TestRecord>().addIndex('slug').addIndex('category');
 
       cache.upsert(makeRecord('1', 'alpha', 'gif'));
 
@@ -48,7 +45,6 @@ describe('CacheManager unit tests', () => {
       expect(cache.getByIndex('category', 'gif')).not.toBeNull();
     });
   });
-
 
   describe('upsert', () => {
     it('stores a record retrievable by id', () => {
@@ -106,7 +102,6 @@ describe('CacheManager unit tests', () => {
     });
   });
 
-
   describe('getById', () => {
     it('returns the record for a known id', () => {
       const cache = createCacheManager<TestRecord>();
@@ -127,7 +122,6 @@ describe('CacheManager unit tests', () => {
       expect(cache.getById('')).toBeNull();
     });
   });
-
 
   describe('getByIndex', () => {
     it('returns the record for a known indexed value', () => {
@@ -159,7 +153,6 @@ describe('CacheManager unit tests', () => {
       expect(cache.getByIndex('slug', '')).toBeNull();
     });
   });
-
 
   describe('delete', () => {
     it('returns the deleted record', () => {
@@ -211,7 +204,6 @@ describe('CacheManager unit tests', () => {
     });
   });
 
-
   describe('refresh', () => {
     it('loads all provided records into the cache', () => {
       const cache = createCacheManager<TestRecord>().addIndex('slug');
@@ -256,16 +248,12 @@ describe('CacheManager unit tests', () => {
 
     it('skips records with missing ids and does not crash', () => {
       const cache = createCacheManager<TestRecord>().addIndex('slug');
-      cache.refresh([
-        makeRecord('valid', 'good'),
-        { id: '', slug: 'bad' },
-      ]);
+      cache.refresh([makeRecord('valid', 'good'), { id: '', slug: 'bad' }]);
 
       expect(cache.size()).toBe(1);
       expect(cache.getById('valid')).not.toBeNull();
     });
   });
-
 
   describe('clear', () => {
     it('removes all records', () => {
@@ -304,7 +292,6 @@ describe('CacheManager unit tests', () => {
     });
   });
 
-
   describe('getAll', () => {
     it('returns all records as an array', () => {
       const cache = createCacheManager<TestRecord>().addIndex('slug');
@@ -322,7 +309,6 @@ describe('CacheManager unit tests', () => {
       expect(cache.getAll()).toEqual([]);
     });
   });
-
 
   describe('size', () => {
     it('returns 0 for a new cache', () => {
@@ -346,7 +332,6 @@ describe('CacheManager unit tests', () => {
       expect(cache.size()).toBe(1);
     });
   });
-
 
   describe('index consistency', () => {
     it('a record replaced via upsert does not leave stale index entries', () => {
