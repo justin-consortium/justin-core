@@ -146,7 +146,11 @@ const shutdown = async (): Promise<void> => {
 const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
   _checkInit();
 
-  const userResult = await createUserRecord(record);
+ const normalizedRecord: NewUserRecord = isNonEmptyString(record?.uniqueIdentifier)
+    ? { ...record, uniqueIdentifier: record.uniqueIdentifier.trim() }
+    : record;
+
+  const userResult = await createUserRecord(normalizedRecord);
   if (!userResult.ok) return userResult;
 
   const user = userResult.successes[0];
@@ -183,7 +187,14 @@ const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => 
 const createUsers = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
   _checkInit();
   if (!Array.isArray(records) || records.length === 0) return coreSuccess([]);
-  return createUserRecords(records);
+
+  const normalizedRecords = records.map((record) =>
+    isNonEmptyString(record?.uniqueIdentifier)
+      ? { ...record, uniqueIdentifier: record.uniqueIdentifier.trim() }
+      : record,
+  );
+
+  return createUserRecords(normalizedRecords);
 };
 
 /**

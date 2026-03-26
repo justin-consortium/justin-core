@@ -15,17 +15,6 @@ import {
 } from '../../testing';
 import type { JUser } from '../../user-manager/types';
 
-/**
- * UserManager end-to-end tests.
- *
- * Goals:
- * - Exercise every public UserManager API against real Mongo infrastructure.
- * - Cover happy paths, edge cases, and invalid-input paths.
- * - Verify cache consistency after every mutation.
- * - Verify DB state directly via DataManager as a secondary assertion source.
- * - Assert CoreResult shape (ok, successes, failures) on every write operation.
- */
-
 jest.setTimeout(120_000);
 
 describe('UserManager public API — e2e', () => {
@@ -42,7 +31,6 @@ describe('UserManager public API — e2e', () => {
     const uri = repl.getUri();
     await waitForMongoReady(uri);
 
-    // Wire configureDB so DataManager.init() connects to the in-memory replica set.
     const realInit = MongoDBManager.init.bind(MongoDBManager);
     sb.stub(MongoDBManager, 'init').callsFake(() => realInit(uri, 'user-manager-e2e'));
 
@@ -53,22 +41,10 @@ describe('UserManager public API — e2e', () => {
   });
 
   afterAll(async () => {
-    // Shutdown order matters: UserManager closes change streams first (while
-    // Mongo is still running), then DataManager disconnects, then the replica
-    // set stops. _closeStream in ChangeListenerManager ensures no post-destroy
-    // error events become unhandled rejections.
-    try {
-      await UserManager.shutdown();
-    } catch {}
-    try {
-      await dm.close();
-    } catch {}
-    try {
-      await repl.stop();
-    } catch {}
-    try {
-      sb.restore();
-    } catch {}
+    try { await UserManager.shutdown(); } catch {}
+    try { await dm.close(); } catch {}
+    try { await repl.stop(); } catch {}
+    try { sb.restore(); } catch {}
     silenceLogs.restore();
   });
 
@@ -79,7 +55,6 @@ describe('UserManager public API — e2e', () => {
     await TestingUserManager.refreshProtectedAttributesCache();
   });
 
-  /** Creates a user and asserts success — convenience for test setup. */
   async function createUser(
     uniqueIdentifier: string,
     attributes: Record<string, any> = {},
@@ -87,10 +62,6 @@ describe('UserManager public API — e2e', () => {
     const result = await UserManager.createUser({ uniqueIdentifier, attributes });
     return expectOk(result);
   }
-
-  // ===========================================================================
-  // createUser
-  // ===========================================================================
 
   describe('createUser', () => {
     it('returns ok:true with the created user', async () => {
@@ -158,9 +129,23 @@ describe('UserManager public API — e2e', () => {
       );
     });
 
-    it('preserves uniqueIdentifier with spaces exactly as provided', async () => {
+    it('preserves internal spaces in uniqueIdentifier', async () => {
       const user = await createUser('test mark');
       expect(user.uniqueIdentifier).toBe('test mark');
+    });
+
+    it('trims leading and trailing whitespace from uniqueIdentifier before storing', async () => {
+      const user = await createUser('  test mark  ');
+      expect(user.uniqueIdentifier).toBe('test mark');
+    });
+
+    it('treats leading/trailing whitespace variants as the same identifier', async () => {
+      await createUser('  test mark  ');
+      const duplicate = await UserManager.createUser({
+        uniqueIdentifier: 'test mark',
+        attributes: {},
+      });
+      expectFailedWithCode(duplicate, 'VALIDATION_ERROR');
     });
 
     it('creates user with protected attributes in one call', async () => {
@@ -177,10 +162,6 @@ describe('UserManager public API — e2e', () => {
       expect(pa[0].protectedAttributes).toMatchObject({ steps: 1000 });
     });
   });
-
-  // ===========================================================================
-  // createUsers
-  // ===========================================================================
 
   describe('createUsers', () => {
     it('returns ok:true with all created users when all succeed', async () => {
@@ -244,11 +225,30 @@ describe('UserManager public API — e2e', () => {
         expect(result.failures[0].code).toBe('VALIDATION_ERROR');
       }
     });
-  });
 
-  // ===========================================================================
-  // getUserById / getUserByUniqueIdentifier / getAllUsers
-  // ===========================================================================
+    it('trims uniqueIdentifier in bulk — stores trimmed value', async () => {
+      const result = await UserManager.createUsers([
+        { uniqueIdentifier: '  alice  ', attributes: {} },
+      ]);
+
+      expect(result.ok).toBe(true);
+      expect(result.successes[0].uniqueIdentifier).toBe('alice');
+    });
+
+    it('treats whitespace variants as duplicates in bulk', async () => {
+      const result = await UserManager.createUsers([
+        { uniqueIdentifier: '  alice  ', attributes: {} },
+        { uniqueIdentifier: 'alice', attributes: {} },
+      ]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.successes).toHaveLength(1);
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0].code).toBe('VALIDATION_ERROR');
+      }
+    });
+  });
 
   describe('getUserById / getUserByUniqueIdentifier / getAllUsers', () => {
     it('getUserById returns the user from cache', async () => {
@@ -277,10 +277,11 @@ describe('UserManager public API — e2e', () => {
       expect(UserManager.getUserByUniqueIdentifier('nobody')).toBeNull();
     });
 
-    it('getUserByUniqueIdentifier matches exactly — does not trim', async () => {
+    it('getUserByUniqueIdentifier requires exact match — does not trim on lookup', async () => {
       await createUser('test mark');
       expect(UserManager.getUserByUniqueIdentifier('test mark')).not.toBeNull();
       expect(UserManager.getUserByUniqueIdentifier('testmark')).toBeNull();
+      // stored as 'test mark' after trim — padded version does not match
       expect(UserManager.getUserByUniqueIdentifier(' test mark ')).toBeNull();
     });
 
@@ -297,10 +298,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // isIdentifierUnique
-  // ===========================================================================
-
   describe('isIdentifierUnique', () => {
     it('returns true for an identifier that does not exist', () => {
       expect(UserManager.isIdentifierUnique('brand-new')).toBe(true);
@@ -315,10 +312,6 @@ describe('UserManager public API — e2e', () => {
       expect(UserManager.isIdentifierUnique('')).toBe(false);
     });
   });
-
-  // ===========================================================================
-  // updateUserById
-  // ===========================================================================
 
   describe('updateUserById', () => {
     it('returns ok:true with the updated user', async () => {
@@ -381,10 +374,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // updateUserByUniqueIdentifier
-  // ===========================================================================
-
   describe('updateUserByUniqueIdentifier', () => {
     it('returns ok:true with the updated user', async () => {
       await createUser('u1', { score: 5 });
@@ -406,18 +395,18 @@ describe('UserManager public API — e2e', () => {
       );
     });
 
-    it('does not match trimmed version — exact match required', async () => {
-      await createUser('test mark');
+    it('lookup does not trim — padded identifier does not match trimmed stored value', async () => {
+      await createUser('  test mark  ');
+      // stored as 'test mark' after trim — padding does not match
       expectFailedWithCode(
         await UserManager.updateUserByUniqueIdentifier(' test mark ', { x: 1 }),
         'NOT_FOUND',
       );
+      // exact trimmed value does match
+      const updated = expectOk(await UserManager.updateUserByUniqueIdentifier('test mark', { x: 1 }));
+      expect(updated.uniqueIdentifier).toBe('test mark');
     });
   });
-
-  // ===========================================================================
-  // deleteUserById
-  // ===========================================================================
 
   describe('deleteUserById', () => {
     it('returns ok:true on successful deletion', async () => {
@@ -463,10 +452,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // deleteUserByUniqueIdentifier
-  // ===========================================================================
-
   describe('deleteUserByUniqueIdentifier', () => {
     it('returns ok:true on successful deletion', async () => {
       await createUser('u1');
@@ -478,8 +463,9 @@ describe('UserManager public API — e2e', () => {
       expectFailedWithCode(await UserManager.deleteUserByUniqueIdentifier('nobody'), 'NOT_FOUND');
     });
 
-    it('requires exact match — does not trim', async () => {
-      await createUser('test mark');
+    it('lookup does not trim — padded identifier does not match trimmed stored value', async () => {
+      await createUser('  test mark  ');
+      // stored as 'test mark' — padded version does not match
       expectFailedWithCode(
         await UserManager.deleteUserByUniqueIdentifier(' test mark '),
         'NOT_FOUND',
@@ -497,10 +483,6 @@ describe('UserManager public API — e2e', () => {
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
   });
-
-  // ===========================================================================
-  // deleteAllUsers
-  // ===========================================================================
 
   describe('deleteAllUsers', () => {
     it('clears all users and protected attributes, empties the cache', async () => {
@@ -521,10 +503,6 @@ describe('UserManager public API — e2e', () => {
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
   });
-
-  // ===========================================================================
-  // setProtectedAttributesForUser
-  // ===========================================================================
 
   describe('setProtectedAttributesForUser', () => {
     it('returns ok:true with the created record', async () => {
@@ -605,7 +583,7 @@ describe('UserManager public API — e2e', () => {
       }
     });
 
-    it('preserves namespace with spaces exactly as provided', async () => {
+    it('preserves namespace with internal spaces exactly as provided', async () => {
       const user = await createUser('u1');
       await UserManager.setProtectedAttributesForUser(user.id, {
         namespace: 'my namespace',
@@ -624,10 +602,6 @@ describe('UserManager public API — e2e', () => {
       expect(failure.details?.namespace).toBe('ns');
     });
   });
-
-  // ===========================================================================
-  // getProtectedAttributesForUser / getAllProtectedAttributesForUser
-  // ===========================================================================
 
   describe('getProtectedAttributesForUser / getAllProtectedAttributesForUser', () => {
     it('returns only requested namespaces', async () => {
@@ -674,10 +648,6 @@ describe('UserManager public API — e2e', () => {
       expect(pa[0].namespace).toBe('real');
     });
   });
-
-  // ===========================================================================
-  // updateProtectedAttributeForUser
-  // ===========================================================================
 
   describe('updateProtectedAttributeForUser', () => {
     it('returns ok:true — sets a top-level key', async () => {
@@ -773,10 +743,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // updateProtectedAttributesForUser
-  // ===========================================================================
-
   describe('updateProtectedAttributesForUser', () => {
     it('returns ok:true — updates multiple key paths in one call', async () => {
       const user = await createUser('u1');
@@ -846,10 +812,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // deleteProtectedAttributesForUser
-  // ===========================================================================
-
   describe('deleteProtectedAttributesForUser', () => {
     it('returns ok:true — deletes a single namespace', async () => {
       const user = await createUser('u1');
@@ -914,10 +876,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // deleteAllProtectedAttributesForUser
-  // ===========================================================================
-
   describe('deleteAllProtectedAttributesForUser', () => {
     it('deletes all namespaces for the user', async () => {
       const user = await createUser('u1');
@@ -953,10 +911,6 @@ describe('UserManager public API — e2e', () => {
       expect(UserManager.getAllProtectedAttributesForUser(u2.id)).toHaveLength(1);
     });
   });
-
-  // ===========================================================================
-  // deleteProtectedAttributeForUser
-  // ===========================================================================
 
   describe('deleteProtectedAttributeForUser', () => {
     it('returns ok:true — removes a top-level key', async () => {
@@ -1028,10 +982,6 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  // ===========================================================================
-  // deleteProtectedAttributesFromNamespaceForUser
-  // ===========================================================================
-
   describe('deleteProtectedAttributesFromNamespaceForUser', () => {
     it('returns ok:true — removes multiple key paths from a namespace', async () => {
       const user = await createUser('u1');
@@ -1100,10 +1050,6 @@ describe('UserManager public API — e2e', () => {
       );
     });
   });
-
-  // ===========================================================================
-  // Cache vs DB consistency
-  // ===========================================================================
 
   describe('cache vs DB consistency', () => {
     it('cache reflects DB state after a simulated restart (re-init)', async () => {
