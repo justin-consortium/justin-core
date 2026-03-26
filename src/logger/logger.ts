@@ -1,4 +1,4 @@
-import {
+import type {
   BaseSeverity,
   CreateLoggerOptions,
   EmitFn,
@@ -38,7 +38,7 @@ function buildRankMap<T extends string>(): Record<T, number> {
   }
 
   for (const base of Object.keys(BASE_RANKS) as BaseSeverity[]) {
-    if (merged[base] == null) merged[base] = BASE_RANKS[base];
+    if (merged[base] === null) merged[base] = BASE_RANKS[base];
   }
 
   return merged as Record<T, number>;
@@ -50,9 +50,9 @@ function buildRankMap<T extends string>(): Record<T, number> {
  * @param value - Severity name or numeric rank.
  * @param ranks - Map of severity → numeric rank.
  */
-function toRank<T extends string>(value: T | number, ranks: Record<T, number>): number {
+function toRank<T extends string>(value: string | number, ranks: Record<T, number>): number {
   if (typeof value === 'number') return value;
-  return ranks[value] ?? 0;
+  return (ranks as Record<string, number>)[value.toUpperCase()] ?? 0;
 }
 
 /**
@@ -134,7 +134,7 @@ function createLogger<T extends string = BaseSeverity>(
   const error = (message: string, extras?: unknown) => emit('ERROR' as T, message, extras);
 
   return {
-    setLevel(level: T | number) {
+    setLevel(level: string | number) {
       minLevelRank = toRank(level, ranks);
     },
     setContext(next: Record<string, unknown>) {

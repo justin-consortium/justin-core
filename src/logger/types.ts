@@ -75,8 +75,13 @@ export type LoggerCallback<T extends string = BaseSeverity> = (entry: LoggerEntr
 export interface CreateLoggerOptions<T extends string = BaseSeverity> {
   /** Per-instance context merged into every log entry from this logger. */
   context?: Record<string, unknown>;
-  /** Minimum severity for this instance — overrides the global level. */
-  emitLevel?: T | number;
+  /**
+   * Minimum severity for this instance — overrides the global level.
+   * Accepts a severity name string (e.g. `'WARNING'`) or a numeric rank.
+   * Intentionally `string | number` rather than `T | number` so that passing
+   * a level string does not narrow the generic `T` and constrain `setLevel`.
+   */
+  emitLevel?: string | number;
   /** Per-instance emit override — overrides the global emit function. */
   emitFn?: EmitFn<T>;
   /** Per-instance callback override — overrides the global callback. */
@@ -131,9 +136,13 @@ export interface Logger<T extends string = BaseSeverity> {
   /**
    * Change this logger's minimum level at runtime.
    *
+   * Accepts a severity name string (case-insensitive, e.g. `'warning'` or
+   * `'WARNING'`) or a numeric rank. Intentionally `string | number` rather
+   * than `T | number` so callers are never constrained by the inferred generic.
+   *
    * @param level - Severity name or numeric rank.
    */
-  setLevel(level: T | number): void;
+  setLevel(level: string | number): void;
 
   /**
    * Merge additional context that will be included on every subsequent

@@ -1,10 +1,16 @@
-import { CapturedEmit } from '../testkit';
+import type { CapturedEmit } from '../testkit';
 import type { CoreResult, FailureEntry } from '../../types';
 
-export function expectLog(
+/**
+ * Asserts properties of a captured log entry.
+ *
+ * `severity` accepts any string so custom severity levels (e.g. `'TRACE'`,
+ * `'CRITICAL'`) can be asserted without a type error.
+ */
+function expectLog(
   log: CapturedEmit | undefined,
   opts: {
-    severity?: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+    severity?: string;
     messageSubstr?: string;
   } = {},
 ): void {
@@ -30,7 +36,7 @@ export function expectLog(
  * expect(user.uniqueIdentifier).toBe('u1');
  * ```
  */
-export function expectOk<T>(result: CoreResult<T>): T {
+function expectOk<T>(result: CoreResult<T>): T {
   expect(result.ok).toBe(true);
   expect(result.successes.length).toBeGreaterThan(0);
   return result.successes[0];
@@ -45,7 +51,7 @@ export function expectOk<T>(result: CoreResult<T>): T {
  * expect(failure.uniqueIdentifier).toBe('u1');
  * ```
  */
-export function expectFailed<T>(result: CoreResult<T>): FailureEntry {
+function expectFailed<T>(result: CoreResult<T>): FailureEntry {
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.failures.length).toBeGreaterThan(0);
@@ -64,8 +70,10 @@ export function expectFailed<T>(result: CoreResult<T>): FailureEntry {
  * expect(failure.id).toBe(userId);
  * ```
  */
-export function expectFailedWithCode<T>(result: CoreResult<T>, code: string): FailureEntry {
+function expectFailedWithCode<T>(result: CoreResult<T>, code: string): FailureEntry {
   const failure = expectFailed(result);
   expect(failure.code).toBe(code);
   return failure;
 }
+
+export { expectLog, expectOk, expectFailed, expectFailedWithCode };
