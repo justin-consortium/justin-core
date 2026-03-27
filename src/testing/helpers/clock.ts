@@ -1,5 +1,5 @@
 import sinon from 'sinon';
-// eslint-disable-next-line no-duplicate-imports
+
 import type { SinonFakeTimers } from 'sinon';
 
 /**

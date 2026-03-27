@@ -2,8 +2,6 @@ import { DataManager, ChangeListenerManager, configureDB as _configureDB } from 
 import type { DBConfig } from '../data-manager/types';
 import { createLogger } from '../logger';
 
-export type { DBConfig } from '../data-manager/types';
-
 const Log = createLogger({ context: { source: 'lifecycle' } });
 
 // ---------------------------------------------------------------------------
@@ -32,7 +30,7 @@ const _registry = new Set<ManagedShutdown>();
  *
  * @param manager - Object with a `shutdown` method.
  */
-export function registerManager(manager: ManagedShutdown): void {
+function registerManager(manager: ManagedShutdown): void {
   _registry.add(manager);
 }
 
@@ -44,7 +42,7 @@ export function registerManager(manager: ManagedShutdown): void {
  *
  * @internal
  */
-export function clearManagerRegistry(): void {
+function clearManagerRegistry(): void {
   _registry.clear();
 }
 
@@ -76,7 +74,7 @@ export function clearManagerRegistry(): void {
  *
  * @param config - Database connection configuration.
  */
-export function configureDB(config: DBConfig): void {
+function configureDB(config: DBConfig): void {
   _configureDB(config);
 }
 
@@ -87,7 +85,7 @@ export function configureDB(config: DBConfig): void {
 /**
  * Options accepted by {@link shutdownCore}.
  */
-export type ShutdownCoreOptions = {
+type ShutdownCoreOptions = {
   /**
    * If `true`, continues shutting down remaining subsystems even if one fails.
    * Defaults to `true`.
@@ -118,7 +116,7 @@ export type ShutdownCoreOptions = {
  *
  * @param opts - Optional shutdown behaviour configuration.
  */
-export async function shutdownCore(opts: ShutdownCoreOptions = {}): Promise<void> {
+async function shutdownCore(opts: ShutdownCoreOptions = {}): Promise<void> {
   const continueOnError = opts.continueOnError ?? true;
 
   const run = async (label: string, fn: () => unknown | Promise<unknown>) => {
@@ -148,3 +146,7 @@ export async function shutdownCore(opts: ShutdownCoreOptions = {}): Promise<void
 
   clearManagerRegistry();
 }
+
+export type { DBConfig } from '../data-manager/types';
+export type { ShutdownCoreOptions };
+export { registerManager, clearManagerRegistry, configureDB, shutdownCore };

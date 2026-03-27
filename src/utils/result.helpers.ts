@@ -1,5 +1,5 @@
 import { JustInError, JustinErrorCode } from '../errors';
-import { CoreResult, FailureEntry } from '../types';
+import type { CoreResult, FailureEntry } from '../types';
 import { createLogger } from '../logger';
 
 const Log = createLogger({ context: { source: 'result-helpers' } });

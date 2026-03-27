@@ -1,6 +1,6 @@
 import { ChangeListenerManager, CollectionChangeTypeEnum } from '../../data-manager';
 import { USERS } from '../constants';
-import { JUser } from '../types';
+import type { JUser } from '../types';
 import { deleteUserFromCache, upsertUserInCache } from './cache';
 import { createLogger } from '../../logger';
 

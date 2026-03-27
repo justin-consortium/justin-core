@@ -10,7 +10,7 @@ import {
 } from '../../utils';
 import { JustinErrorCode } from '../../errors';
 import type { NamespacedAttributes, ProtectedAttributesRecord } from '../types';
-import type { CoreResult } from '../../types';
+import type { CoreResult, FailureEntry } from '../../types';
 import {
   assertNoReservedKeysDeep,
   isNonEmptyString,
@@ -151,7 +151,7 @@ const _upsertSingleProtectedAttributesRecord = async (
   }
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string') {
+  if (!existingId) {
     return {
       ok: false,
       code: JustinErrorCode.VALIDATION_ERROR,
@@ -370,7 +370,7 @@ const updateProtectedAttributeByUniqueIdentifier = async (
     );
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string')
+  if (!existingId)
     return fail(JustinErrorCode.VALIDATION_ERROR, 'protected attributes record is missing id');
 
   const currentProtectedAttributes = isPlainObject(existing.protectedAttributes)
@@ -448,7 +448,7 @@ const updateProtectedAttributesByUniqueIdentifier = async (
     );
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string')
+  if (!existingId)
     return coreFailureResult(
       'updateProtectedAttributesByUniqueIdentifier',
       JustinErrorCode.VALIDATION_ERROR,
@@ -578,7 +578,9 @@ const deleteProtectedAttributesByUniqueIdentifier = async (
 
   const removeResult = await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, idsToDelete);
   if (!removeResult.ok && removeResult.successes.length === 0) {
-    return coreFailure(removeResult.failures.map((f) => ({ uniqueIdentifier, ...f })));
+    return coreFailure(
+      removeResult.failures.map((f: FailureEntry) => ({ uniqueIdentifier, ...f })),
+    );
   }
 
   deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
@@ -591,7 +593,7 @@ const deleteProtectedAttributesByUniqueIdentifier = async (
 
   if (!removeResult.ok) {
     return coreFailure(
-      removeResult.failures.map((f) => ({ uniqueIdentifier, ...f })),
+      removeResult.failures.map((f: FailureEntry) => ({ uniqueIdentifier, ...f })),
       [null],
     );
   }
@@ -615,7 +617,9 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
     uniqueIdentifier,
   });
 
-  const ids = docs.map((doc) => doc?.id).filter((id): id is string => typeof id === 'string');
+  const ids = docs
+    .map((doc: ProtectedAttributesRecord) => doc?.id)
+    .filter((id: string | undefined): id is string => typeof id === 'string');
 
   if (ids.length > 0) {
     await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, ids);
@@ -671,7 +675,7 @@ const deleteProtectedAttributeByUniqueIdentifier = async (
     );
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string')
+  if (!existingId)
     return fail(JustinErrorCode.VALIDATION_ERROR, 'protected attributes record is missing id');
 
   const currentProtectedAttributes = isPlainObject(existing.protectedAttributes)
@@ -751,7 +755,7 @@ const deleteProtectedAttributesFromNamespaceByUniqueIdentifier = async (
     );
 
   const existingId = existing?.id;
-  if (!existingId || typeof existingId !== 'string')
+  if (!existingId)
     return coreFailureResult(
       'deleteProtectedAttributesFromNamespaceByUniqueIdentifier',
       JustinErrorCode.VALIDATION_ERROR,

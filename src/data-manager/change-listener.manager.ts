@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { DataManager } from './';
-import { CollectionChangeType } from './types';
-import { Readable } from 'stream';
+import type { CollectionChangeType } from './types';
+import type { Readable } from 'stream';
 import { createLogger } from '../logger';
 
 const Log = createLogger({

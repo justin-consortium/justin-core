@@ -2,7 +2,7 @@ import { loggerSpies, resetGlobalLoggerState } from '../../testing/testkit';
 import { expectLog } from '../../testing/helpers';
 import { JustInError, JustinErrorCode } from '../../errors';
 import { handleError, checkInitialized } from '../error.helpers';
-// eslint-disable-next-line no-duplicate-imports
+
 import type { LoggerSpies } from '../../testing/testkit';
 
 describe('error helpers unit tests', () => {

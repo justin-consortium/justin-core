@@ -1,10 +1,10 @@
 import { EventEmitter } from 'events';
-import { Readable } from 'stream';
+import type { Readable } from 'stream';
 import { MongoDBManager } from './mongo/mongo-data-manager';
 import { ChangeListenerManager } from './change-listener.manager';
-import { CollectionChangeType, DataManagerAdapter, DBConfig } from './types';
+import type { CollectionChangeType, DataManagerAdapter, DBConfig } from './types';
 import { DBType } from './constants';
-import { CoreResult, FailureEntry } from '../types';
+import type { CoreResult, FailureEntry } from '../types';
 import { handleError, coreSuccess, coreFailure, failureEntryFromError } from '../utils';
 import { JustInError, JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
@@ -41,7 +41,7 @@ let _pendingConfig: DBConfig | null = null;
  *
  * @param config - Database connection configuration.
  */
-export function configureDB(config: DBConfig): void {
+function configureDB(config: DBConfig): void {
   _pendingConfig = config;
 }
 
@@ -49,8 +49,20 @@ export function configureDB(config: DBConfig): void {
  * Returns the pending DB config. Used internally by {@link DataManager.init}.
  * @internal
  */
-export function getPendingConfig(): DBConfig | null {
+function getPendingConfig(): DBConfig | null {
   return _pendingConfig;
+}
+
+/**
+ * Clears the pending DB config.
+ *
+ * Intended for test teardown only — resets the module-level config so tests
+ * that need to assert on the "no config" path can do so cleanly.
+ *
+ * @internal
+ */
+function clearPendingConfig(): void {
+  _pendingConfig = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -684,4 +696,4 @@ class DataManager extends EventEmitter {
   }
 }
 
-export default DataManager;
+export { DataManager, configureDB, getPendingConfig, clearPendingConfig };

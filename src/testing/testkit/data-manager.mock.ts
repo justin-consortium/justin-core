@@ -10,6 +10,10 @@ type Key = string; // `${collection}:${type}`
  * - getChangeStream() returns a stable Readable per (collection, changeType)
  */
 function mockDataManager() {
+  // Restore any existing stub on getInstance before re-wrapping
+  const existingStub = (DataManager as any).getInstance;
+  if (existingStub && typeof existingStub.restore === 'function') existingStub.restore();
+
   const sb = sinon.createSandbox();
   const streams = new Map<Key, ReturnType<typeof makeStream>>();
 

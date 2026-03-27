@@ -1,4 +1,10 @@
-import { BaseSeverity, EmitFn, GlobalLoggerConfig, LoggerCallback, LoggerEntry } from './types';
+import type {
+  BaseSeverity,
+  EmitFn,
+  GlobalLoggerConfig,
+  LoggerCallback,
+  LoggerEntry,
+} from './types';
 
 /**
  * Default console-based emitter. Used as the global fallback when no other

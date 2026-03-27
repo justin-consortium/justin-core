@@ -1,4 +1,5 @@
-import { CapturedEmit, LoggerSandboxOptions, makeLoggerSandbox } from './logger.sandbox';
+import type { CapturedEmit, LoggerSandboxOptions } from './logger.sandbox';
+import { makeLoggerSandbox } from './logger.sandbox';
 
 /**
  * The spy-enabled logger sandbox returned by {@link loggerSpies}.

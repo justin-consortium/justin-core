@@ -1,8 +1,8 @@
 /**
- * Base fields that are always present on a just-in user record.
+ * Base fields that are always present on a persisted just-in user record.
  *
- * These fields are reserved and must not be overridden by application-level
- * user data passed through `attributes`.
+ * These fields are reserved by the framework and must not be supplied inside
+ * application-level user attributes.
  */
 export type BaseJUser = {
   id: string;
@@ -10,46 +10,94 @@ export type BaseJUser = {
 };
 
 /**
- * A just-in user record.
+ * A persisted just-in user record.
  *
- * Application-level data is flattened onto the record alongside the reserved
- * base fields — there is no nested `attributes` object on the persisted shape.
+ * Application-level user data is flattened onto the top level of the stored
+ * record alongside the reserved base fields. There is no nested `attributes`
+ * object on the persisted shape.
  *
- * @typeParam TUserData - Additional fields the application stores per user.
+ * @typeParam TUserData - Additional application-defined fields stored for the user.
  */
 export type JUser<TUserData extends Record<string, any> = Record<string, any>> = BaseJUser &
   TUserData;
 
 /**
- * Namespaced protected attributes payload for a user.
+ * Maps protected-attribute namespaces to their payload shapes.
  *
- * Each namespace produces one isolated document in the protected-attributes
- * collection. Use separate namespaces to partition sensitive data by concern
- * (e.g. `'pii'`, `'fitbit'`, `'health'`).
+ * Each key is a namespace name and each value is the payload shape stored for
+ * that namespace.
+ *
+ * @example
+ * type MyProtectedSchema = {
+ *   fitbit: {
+ *     token: string;
+ *     deviceId: string;
+ *   };
+ *   pii: {
+ *     ssnLast4: string;
+ *     birthMonth: string;
+ *   };
+ * };
  */
-export type NamespacedAttributes = {
-  namespace: string;
-  protectedAttributes: Record<string, any>;
-};
+export type ProtectedAttributesSchema = Record<string, Record<string, any>>;
+
+/**
+ * A single namespaced protected-attributes payload.
+ *
+ * Given a schema map, this type produces a discriminated union where the
+ * `namespace` value determines the required shape of `protectedAttributes`.
+ *
+ * @typeParam TSchema - Map of namespace names to protected payload shapes.
+ *
+ * @example
+ * type MyProtectedSchema = {
+ *   fitbit: { token: string; deviceId: string };
+ *   pii: { ssnLast4: string };
+ * };
+ *
+ * type MyNamespacedAttributes = NamespacedAttributes<MyProtectedSchema>;
+ * // becomes:
+ * // | { namespace: "fitbit"; protectedAttributes: { token: string; deviceId: string } }
+ * // | { namespace: "pii"; protectedAttributes: { ssnLast4: string } }
+ */
+export type NamespacedAttributes<
+  TSchema extends ProtectedAttributesSchema = ProtectedAttributesSchema,
+> = {
+  [TNamespace in keyof TSchema]: {
+    namespace: TNamespace;
+    protectedAttributes: TSchema[TNamespace];
+  };
+}[keyof TSchema];
 
 /**
  * Input shape for creating a new user.
  *
- * - `attributes` is flattened onto the persisted record alongside
- *   `uniqueIdentifier`. Reserved keys (`id`, `uniqueIdentifier`) are rejected.
- * - `protectedAttributes` is optional — one protected-attributes document is
- *   created per namespace entry.
+ * `attributes` contains application-level user fields that will be flattened
+ * onto the persisted user record alongside `uniqueIdentifier`.
+ *
+ * `protectedAttributes` is optional. When provided, each entry produces one
+ * protected-attributes document in the protected-attributes collection.
+ *
+ * Reserved user keys such as `id` and `uniqueIdentifier` should not be passed
+ * inside `attributes` and are expected to be rejected by runtime validation.
+ *
+ * @typeParam TUserData - Application-defined user fields supplied at creation time.
+ * @typeParam TProtectedSchema - Map of namespace names to protected payload shapes.
  */
-export type NewUserRecord = {
+export type NewUserRecord<
+  TUserData extends Record<string, any> = Record<string, any>,
+  TProtectedSchema extends ProtectedAttributesSchema = ProtectedAttributesSchema,
+> = {
   uniqueIdentifier: string;
-  attributes: Record<string, any>;
-  protectedAttributes?: NamespacedAttributes[];
+  attributes: TUserData;
+  protectedAttributes?: NamespacedAttributes<TProtectedSchema>[];
 };
 
 /**
- * Base fields that are always present on a protected-attributes record.
+ * Base fields that are always present on a persisted protected-attributes record.
  *
- * Reserved — must not be overridden by application-level data.
+ * These fields are reserved by the framework and must not be overridden by
+ * application-level protected data.
  */
 export type BaseProtectedAttributes = {
   id: string;
@@ -58,13 +106,56 @@ export type BaseProtectedAttributes = {
 };
 
 /**
- * A protected-attributes record.
+ * A persisted protected-attributes record for a specific namespace and payload shape.
  *
- * The payload lives under the `protectedAttributes` key to avoid field
- * collisions with the base fields.
+ * The protected payload is always nested under `protectedAttributes` to avoid
+ * collisions with reserved top-level fields.
  *
- * @typeParam TProtectedData - Shape of the protected payload.
+ * @typeParam TNamespace - Namespace name for the protected record.
+ * @typeParam TProtectedData - Protected payload shape stored for that namespace.
  */
 export type ProtectedAttributesRecord<
-  TProtectedData extends Record<string, any> = { protectedAttributes: Record<string, any> },
-> = BaseProtectedAttributes & TProtectedData;
+  TNamespace extends string = string,
+  TProtectedData extends Record<string, any> = Record<string, any>,
+> = BaseProtectedAttributes & {
+  namespace: TNamespace;
+  protectedAttributes: TProtectedData;
+};
+
+/**
+ * A union of persisted protected-attributes record shapes derived from a schema map.
+ *
+ * Given a schema map, this type produces a discriminated union where the
+ * `namespace` value determines the required shape of `protectedAttributes`.
+ *
+ * @typeParam TSchema - Map of namespace names to protected payload shapes.
+ *
+ * @example
+ * type MyProtectedSchema = {
+ *   fitbit: { token: string; deviceId: string };
+ *   pii: { ssnLast4: string };
+ * };
+ *
+ * type MyProtectedRecord = ProtectedAttributesRecordFromSchema<MyProtectedSchema>;
+ * // becomes:
+ * // | {
+ * //     id: string;
+ * //     uniqueIdentifier: string;
+ * //     namespace: "fitbit";
+ * //     protectedAttributes: { token: string; deviceId: string };
+ * //   }
+ * // | {
+ * //     id: string;
+ * //     uniqueIdentifier: string;
+ * //     namespace: "pii";
+ * //     protectedAttributes: { ssnLast4: string };
+ * //   }
+ */
+export type ProtectedAttributesRecordFromSchema<
+  TSchema extends ProtectedAttributesSchema = ProtectedAttributesSchema,
+> = {
+  [TNamespace in keyof TSchema]: ProtectedAttributesRecord<
+    Extract<TNamespace, string>,
+    TSchema[TNamespace]
+  >;
+}[keyof TSchema];

@@ -1,4 +1,4 @@
-export { default as DataManager, configureDB, getPendingConfig } from './data-manager';
+export { DataManager, configureDB, getPendingConfig } from './data-manager';
 export { ChangeListenerManager } from './change-listener.manager';
 export { DBType, NO_ID } from './constants';
 export type {

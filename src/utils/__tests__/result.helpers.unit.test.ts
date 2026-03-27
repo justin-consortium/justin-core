@@ -9,7 +9,7 @@ import {
   unwrapSuccess,
   makeLoopFailureCollector,
 } from '../result.helpers';
-// eslint-disable-next-line no-duplicate-imports
+
 import type { LoggerSpies } from '../../testing/testkit';
 
 describe('result helpers unit tests', () => {

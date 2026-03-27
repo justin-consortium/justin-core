@@ -1,6 +1,6 @@
 import { ChangeListenerManager, CollectionChangeTypeEnum } from '../../data-manager';
 import { PROTECTED_ATTRIBUTES } from '../constants';
-import { ProtectedAttributesRecord } from '../types';
+import type { ProtectedAttributesRecord } from '../types';
 import { deleteProtectedAttributesByIdFromCache, upsertProtectedAttributesInCache } from './cache';
 import { createLogger } from '../../logger';
 

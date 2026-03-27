@@ -1,8 +1,9 @@
-import { createCacheManager, CacheManager } from '../../cache-manager';
+import type { CacheManager } from '../../cache-manager';
+import { createCacheManager } from '../../cache-manager';
 import { DataManager } from '../../data-manager';
 import { checkInitialized } from '../../utils';
 import { createLogger } from '../../logger';
-import { JUser } from '../types';
+import type { JUser } from '../types';
 import { USERS } from '../constants';
 
 const Log = createLogger({ context: { source: 'users-cache' } });
