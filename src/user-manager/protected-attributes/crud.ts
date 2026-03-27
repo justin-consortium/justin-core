@@ -323,7 +323,8 @@ const setProtectedAttributesByUniqueIdentifier = async (
  * @param namespace - The namespace to update.
  * @param keyPath - The key path to update.
  * @param value - The value to set.
- * @returns The updated record, or null if not found or input is invalid.
+ * @returns A {@link CoreResult} containing the updated record on success, or a failure with
+ *   `VALIDATION_ERROR` for invalid input or `NOT_FOUND` if no record exists for the namespace.
  * @throws {JustinError} If DataManager has not been initialized.
  */
 const updateProtectedAttributeByUniqueIdentifier = async (
@@ -525,7 +526,8 @@ const updateProtectedAttributesByUniqueIdentifier = async (
  *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespaces - A namespace string or array of namespace strings to delete.
- * @returns True if at least one record was deleted.
+ * @returns A {@link CoreResult} with `successes: [null]` when at least one record was deleted,
+ *   or a failure with `NOT_FOUND` if no matching records exist.
  * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteProtectedAttributesByUniqueIdentifier = async (
@@ -634,7 +636,8 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
  * @param uniqueIdentifier - The user's uniqueIdentifier.
  * @param namespace - The namespace to update.
  * @param keyPath - The key path to delete.
- * @returns The updated record, or null if not found or input is invalid.
+ * @returns A {@link CoreResult} containing the updated record on success, or a failure with
+ *   `VALIDATION_ERROR` for invalid input or `NOT_FOUND` if no record exists for the namespace.
  * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteProtectedAttributeByUniqueIdentifier = async (

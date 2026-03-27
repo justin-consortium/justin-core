@@ -68,9 +68,8 @@ export const upsertUserInCache = (user: JUser): void => {
 /**
  * Removes a user from the cache by `id`.
  *
- * Returns the deleted user's `uniqueIdentifier` (if known), or `null`.
- *
  * @param userId - Primary key of the user to remove.
+ * @returns The deleted user's `uniqueIdentifier` if found, or `null` if the user was not cached.
  */
 export const deleteUserFromCache = (userId: string): string | null => {
   _checkInit();
@@ -90,6 +89,7 @@ export const getAllUsersFromCache = (): JUser[] => {
  * Returns the cached user with the given `id`, or `null` if not found.
  *
  * @param userId - Primary key to look up.
+ * @returns The matching {@link JUser}, or `null` if not found.
  */
 export const getUserByIdFromCache = (userId: string): JUser | null => {
   _checkInit();
@@ -100,6 +100,7 @@ export const getUserByIdFromCache = (userId: string): JUser | null => {
  * Returns the cached user whose `uniqueIdentifier` matches, or `null`.
  *
  * @param uniqueIdentifier - Unique identifier to look up.
+ * @returns The matching {@link JUser}, or `null` if not found.
  */
 export const getUserByUniqueIdentifierFromCache = (uniqueIdentifier: string): JUser | null => {
   _checkInit();
@@ -110,6 +111,7 @@ export const getUserByUniqueIdentifierFromCache = (uniqueIdentifier: string): JU
  * Returns the `id` of the user whose `uniqueIdentifier` matches, or `null`.
  *
  * @param uniqueIdentifier - Unique identifier to resolve.
+ * @returns The user's `id` string, or `null` if not found.
  */
 export const getUserIdByUniqueIdentifierFromCache = (uniqueIdentifier: string): string | null => {
   _checkInit();

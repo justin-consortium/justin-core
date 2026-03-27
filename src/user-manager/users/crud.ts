@@ -197,6 +197,8 @@ export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreR
 
 /**
  * Returns all users from the in-memory cache.
+ *
+ * @returns All cached {@link JUser} records as an array, or an empty array if the cache is empty.
  */
 export const getAllUsers = (): JUser[] => {
   _checkInit();
@@ -207,6 +209,7 @@ export const getAllUsers = (): JUser[] => {
  * Returns the cached user with the given `id`, or `null` if not found.
  *
  * @param userId - Primary key to look up.
+ * @returns The matching {@link JUser}, or `null` if not found or if `userId` is empty.
  */
 export const getUserById = (userId: string): JUser | null => {
   _checkInit();
@@ -218,6 +221,7 @@ export const getUserById = (userId: string): JUser | null => {
  * Returns the cached user whose `uniqueIdentifier` matches, or `null`.
  *
  * @param uniqueIdentifier - Unique identifier to look up.
+ * @returns The matching {@link JUser}, or `null` if not found or if `uniqueIdentifier` is empty.
  */
 export const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
   _checkInit();
