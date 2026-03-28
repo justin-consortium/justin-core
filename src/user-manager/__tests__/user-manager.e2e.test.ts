@@ -506,8 +506,9 @@ describe('UserManager public API — e2e', () => {
         { namespace: 'ns', protectedAttributes: { b: 2 } },
       ]);
 
-      await UserManager.deleteAllUsers();
+      const result = await UserManager.deleteAllUsers();
 
+      expect(result.ok).toBe(true);
       expect(UserManager.getAllUsers()).toHaveLength(0);
       expect(await dm.getAllInCollection<any>(USERS)).toHaveLength(0);
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
@@ -894,14 +895,16 @@ describe('UserManager public API — e2e', () => {
         { namespace: 'ns2', protectedAttributes: {} },
       ]);
 
-      await UserManager.deleteAllProtectedAttributesForUser(user.id);
+      const result = await UserManager.deleteAllProtectedAttributesForUser(user.id);
+      expect(result.ok).toBe(true);
       expect(UserManager.getAllProtectedAttributesForUser(user.id)).toHaveLength(0);
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
 
-    it('is a no-op for a user with no protected attributes', async () => {
+    it('returns ok:true for a user with no protected attributes', async () => {
       const user = await createUser('u1');
-      await expect(UserManager.deleteAllProtectedAttributesForUser(user.id)).resolves.not.toThrow();
+      const result = await UserManager.deleteAllProtectedAttributesForUser(user.id);
+      expect(result.ok).toBe(true);
     });
 
     it('does not affect other users protected attributes', async () => {

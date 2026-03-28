@@ -102,7 +102,7 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
 
   // Collection-level
   sb.stub(dm, 'getAllInCollection').resolves([]);
-  sb.stub(dm, 'clearCollection').resolves();
+  sb.stub(dm, 'clearCollection').resolves({ ok: true, successes: [null] } as any);
 
   // ChangeListenerManager — no-ops by default.
   sb.stub(clm, 'addChangeListener');

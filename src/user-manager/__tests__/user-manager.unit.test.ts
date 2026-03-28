@@ -217,16 +217,27 @@ describe('UserManager unit tests', () => {
   });
 
   describe('deleteAllUsers', () => {
-    it('clears both collections and empties both caches', async () => {
+    it('returns ok:true and clears both collections and caches', async () => {
       upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
       upsertProtectedAttributesInCache(makePA());
 
-      await UserManager.deleteAllUsers();
+      const result = await UserManager.deleteAllUsers();
 
+      expectOk(result);
       expect(UserManager.getAllUsers()).toHaveLength(0);
       expect(UserManager.getAllProtectedAttributesForUser('u1')).toHaveLength(0);
       expect((t.dm as any).clearCollection.calledWith('users')).toBe(true);
       expect((t.dm as any).clearCollection.calledWith('protected_attributes')).toBe(true);
+    });
+
+    it('returns ok:false when the users collection clear fails', async () => {
+      (t.dm as any).clearCollection.resolves({
+        ok: false,
+        successes: [],
+        failures: [{ code: JustinErrorCode.DB_ERROR, reason: 'clear failed' }],
+      });
+
+      expectFailed(await UserManager.deleteAllUsers());
     });
   });
 
@@ -342,19 +353,33 @@ describe('UserManager unit tests', () => {
   });
 
   describe('deleteAllProtectedAttributesForUser', () => {
-    it('is a no-op and logs a warning for an unknown userId', async () => {
-      await UserManager.deleteAllProtectedAttributesForUser('ghost');
+    it('returns NOT_FOUND for an unknown userId', async () => {
+      const result = await UserManager.deleteAllProtectedAttributesForUser('ghost');
 
-      expect(lg.findByMessage('userId invalid or user not found')).toHaveLength(1);
+      expectFailedWithCode(result, JustinErrorCode.NOT_FOUND);
       expect((t.dm as any).findItemsInCollection.called).toBe(false);
     });
 
-    it('resolves userId to uniqueIdentifier and deletes all PA records', async () => {
+    it('returns ok:true and deletes all PA records for a known user', async () => {
       upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
       (t.dm as any).findItemsInCollection.resolves([makePA({ uniqueIdentifier: 'alice' })]);
       (t.dm as any).removeItemsFromCollection.resolves({ ok: true, successes: [{ id: 'pa1' }] });
 
-      await expect(UserManager.deleteAllProtectedAttributesForUser('u1')).resolves.not.toThrow();
+      const result = await UserManager.deleteAllProtectedAttributesForUser('u1');
+
+      expectOk(result);
+    });
+
+    it('returns ok:false when the DB removal fails', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).findItemsInCollection.resolves([makePA({ uniqueIdentifier: 'alice' })]);
+      (t.dm as any).removeItemsFromCollection.resolves({
+        ok: false,
+        successes: [],
+        failures: [{ code: JustinErrorCode.DB_ERROR, reason: 'write failed' }],
+      });
+
+      expectFailed(await UserManager.deleteAllProtectedAttributesForUser('u1'));
     });
   });
 

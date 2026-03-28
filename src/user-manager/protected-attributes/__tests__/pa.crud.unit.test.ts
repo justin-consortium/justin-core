@@ -3,6 +3,7 @@ import {
   loggerSpies,
   resetGlobalLoggerState,
   expectOk,
+  expectFailed,
   expectFailedWithCode,
 } from '../../../testing';
 import type { CoreManagersSandbox, LoggerSpies } from '../../../testing';
@@ -443,28 +444,45 @@ describe('protected attributes crud unit tests', () => {
   });
 
   describe('deleteAllProtectedAttributesByUniqueIdentifier', () => {
-    it('deletes all records for the user', async () => {
+    it('returns ok:true and clears all records for the user', async () => {
       (t.dm as any).findItemsInCollection.resolves([
         makePA({ id: 'pa1', namespace: 'health' }),
         makePA({ id: 'pa2', namespace: 'fitness' }),
       ]);
       stubRemoveItems(2);
 
-      await deleteAllProtectedAttributesByUniqueIdentifier('alice');
+      const result = await deleteAllProtectedAttributesByUniqueIdentifier('alice');
 
+      expectOk(result);
       expect(getAllProtectedAttributesByUniqueIdentifier('alice')).toHaveLength(0);
     });
 
-    it('is a no-op for a user with no records', async () => {
+    it('returns ok:true when the user has no records', async () => {
       (t.dm as any).findItemsInCollection.resolves([]);
 
-      await expect(deleteAllProtectedAttributesByUniqueIdentifier('alice')).resolves.not.toThrow();
+      const result = await deleteAllProtectedAttributesByUniqueIdentifier('alice');
+
+      expectOk(result);
     });
 
-    it('returns early for an empty uniqueIdentifier without hitting the DB', async () => {
-      await deleteAllProtectedAttributesByUniqueIdentifier('');
+    it('returns VALIDATION_ERROR for an empty uniqueIdentifier without hitting the DB', async () => {
+      const result = await deleteAllProtectedAttributesByUniqueIdentifier('');
 
+      expectFailedWithCode(result, JustinErrorCode.VALIDATION_ERROR);
       expect((t.dm as any).findItemsInCollection.called).toBe(false);
+    });
+
+    it('returns ok:false when the DB removal fails', async () => {
+      (t.dm as any).findItemsInCollection.resolves([makePA({ id: 'pa1' })]);
+      (t.dm as any).removeItemsFromCollection.resolves({
+        ok: false,
+        successes: [],
+        failures: [{ code: JustinErrorCode.DB_ERROR, reason: 'write failed' }],
+      });
+
+      const result = await deleteAllProtectedAttributesByUniqueIdentifier('alice');
+
+      expectFailed(result);
     });
   });
 
