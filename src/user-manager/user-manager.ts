@@ -224,7 +224,15 @@ const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
       { id: userId },
     );
 
-  await deleteAllProtectedAttributesByUniqueIdentifier(existing.uniqueIdentifier);
+  const paResult = await deleteAllProtectedAttributesByUniqueIdentifier(existing.uniqueIdentifier);
+  if (!paResult.ok) {
+    paResult.failures.forEach(({ reason }) =>
+      Log.warn('deleteUserById: protected attributes cleanup failed', {
+        uniqueIdentifier: existing.uniqueIdentifier,
+        reason,
+      }),
+    );
+  }
 
   const removeResult = await dm.removeItemFromCollection(USERS, userId);
   if (!removeResult.ok) return removeResult;
@@ -270,14 +278,23 @@ const deleteUserByUniqueIdentifier = async (
  * Deletes all users and all protected attributes — a full reset of both
  * collections.
  *
- * Clears the in-memory caches after deletion.
+ * Clears the in-memory caches after deletion. Returns `ok: false` if either
+ * collection clear fails, with failure detail for the failing operation(s).
+ *
+ * @returns A {@link CoreResult} with `successes: [null]` on success.
  */
-const deleteAllUsers = async (): Promise<void> => {
+const deleteAllUsers = async (): Promise<CoreResult<null>> => {
   _checkInit();
-  await dm.clearCollection(USERS);
-  await dm.clearCollection(PROTECTED_ATTRIBUTES);
+
+  const usersResult = await dm.clearCollection(USERS);
+  if (!usersResult.ok) return usersResult;
+
+  const paResult = await dm.clearCollection(PROTECTED_ATTRIBUTES);
+  if (!paResult.ok) return paResult;
+
   clearUsersCache();
   clearProtectedAttributesCache();
+  return coreSuccess([null]);
 };
 
 // ---------------------------------------------------------------------------
@@ -455,18 +472,20 @@ const deleteProtectedAttributesForUser = async (
  * Deletes all protected-attributes records for a user across every namespace.
  *
  * @param userId - Primary key of the user.
+ * @returns A {@link CoreResult} with `successes: [null]` on success, or a failure
+ *   with `NOT_FOUND` if the user does not exist.
  */
-const deleteAllProtectedAttributesForUser = async (userId: string): Promise<void> => {
+const deleteAllProtectedAttributesForUser = async (userId: string): Promise<CoreResult<null>> => {
   _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
-  if (!uid) {
-    Log.warn('deleteAllProtectedAttributesForUser: userId invalid or user not found', {
-      userId,
-      code: JustinErrorCode.NOT_FOUND,
-    });
-    return;
-  }
-  await deleteAllProtectedAttributesByUniqueIdentifier(uid);
+  if (!uid)
+    return coreFailureResult(
+      'deleteAllProtectedAttributesForUser',
+      JustinErrorCode.NOT_FOUND,
+      `user (${userId}) not found`,
+      { id: userId },
+    );
+  return deleteAllProtectedAttributesByUniqueIdentifier(uid);
 };
 
 /**

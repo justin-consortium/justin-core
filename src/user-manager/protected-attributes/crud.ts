@@ -605,15 +605,26 @@ const deleteProtectedAttributesByUniqueIdentifier = async (
 /**
  * Deletes all protected attributes records for a user in a single bulk operation.
  *
+ * Returns `ok: true` with `successes: [null]` when all records are removed (or when
+ * there are no records to remove). Returns `ok: false` if the DB removal fails.
+ *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
+ * @returns A {@link CoreResult} with `successes: [null]` on success, or a failure
+ *   with `VALIDATION_ERROR` if `uniqueIdentifier` is empty.
  * @throws {JustinError} If DataManager has not been initialized.
  */
 const deleteAllProtectedAttributesByUniqueIdentifier = async (
   uniqueIdentifier: string,
-): Promise<void> => {
+): Promise<CoreResult<null>> => {
   _checkInitialization();
 
-  if (!isNonEmptyString(uniqueIdentifier)) return;
+  if (!isNonEmptyString(uniqueIdentifier))
+    return coreFailureResult(
+      'deleteAllProtectedAttributesByUniqueIdentifier',
+      JustinErrorCode.VALIDATION_ERROR,
+      'uniqueIdentifier must be a non-empty string',
+      { uniqueIdentifier },
+    );
 
   const docs = await dm.findItemsInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES, {
     uniqueIdentifier,
@@ -624,10 +635,14 @@ const deleteAllProtectedAttributesByUniqueIdentifier = async (
     .filter((id: string | undefined): id is string => typeof id === 'string');
 
   if (ids.length > 0) {
-    await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, ids);
+    const removeResult = await dm.removeItemsFromCollection(PROTECTED_ATTRIBUTES, ids);
+    if (!removeResult.ok && removeResult.successes.length === 0) {
+      return coreFailure(removeResult.failures);
+    }
   }
 
   deleteProtectedAttributesByUniqueIdentifierFromCache(uniqueIdentifier);
+  return coreSuccess([null]);
 };
 
 /**
