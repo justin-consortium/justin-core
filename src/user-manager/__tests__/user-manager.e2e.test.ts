@@ -660,7 +660,7 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  describe('updateProtectedAttributeForUser', () => {
+  describe('updateProtectedAttributeKeysByNamespaceForUser', () => {
     it('returns ok:true — sets a top-level key', async () => {
       const user = await createUser('u1');
       await UserManager.setProtectedAttributesForUser(user.id, {
@@ -669,7 +669,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'a', 99),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { a: 99 }),
       );
       expect(updated.protectedAttributes).toMatchObject({ a: 99, b: 2 });
     });
@@ -682,7 +682,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'daily.steps', 9999),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { 'daily.steps': 9999 }),
       );
       expect(updated.protectedAttributes.daily.steps).toBe(9999);
     });
@@ -695,7 +695,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'a.b.c', 'deep'),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { 'a.b.c': 'deep' }),
       );
       expect(updated.protectedAttributes.a.b.c).toBe('deep');
     });
@@ -707,7 +707,7 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { x: 0 },
       });
 
-      await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'x', 42);
+      await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { x: 42 });
       expect(
         UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes.x,
       ).toBe(42);
@@ -715,7 +715,7 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributeForUser('nonexistent', 'ns', 'x', 1),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser('nonexistent', 'ns', { x: 1 }),
         'NOT_FOUND',
       );
     });
@@ -723,7 +723,7 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
       const user = await createUser('u1');
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributeForUser(user.id, 'no-such-ns', 'x', 1),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'no-such-ns', { x: 1 }),
         'NOT_FOUND',
       );
     });
@@ -735,7 +735,7 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: {},
       });
 
-      const result = await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'id', 'hack');
+      const result = await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { id: 'hack' });
       const failure = expectFailedWithCode(result, 'VALIDATION_ERROR');
       expect(failure.details?.namespace).toBe('ns');
       expect(failure.details?.keyPath).toBe('id');
@@ -748,13 +748,11 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: {},
       });
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'namespace', 'hack'),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { namespace: 'hack' }),
         'VALIDATION_ERROR',
       );
     });
-  });
 
-  describe('updateProtectedAttributesForUser', () => {
     it('returns ok:true — updates multiple key paths in one call', async () => {
       const user = await createUser('u1');
       await UserManager.setProtectedAttributesForUser(user.id, {
@@ -763,7 +761,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.updateProtectedAttributesForUser(user.id, 'ns', { a: 10, b: 20 }),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { a: 10, b: 20 }),
       );
       expect(updated.protectedAttributes).toMatchObject({ a: 10, b: 20, c: 3 });
     });
@@ -776,7 +774,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.updateProtectedAttributesForUser(user.id, 'ns', {
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', {
           'daily.steps': 5000,
           'daily.calories': 200,
         }),
@@ -786,7 +784,7 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributesForUser('nobody', 'ns', { x: 1 }),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser('nobody', 'ns', { x: 1 }),
         'NOT_FOUND',
       );
     });
@@ -794,7 +792,7 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
       const user = await createUser('u1');
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributesForUser(user.id, 'ns', { x: 1 }),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { x: 1 }),
         'NOT_FOUND',
       );
     });
@@ -806,7 +804,7 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { safe: 0 },
       });
 
-      const result = await UserManager.updateProtectedAttributesForUser(user.id, 'ns', {
+      const result = await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', {
         id: 'hack',
         safe: 99,
       });
@@ -823,7 +821,7 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  describe('deleteProtectedAttributesForUser', () => {
+  describe('deleteProtectedAttributeNamespacesForUser', () => {
     it('returns ok:true — deletes a single namespace', async () => {
       const user = await createUser('u1');
       await UserManager.setProtectedAttributesForUser(user.id, [
@@ -831,7 +829,7 @@ describe('UserManager public API — e2e', () => {
         { namespace: 'ns2', protectedAttributes: { b: 2 } },
       ]);
 
-      expect((await UserManager.deleteProtectedAttributesForUser(user.id, 'ns1')).ok).toBe(true);
+      expect((await UserManager.deleteProtectedAttributeNamespacesForUser(user.id, 'ns1')).ok).toBe(true);
       const remaining = UserManager.getAllProtectedAttributesForUser(user.id);
       expect(remaining).toHaveLength(1);
       expect(remaining[0].namespace).toBe('ns2');
@@ -845,7 +843,7 @@ describe('UserManager public API — e2e', () => {
         { namespace: 'ns3', protectedAttributes: {} },
       ]);
 
-      await UserManager.deleteProtectedAttributesForUser(user.id, ['ns1', 'ns2']);
+      await UserManager.deleteProtectedAttributeNamespacesForUser(user.id, ['ns1', 'ns2']);
       const remaining = UserManager.getAllProtectedAttributesForUser(user.id);
       expect(remaining).toHaveLength(1);
       expect(remaining[0].namespace).toBe('ns3');
@@ -857,7 +855,7 @@ describe('UserManager public API — e2e', () => {
         namespace: 'ns',
         protectedAttributes: { x: 1 },
       });
-      await UserManager.deleteProtectedAttributesForUser(user.id, 'ns');
+      await UserManager.deleteProtectedAttributeNamespacesForUser(user.id, 'ns');
       expect(UserManager.getProtectedAttributesForUser(user.id, ['ns'])).toEqual([]);
     });
 
@@ -867,13 +865,13 @@ describe('UserManager public API — e2e', () => {
         namespace: 'ns',
         protectedAttributes: {},
       });
-      await UserManager.deleteProtectedAttributesForUser(user.id, 'ns');
+      await UserManager.deleteProtectedAttributeNamespacesForUser(user.id, 'ns');
       expect(await dm.getAllInCollection<any>(PROTECTED_ATTRIBUTES)).toHaveLength(0);
     });
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributesForUser('nobody', 'ns'),
+        await UserManager.deleteProtectedAttributeNamespacesForUser('nobody', 'ns'),
         'NOT_FOUND',
       );
     });
@@ -881,7 +879,7 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:false with NOT_FOUND when namespace does not exist', async () => {
       const user = await createUser('u1');
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributesForUser(user.id, 'no-such-ns'),
+        await UserManager.deleteProtectedAttributeNamespacesForUser(user.id, 'no-such-ns'),
         'NOT_FOUND',
       );
     });
@@ -925,7 +923,7 @@ describe('UserManager public API — e2e', () => {
     });
   });
 
-  describe('deleteProtectedAttributeForUser', () => {
+  describe('deleteProtectedAttributeKeysByNamespaceForUser', () => {
     it('returns ok:true — removes a top-level key', async () => {
       const user = await createUser('u1');
       await UserManager.setProtectedAttributesForUser(user.id, {
@@ -934,7 +932,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'a'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', 'a'),
       );
       expect(updated.protectedAttributes).not.toHaveProperty('a');
       expect(updated.protectedAttributes.b).toBe(2);
@@ -948,7 +946,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'daily.steps'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', 'daily.steps'),
       );
       expect(updated.protectedAttributes.daily).not.toHaveProperty('steps');
       expect(updated.protectedAttributes.daily.calories).toBe(200);
@@ -961,7 +959,7 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { x: 1, y: 2 },
       });
 
-      await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'x');
+      await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', 'x');
       expect(
         UserManager.getProtectedAttributesForUser(user.id, ['ns'])[0].protectedAttributes,
       ).not.toHaveProperty('x');
@@ -969,7 +967,7 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributeForUser('nobody', 'ns', 'x'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser('nobody', 'ns', 'x'),
         'NOT_FOUND',
       );
     });
@@ -977,7 +975,7 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
       const user = await createUser('u1');
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributeForUser(user.id, 'no-ns', 'x'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'no-ns', 'x'),
         'NOT_FOUND',
       );
     });
@@ -989,13 +987,11 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: {},
       });
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributeForUser(user.id, 'ns', 'id'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', 'id'),
         'VALIDATION_ERROR',
       );
     });
-  });
 
-  describe('deleteProtectedAttributesFromNamespaceForUser', () => {
     it('returns ok:true — removes multiple key paths from a namespace', async () => {
       const user = await createUser('u1');
       await UserManager.setProtectedAttributesForUser(user.id, {
@@ -1004,7 +1000,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.deleteProtectedAttributesFromNamespaceForUser(user.id, 'ns', ['a', 'b']),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', ['a', 'b']),
       );
       expect(updated.protectedAttributes).not.toHaveProperty('a');
       expect(updated.protectedAttributes).not.toHaveProperty('b');
@@ -1019,7 +1015,7 @@ describe('UserManager public API — e2e', () => {
       });
 
       const updated = expectOk(
-        await UserManager.deleteProtectedAttributesFromNamespaceForUser(user.id, 'ns', 'x'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', 'x'),
       );
       expect(updated.protectedAttributes).not.toHaveProperty('x');
       expect(updated.protectedAttributes.y).toBe(2);
@@ -1032,7 +1028,7 @@ describe('UserManager public API — e2e', () => {
         protectedAttributes: { safe: 1 },
       });
 
-      const result = await UserManager.deleteProtectedAttributesFromNamespaceForUser(
+      const result = await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(
         user.id,
         'ns',
         ['id', 'safe'],
@@ -1050,7 +1046,7 @@ describe('UserManager public API — e2e', () => {
 
     it('returns ok:false with NOT_FOUND for unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributesFromNamespaceForUser('nobody', 'ns', ['x']),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser('nobody', 'ns', ['x']),
         'NOT_FOUND',
       );
     });
@@ -1058,7 +1054,7 @@ describe('UserManager public API — e2e', () => {
     it('returns ok:false with NOT_FOUND for nonexistent namespace', async () => {
       const user = await createUser('u1');
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributesFromNamespaceForUser(user.id, 'no-ns', ['x']),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser(user.id, 'no-ns', ['x']),
         'NOT_FOUND',
       );
     });
@@ -1096,7 +1092,7 @@ describe('UserManager public API — e2e', () => {
         namespace: 'ns',
         protectedAttributes: { key: 'value' },
       });
-      await UserManager.updateProtectedAttributeForUser(user.id, 'ns', 'key', 'updated');
+      await UserManager.updateProtectedAttributeKeysByNamespaceForUser(user.id, 'ns', { key: 'updated' });
 
       expect(UserManager.getUserById(user.id)!.score).toBe(10);
       expect(

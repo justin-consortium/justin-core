@@ -308,10 +308,10 @@ describe('UserManager unit tests', () => {
     });
   });
 
-  describe('updateProtectedAttributeForUser', () => {
+  describe('updateProtectedAttributeKeysByNamespaceForUser', () => {
     it('returns NOT_FOUND for an unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributeForUser('ghost', 'health', 'steps', 1),
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser('ghost', 'health', { steps: 1 }),
         JustinErrorCode.NOT_FOUND,
       );
     });
@@ -323,16 +323,16 @@ describe('UserManager unit tests', () => {
       (t.dm as any).findItemsInCollection.resolves([existing]);
       (t.dm as any).updateItemByIdInCollection.resolves({ ok: true, successes: [updated] });
 
-      const result = await UserManager.updateProtectedAttributeForUser('u1', 'health', 'steps', 42);
+      const result = await UserManager.updateProtectedAttributeKeysByNamespaceForUser('u1', 'health', { steps: 42 });
 
       expectOk(result);
     });
   });
 
-  describe('deleteProtectedAttributesForUser', () => {
+  describe('deleteProtectedAttributeNamespacesForUser', () => {
     it('returns NOT_FOUND for an unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributesForUser('ghost', 'health'),
+        await UserManager.deleteProtectedAttributeNamespacesForUser('ghost', 'health'),
         JustinErrorCode.NOT_FOUND,
       );
     });
@@ -346,7 +346,7 @@ describe('UserManager unit tests', () => {
         .resolves([]);
       (t.dm as any).removeItemsFromCollection.resolves({ ok: true, successes: [{ id: 'pa1' }] });
 
-      const result = await UserManager.deleteProtectedAttributesForUser('u1', 'health');
+      const result = await UserManager.deleteProtectedAttributeNamespacesForUser('u1', 'health');
 
       expectOk(result);
     });
@@ -383,21 +383,17 @@ describe('UserManager unit tests', () => {
     });
   });
 
-  describe('deleteProtectedAttributeForUser', () => {
-    it('returns NOT_FOUND for an unknown userId', async () => {
+  describe('deleteProtectedAttributeKeysByNamespaceForUser', () => {
+    it('returns NOT_FOUND for an unknown userId — single key', async () => {
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributeForUser('ghost', 'health', 'steps'),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser('ghost', 'health', 'steps'),
         JustinErrorCode.NOT_FOUND,
       );
     });
-  });
 
-  describe('deleteProtectedAttributesFromNamespaceForUser', () => {
-    it('returns NOT_FOUND for an unknown userId', async () => {
+    it('returns NOT_FOUND for an unknown userId — multiple keys', async () => {
       expectFailedWithCode(
-        await UserManager.deleteProtectedAttributesFromNamespaceForUser('ghost', 'health', [
-          'steps',
-        ]),
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser('ghost', 'health', ['steps']),
         JustinErrorCode.NOT_FOUND,
       );
     });

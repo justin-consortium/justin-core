@@ -12,18 +12,16 @@ import type { ProtectedAttributesRecord } from '../../types';
 import {
   clearProtectedAttributesCache,
   upsertProtectedAttributesInCache,
-} from '../../protected-attributes/cache';
+} from '../cache';
 import {
-  getProtectedAttributesByUniqueIdentifier,
-  getAllProtectedAttributesByUniqueIdentifier,
-  setProtectedAttributesByUniqueIdentifier,
-  updateProtectedAttributeByUniqueIdentifier,
-  updateProtectedAttributesByUniqueIdentifier,
-  deleteProtectedAttributesByUniqueIdentifier,
-  deleteAllProtectedAttributesByUniqueIdentifier,
-  deleteProtectedAttributeByUniqueIdentifier,
-  deleteProtectedAttributesFromNamespaceByUniqueIdentifier,
-} from '../../protected-attributes/crud';
+  getProtectedAttributes,
+  getAllProtectedAttributes,
+  setProtectedAttributes,
+  updateProtectedAttributeKeysByNamespace,
+  deleteProtectedAttributeNamespaces,
+  deleteAllProtectedAttributes,
+  deleteProtectedAttributeKeysByNamespace,
+} from '../crud';
 
 describe('protected attributes crud unit tests', () => {
   let t: CoreManagersSandbox;
@@ -65,13 +63,6 @@ describe('protected attributes crud unit tests', () => {
     (t.dm as any).updateItemByIdInCollection.resolves({ ok: true, successes: [result] });
   }
 
-  function stubRemoveItem(count = 1) {
-    (t.dm as any).removeItemFromCollection.resolves({
-      ok: true,
-      successes: Array(count).fill({ id: 'pa1' }),
-    });
-  }
-
   function stubRemoveItems(count = 1) {
     (t.dm as any).removeItemsFromCollection.resolves({
       ok: true,
@@ -79,55 +70,63 @@ describe('protected attributes crud unit tests', () => {
     });
   }
 
-  describe('getProtectedAttributesByUniqueIdentifier', () => {
+  // ---------------------------------------------------------------------------
+  // Read
+  // ---------------------------------------------------------------------------
+
+  describe('getProtectedAttributes', () => {
     it('returns matching cached records for the given namespaces', () => {
       upsertProtectedAttributesInCache(makePA({ id: 'pa1', namespace: 'health' }));
       upsertProtectedAttributesInCache(makePA({ id: 'pa2', namespace: 'fitness' }));
 
-      const result = getProtectedAttributesByUniqueIdentifier('alice', ['health']);
+      const result = getProtectedAttributes('alice', ['health']);
 
       expect(result).toHaveLength(1);
       expect(result[0].namespace).toBe('health');
     });
 
     it('returns empty array for unknown uniqueIdentifier', () => {
-      expect(getProtectedAttributesByUniqueIdentifier('nobody', ['health'])).toHaveLength(0);
+      expect(getProtectedAttributes('nobody', ['health'])).toHaveLength(0);
     });
 
     it('returns empty array for empty namespaces array', () => {
       upsertProtectedAttributesInCache(makePA());
-      expect(getProtectedAttributesByUniqueIdentifier('alice', [])).toHaveLength(0);
+      expect(getProtectedAttributes('alice', [])).toHaveLength(0);
     });
 
     it('returns empty array for empty uniqueIdentifier', () => {
-      expect(getProtectedAttributesByUniqueIdentifier('', ['health'])).toHaveLength(0);
+      expect(getProtectedAttributes('', ['health'])).toHaveLength(0);
     });
   });
 
-  describe('getAllProtectedAttributesByUniqueIdentifier', () => {
+  describe('getAllProtectedAttributes', () => {
     it('returns all cached records for the given user', () => {
       upsertProtectedAttributesInCache(makePA({ id: 'pa1', namespace: 'health' }));
       upsertProtectedAttributesInCache(makePA({ id: 'pa2', namespace: 'fitness' }));
 
-      expect(getAllProtectedAttributesByUniqueIdentifier('alice')).toHaveLength(2);
+      expect(getAllProtectedAttributes('alice')).toHaveLength(2);
     });
 
     it('returns empty array for unknown uniqueIdentifier', () => {
-      expect(getAllProtectedAttributesByUniqueIdentifier('nobody')).toHaveLength(0);
+      expect(getAllProtectedAttributes('nobody')).toHaveLength(0);
     });
 
     it('returns empty array for empty uniqueIdentifier', () => {
-      expect(getAllProtectedAttributesByUniqueIdentifier('')).toHaveLength(0);
+      expect(getAllProtectedAttributes('')).toHaveLength(0);
     });
   });
 
-  describe('setProtectedAttributesByUniqueIdentifier', () => {
+  // ---------------------------------------------------------------------------
+  // Upsert
+  // ---------------------------------------------------------------------------
+
+  describe('setProtectedAttributes', () => {
     it('creates a new record when none exists for the namespace', async () => {
       const created = makePA();
       stubFindItems(null);
       stubAddItem(created);
 
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', {
+      const result = await setProtectedAttributes('alice', {
         namespace: 'health',
         protectedAttributes: { steps: 1000 },
       });
@@ -142,7 +141,7 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', {
+      const result = await setProtectedAttributes('alice', {
         namespace: 'health',
         protectedAttributes: { steps: 200 },
       });
@@ -157,12 +156,10 @@ describe('protected attributes crud unit tests', () => {
       const fitness = makePA({ id: 'pa2', namespace: 'fitness' });
       stubFindItems(null);
       (t.dm as any).addItemToCollection
-        .onFirstCall()
-        .resolves({ ok: true, successes: [health] })
-        .onSecondCall()
-        .resolves({ ok: true, successes: [fitness] });
+        .onFirstCall().resolves({ ok: true, successes: [health] })
+        .onSecondCall().resolves({ ok: true, successes: [fitness] });
 
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', [
+      const result = await setProtectedAttributes('alice', [
         { namespace: 'health', protectedAttributes: { steps: 1000 } },
         { namespace: 'fitness', protectedAttributes: { calories: 500 } },
       ]);
@@ -172,43 +169,37 @@ describe('protected attributes crud unit tests', () => {
     });
 
     it('returns ok:true with empty successes for empty input', async () => {
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', []);
+      const result = await setProtectedAttributes('alice', []);
       expect(result.ok).toBe(true);
       expect(result.successes).toHaveLength(0);
     });
 
     it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
       expectFailedWithCode(
-        await setProtectedAttributesByUniqueIdentifier('', {
-          namespace: 'health',
-          protectedAttributes: {},
-        }),
+        await setProtectedAttributes('', { namespace: 'health', protectedAttributes: {} }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('returns VALIDATION_ERROR for empty namespace', async () => {
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', {
-        namespace: '',
-        protectedAttributes: {},
-      });
-      expectFailedWithCode(result, JustinErrorCode.VALIDATION_ERROR);
+      expectFailedWithCode(
+        await setProtectedAttributes('alice', { namespace: '', protectedAttributes: {} }),
+        JustinErrorCode.VALIDATION_ERROR,
+      );
     });
 
     it('returns VALIDATION_ERROR when protectedAttributes is not a plain object', async () => {
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', {
-        namespace: 'health',
-        protectedAttributes: null as any,
-      });
-      expectFailedWithCode(result, JustinErrorCode.VALIDATION_ERROR);
+      expectFailedWithCode(
+        await setProtectedAttributes('alice', { namespace: 'health', protectedAttributes: null as any }),
+        JustinErrorCode.VALIDATION_ERROR,
+      );
     });
 
     it('returns VALIDATION_ERROR when protectedAttributes contains reserved key', async () => {
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', {
-        namespace: 'health',
-        protectedAttributes: { id: 'hack' },
-      });
-      expectFailedWithCode(result, JustinErrorCode.VALIDATION_ERROR);
+      expectFailedWithCode(
+        await setProtectedAttributes('alice', { namespace: 'health', protectedAttributes: { id: 'hack' } }),
+        JustinErrorCode.VALIDATION_ERROR,
+      );
     });
 
     it('returns partial successes when some namespaces fail', async () => {
@@ -216,7 +207,7 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(null);
       (t.dm as any).addItemToCollection.resolves({ ok: true, successes: [health] });
 
-      const result = await setProtectedAttributesByUniqueIdentifier('alice', [
+      const result = await setProtectedAttributes('alice', [
         { namespace: 'health', protectedAttributes: {} },
         { namespace: '', protectedAttributes: {} },
       ]);
@@ -231,31 +222,38 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(null);
       stubAddItem(created);
 
-      await setProtectedAttributesByUniqueIdentifier('alice', {
-        namespace: 'health',
-        protectedAttributes: { steps: 1000 },
-      });
+      await setProtectedAttributes('alice', { namespace: 'health', protectedAttributes: { steps: 1000 } });
 
-      expect(getAllProtectedAttributesByUniqueIdentifier('alice')).toHaveLength(1);
+      expect(getAllProtectedAttributes('alice')).toHaveLength(1);
     });
   });
 
-  describe('updateProtectedAttributeByUniqueIdentifier', () => {
-    it('returns ok:true with the updated record', async () => {
+  // ---------------------------------------------------------------------------
+  // Key-level patch
+  // ---------------------------------------------------------------------------
+
+  describe('updateProtectedAttributeKeysByNamespace', () => {
+    it('returns ok:true updating a single key', async () => {
       const existing = makePA({ protectedAttributes: { steps: 100 } });
       const updated = makePA({ protectedAttributes: { steps: 999 } });
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributeByUniqueIdentifier(
-        'alice',
-        'health',
-        'steps',
-        999,
-      );
+      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { steps: 999 });
 
       expectOk(result);
       expect(result.successes[0].protectedAttributes.steps).toBe(999);
+    });
+
+    it('returns ok:true updating multiple keys', async () => {
+      const existing = makePA({ protectedAttributes: { a: 1, b: 2 } });
+      const updated = makePA({ protectedAttributes: { a: 10, b: 20 } });
+      stubFindItems(existing);
+      stubUpdateItem(updated);
+
+      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { a: 10, b: 20 });
+
+      expectOk(result);
     });
 
     it('supports dot-notation key paths', async () => {
@@ -264,92 +262,28 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributeByUniqueIdentifier(
-        'alice',
-        'health',
-        'daily.steps',
-        500,
-      );
+      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { 'daily.steps': 500 });
 
       expectOk(result);
     });
 
     it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
       expectFailedWithCode(
-        await updateProtectedAttributeByUniqueIdentifier('', 'health', 'steps', 1),
+        await updateProtectedAttributeKeysByNamespace('', 'health', { steps: 1 }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('returns VALIDATION_ERROR for empty namespace', async () => {
       expectFailedWithCode(
-        await updateProtectedAttributeByUniqueIdentifier('alice', '', 'steps', 1),
-        JustinErrorCode.VALIDATION_ERROR,
-      );
-    });
-
-    it('returns VALIDATION_ERROR for a reserved keyPath', async () => {
-      expectFailedWithCode(
-        await updateProtectedAttributeByUniqueIdentifier('alice', 'health', 'id', 'hack'),
-        JustinErrorCode.VALIDATION_ERROR,
-      );
-    });
-
-    it('returns NOT_FOUND when no record exists for the namespace', async () => {
-      stubFindItems(null);
-
-      expectFailedWithCode(
-        await updateProtectedAttributeByUniqueIdentifier('alice', 'health', 'steps', 1),
-        JustinErrorCode.NOT_FOUND,
-      );
-    });
-
-    it('upserts the updated record into cache', async () => {
-      const existing = makePA({ protectedAttributes: { steps: 0 } });
-      const updated = makePA({ protectedAttributes: { steps: 42 } });
-      stubFindItems(existing);
-      stubUpdateItem(updated);
-
-      await updateProtectedAttributeByUniqueIdentifier('alice', 'health', 'steps', 42);
-
-      expect(
-        getAllProtectedAttributesByUniqueIdentifier('alice')[0].protectedAttributes.steps,
-      ).toBe(42);
-    });
-  });
-
-  describe('updateProtectedAttributesByUniqueIdentifier', () => {
-    it('returns ok:true updating multiple key paths', async () => {
-      const existing = makePA({ protectedAttributes: { a: 1, b: 2 } });
-      const updated = makePA({ protectedAttributes: { a: 10, b: 20 } });
-      stubFindItems(existing);
-      stubUpdateItem(updated);
-
-      const result = await updateProtectedAttributesByUniqueIdentifier('alice', 'health', {
-        a: 10,
-        b: 20,
-      });
-
-      expectOk(result);
-    });
-
-    it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
-      expectFailedWithCode(
-        await updateProtectedAttributesByUniqueIdentifier('', 'health', { a: 1 }),
-        JustinErrorCode.VALIDATION_ERROR,
-      );
-    });
-
-    it('returns VALIDATION_ERROR for empty namespace', async () => {
-      expectFailedWithCode(
-        await updateProtectedAttributesByUniqueIdentifier('alice', '', { a: 1 }),
+        await updateProtectedAttributeKeysByNamespace('alice', '', { steps: 1 }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('returns VALIDATION_ERROR when updates is not a plain object', async () => {
       expectFailedWithCode(
-        await updateProtectedAttributesByUniqueIdentifier('alice', 'health', null as any),
+        await updateProtectedAttributeKeysByNamespace('alice', 'health', null as any),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
@@ -358,21 +292,18 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(null);
 
       expectFailedWithCode(
-        await updateProtectedAttributesByUniqueIdentifier('alice', 'health', { a: 1 }),
+        await updateProtectedAttributeKeysByNamespace('alice', 'health', { steps: 1 }),
         JustinErrorCode.NOT_FOUND,
       );
     });
 
-    it('skips reserved keyPaths and returns partial failures', async () => {
+    it('skips skips reserved keyPaths and propagates partial failures with valid successes', async () => {
       const existing = makePA({ protectedAttributes: { safe: 0 } });
       const updated = makePA({ protectedAttributes: { safe: 99 } });
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributesByUniqueIdentifier('alice', 'health', {
-        id: 'hack',
-        safe: 99,
-      });
+      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { id: 'hack', safe: 99 });
 
       expect(result.ok).toBe(false);
       expect(result.successes).toHaveLength(1);
@@ -381,15 +312,29 @@ describe('protected attributes crud unit tests', () => {
         expect(result.failures[0].code).toBe(JustinErrorCode.VALIDATION_ERROR);
       }
     });
+
+    it('upserts the updated record into cache', async () => {
+      const existing = makePA({ protectedAttributes: { steps: 0 } });
+      const updated = makePA({ protectedAttributes: { steps: 42 } });
+      stubFindItems(existing);
+      stubUpdateItem(updated);
+
+      await updateProtectedAttributeKeysByNamespace('alice', 'health', { steps: 42 });
+
+      expect(getAllProtectedAttributes('alice')[0].protectedAttributes.steps).toBe(42);
+    });
   });
 
-  describe('deleteProtectedAttributesByUniqueIdentifier', () => {
+  // ---------------------------------------------------------------------------
+  // Namespace-level delete
+  // ---------------------------------------------------------------------------
+
+  describe('deleteProtectedAttributeNamespaces', () => {
     it('returns ok:true when the namespace record is found and deleted', async () => {
-      const existing = makePA();
-      stubFindItems(existing);
+      stubFindItems(makePA());
       stubRemoveItems();
 
-      const result = await deleteProtectedAttributesByUniqueIdentifier('alice', 'health');
+      const result = await deleteProtectedAttributeNamespaces('alice', 'health');
 
       expectOk(result);
     });
@@ -398,52 +343,43 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(null);
 
       expectFailedWithCode(
-        await deleteProtectedAttributesByUniqueIdentifier('alice', 'health'),
+        await deleteProtectedAttributeNamespaces('alice', 'health'),
         JustinErrorCode.NOT_FOUND,
       );
     });
 
     it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
       expectFailedWithCode(
-        await deleteProtectedAttributesByUniqueIdentifier('', 'health'),
+        await deleteProtectedAttributeNamespaces('', 'health'),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('accepts an array of namespaces', async () => {
-      stubFindItems(makePA());
       (t.dm as any).findItemsInCollection
-        .onFirstCall()
-        .resolves([makePA({ id: 'pa1', namespace: 'health' })])
-        .onSecondCall()
-        .resolves([makePA({ id: 'pa2', namespace: 'fitness' })]);
+        .onFirstCall().resolves([makePA({ id: 'pa1', namespace: 'health' })])
+        .onSecondCall().resolves([makePA({ id: 'pa2', namespace: 'fitness' })]);
       stubRemoveItems(2);
 
-      const result = await deleteProtectedAttributesByUniqueIdentifier('alice', [
-        'health',
-        'fitness',
-      ]);
+      const result = await deleteProtectedAttributeNamespaces('alice', ['health', 'fitness']);
 
       expectOk(result);
     });
 
     it('clears and reloads cache after deletion', async () => {
       upsertProtectedAttributesInCache(makePA({ id: 'pa1', namespace: 'health' }));
-      stubFindItems(makePA());
       (t.dm as any).removeItemsFromCollection.resolves({ ok: true, successes: [{ id: 'pa1' }] });
       (t.dm as any).findItemsInCollection
-        .onFirstCall()
-        .resolves([makePA()])
-        .onSecondCall()
-        .resolves([]);
+        .onFirstCall().resolves([makePA()])
+        .onSecondCall().resolves([]);
 
-      await deleteProtectedAttributesByUniqueIdentifier('alice', 'health');
+      await deleteProtectedAttributeNamespaces('alice', 'health');
 
-      expect(getAllProtectedAttributesByUniqueIdentifier('alice')).toHaveLength(0);
+      expect(getAllProtectedAttributes('alice')).toHaveLength(0);
     });
   });
 
-  describe('deleteAllProtectedAttributesByUniqueIdentifier', () => {
+  describe('deleteAllProtectedAttributes', () => {
     it('returns ok:true and clears all records for the user', async () => {
       (t.dm as any).findItemsInCollection.resolves([
         makePA({ id: 'pa1', namespace: 'health' }),
@@ -451,22 +387,22 @@ describe('protected attributes crud unit tests', () => {
       ]);
       stubRemoveItems(2);
 
-      const result = await deleteAllProtectedAttributesByUniqueIdentifier('alice');
+      const result = await deleteAllProtectedAttributes('alice');
 
       expectOk(result);
-      expect(getAllProtectedAttributesByUniqueIdentifier('alice')).toHaveLength(0);
+      expect(getAllProtectedAttributes('alice')).toHaveLength(0);
     });
 
     it('returns ok:true when the user has no records', async () => {
       (t.dm as any).findItemsInCollection.resolves([]);
 
-      const result = await deleteAllProtectedAttributesByUniqueIdentifier('alice');
+      const result = await deleteAllProtectedAttributes('alice');
 
       expectOk(result);
     });
 
     it('returns VALIDATION_ERROR for an empty uniqueIdentifier without hitting the DB', async () => {
-      const result = await deleteAllProtectedAttributesByUniqueIdentifier('');
+      const result = await deleteAllProtectedAttributes('');
 
       expectFailedWithCode(result, JustinErrorCode.VALIDATION_ERROR);
       expect((t.dm as any).findItemsInCollection.called).toBe(false);
@@ -480,23 +416,41 @@ describe('protected attributes crud unit tests', () => {
         failures: [{ code: JustinErrorCode.DB_ERROR, reason: 'write failed' }],
       });
 
-      const result = await deleteAllProtectedAttributesByUniqueIdentifier('alice');
+      const result = await deleteAllProtectedAttributes('alice');
 
       expectFailed(result);
     });
   });
 
-  describe('deleteProtectedAttributeByUniqueIdentifier', () => {
-    it('returns ok:true after deleting a top-level key', async () => {
+  // ---------------------------------------------------------------------------
+  // Key-level delete
+  // ---------------------------------------------------------------------------
+
+  describe('deleteProtectedAttributeKeysByNamespace', () => {
+    it('returns ok:true after deleting a single key', async () => {
       const existing = makePA({ protectedAttributes: { steps: 100, weight: 70 } });
       const updated = makePA({ protectedAttributes: { weight: 70 } });
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await deleteProtectedAttributeByUniqueIdentifier('alice', 'health', 'steps');
+      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', 'steps');
 
       expectOk(result);
       expect(result.successes[0].protectedAttributes).not.toHaveProperty('steps');
+    });
+
+    it('returns ok:true after deleting multiple key paths', async () => {
+      const existing = makePA({ protectedAttributes: { a: 1, b: 2, c: 3 } });
+      const updated = makePA({ protectedAttributes: { c: 3 } });
+      stubFindItems(existing);
+      stubUpdateItem(updated);
+
+      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', ['a', 'b']);
+
+      expectOk(result);
+      expect(result.successes[0].protectedAttributes).not.toHaveProperty('a');
+      expect(result.successes[0].protectedAttributes).not.toHaveProperty('b');
+      expect(result.successes[0].protectedAttributes.c).toBe(3);
     });
 
     it('supports dot-notation key paths', async () => {
@@ -505,18 +459,30 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await deleteProtectedAttributeByUniqueIdentifier(
-        'alice',
-        'health',
-        'daily.steps',
-      );
+      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', 'daily.steps');
 
       expectOk(result);
     });
 
-    it('returns VALIDATION_ERROR for a reserved keyPath', async () => {
+    it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
       expectFailedWithCode(
-        await deleteProtectedAttributeByUniqueIdentifier('alice', 'health', 'id'),
+        await deleteProtectedAttributeKeysByNamespace('', 'health', ['x']),
+        JustinErrorCode.VALIDATION_ERROR,
+      );
+    });
+
+    it('returns VALIDATION_ERROR for empty namespace', async () => {
+      expectFailedWithCode(
+        await deleteProtectedAttributeKeysByNamespace('alice', '', ['x']),
+        JustinErrorCode.VALIDATION_ERROR,
+      );
+    });
+
+    it('returns VALIDATION_ERROR for a reserved keyPath', async () => {
+      stubFindItems(makePA());
+      stubUpdateItem(makePA());
+      expectFailedWithCode(
+        await deleteProtectedAttributeKeysByNamespace('alice', 'health', 'id'),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
@@ -525,87 +491,18 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(null);
 
       expectFailedWithCode(
-        await deleteProtectedAttributeByUniqueIdentifier('alice', 'health', 'steps'),
+        await deleteProtectedAttributeKeysByNamespace('alice', 'health', ['x']),
         JustinErrorCode.NOT_FOUND,
       );
     });
 
-    it('returns VALIDATION_ERROR for empty namespace', async () => {
-      expectFailedWithCode(
-        await deleteProtectedAttributeByUniqueIdentifier('alice', '', 'steps'),
-        JustinErrorCode.VALIDATION_ERROR,
-      );
-    });
-  });
-
-  describe('deleteProtectedAttributesFromNamespaceByUniqueIdentifier', () => {
-    it('returns ok:true after deleting multiple key paths', async () => {
-      const existing = makePA({ protectedAttributes: { a: 1, b: 2, c: 3 } });
-      const updated = makePA({ protectedAttributes: { c: 3 } });
-      stubFindItems(existing);
-      stubUpdateItem(updated);
-
-      const result = await deleteProtectedAttributesFromNamespaceByUniqueIdentifier(
-        'alice',
-        'health',
-        ['a', 'b'],
-      );
-
-      expectOk(result);
-      expect(result.successes[0].protectedAttributes).not.toHaveProperty('a');
-      expect(result.successes[0].protectedAttributes).not.toHaveProperty('b');
-      expect(result.successes[0].protectedAttributes.c).toBe(3);
-    });
-
-    it('accepts a single string path', async () => {
-      const existing = makePA({ protectedAttributes: { x: 1, y: 2 } });
-      const updated = makePA({ protectedAttributes: { y: 2 } });
-      stubFindItems(existing);
-      stubUpdateItem(updated);
-
-      const result = await deleteProtectedAttributesFromNamespaceByUniqueIdentifier(
-        'alice',
-        'health',
-        'x',
-      );
-
-      expectOk(result);
-    });
-
-    it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
-      expectFailedWithCode(
-        await deleteProtectedAttributesFromNamespaceByUniqueIdentifier('', 'health', ['x']),
-        JustinErrorCode.VALIDATION_ERROR,
-      );
-    });
-
-    it('returns VALIDATION_ERROR for empty namespace', async () => {
-      expectFailedWithCode(
-        await deleteProtectedAttributesFromNamespaceByUniqueIdentifier('alice', '', ['x']),
-        JustinErrorCode.VALIDATION_ERROR,
-      );
-    });
-
-    it('returns NOT_FOUND when no record exists', async () => {
-      stubFindItems(null);
-
-      expectFailedWithCode(
-        await deleteProtectedAttributesFromNamespaceByUniqueIdentifier('alice', 'health', ['x']),
-        JustinErrorCode.NOT_FOUND,
-      );
-    });
-
-    it('skips reserved keyPaths and returns partial failures', async () => {
+    it('skips skips reserved keyPaths and returns partial failures', async () => {
       const existing = makePA({ protectedAttributes: { safe: 1 } });
       const updated = makePA({ protectedAttributes: {} });
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await deleteProtectedAttributesFromNamespaceByUniqueIdentifier(
-        'alice',
-        'health',
-        ['id', 'safe'],
-      );
+      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', ['id', 'safe']);
 
       expect(result.ok).toBe(false);
       expect(result.successes).toHaveLength(1);

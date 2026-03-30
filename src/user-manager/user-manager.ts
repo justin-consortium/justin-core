@@ -34,15 +34,13 @@ import {
   isIdentifierUnique,
 } from './users/crud';
 import {
-  getProtectedAttributesByUniqueIdentifier,
-  getAllProtectedAttributesByUniqueIdentifier,
-  setProtectedAttributesByUniqueIdentifier,
-  deleteProtectedAttributesByUniqueIdentifier,
-  deleteAllProtectedAttributesByUniqueIdentifier,
-  updateProtectedAttributeByUniqueIdentifier,
-  updateProtectedAttributesByUniqueIdentifier,
-  deleteProtectedAttributeByUniqueIdentifier,
-  deleteProtectedAttributesFromNamespaceByUniqueIdentifier,
+  getProtectedAttributes,
+  getAllProtectedAttributes,
+  setProtectedAttributes,
+  updateProtectedAttributeKeysByNamespace,
+  deleteProtectedAttributeNamespaces,
+  deleteAllProtectedAttributes,
+  deleteProtectedAttributeKeysByNamespace,
 } from './protected-attributes/crud';
 import { setupUserChangeListeners } from './users/listeners';
 import { setupProtectedAttributesChangeListeners } from './protected-attributes/listeners';
@@ -157,7 +155,7 @@ const createUser = async (record: NewUserRecord): Promise<CoreResult<JUser>> => 
   const items = Array.isArray(record?.protectedAttributes) ? record.protectedAttributes : [];
   if (items.length === 0) return coreSuccess([user]);
 
-  const setPAResult = await setProtectedAttributesByUniqueIdentifier(
+  const setPAResult = await setProtectedAttributes(
     user.uniqueIdentifier,
     items as NamespacedAttributes[],
   );
@@ -224,7 +222,7 @@ const deleteUserById = async (userId: string): Promise<CoreResult<null>> => {
       { id: userId },
     );
 
-  const paResult = await deleteAllProtectedAttributesByUniqueIdentifier(existing.uniqueIdentifier);
+  const paResult = await deleteAllProtectedAttributes(existing.uniqueIdentifier);
   if (!paResult.ok) {
     paResult.failures.forEach(({ reason }) =>
       Log.warn('deleteUserById: protected attributes cleanup failed', {
@@ -318,7 +316,7 @@ const getAllProtectedAttributesForUser = (userId: string): ProtectedAttributesRe
     });
     return [];
   }
-  return getAllProtectedAttributesByUniqueIdentifier(uid);
+  return getAllProtectedAttributes(uid);
 };
 
 /**
@@ -344,7 +342,7 @@ const getProtectedAttributesForUser = (
     });
     return [];
   }
-  return getProtectedAttributesByUniqueIdentifier(uid, namespaces);
+  return getProtectedAttributes(uid, namespaces);
 };
 
 // ---------------------------------------------------------------------------
@@ -374,7 +372,7 @@ const setProtectedAttributesForUser = async (
       `user (${userId}) not found`,
       { id: userId },
     );
-  return setProtectedAttributesByUniqueIdentifier(uid, input);
+  return setProtectedAttributes(uid, input);
 };
 
 // ---------------------------------------------------------------------------
@@ -382,48 +380,17 @@ const setProtectedAttributesForUser = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Updates a single nested key path within a namespace-scoped protected-attributes
- * record. Supports dot-notation paths (e.g. `'daily.steps'`).
+ * Updates one or more nested key paths within a namespace-scoped protected-attributes record.
+ *
+ * Pass a single `{ keyPath: value }` entry or multiple. Invalid or reserved paths are
+ * skipped and reported as failures; valid paths are applied in a single DB write.
  *
  * @param userId - Primary key of the user.
  * @param namespace - Namespace of the record to patch.
- * @param keyPath - Dot-notated path of the key to set.
- * @param value - Value to set at the path.
- * @returns A {@link CoreResult} containing the updated record on success.
- */
-const updateProtectedAttributeForUser = async (
-  userId: string,
-  namespace: string,
-  keyPath: string,
-  value: any,
-): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInit();
-  const uid = _resolveUniqueIdentifier(userId);
-  if (!uid)
-    return coreFailureResult(
-      'updateProtectedAttributeForUser',
-      JustinErrorCode.NOT_FOUND,
-      `user (${userId}) not found`,
-      { id: userId },
-      { namespace, keyPath },
-    );
-  return updateProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath, value);
-};
-
-/**
- * Updates multiple nested key paths within a namespace-scoped protected-attributes
- * record in a single call.
- *
- * Invalid or reserved key paths are skipped and reported as failures; valid
- * paths are applied and the updated record is returned.
- *
- * @param userId - Primary key of the user.
- * @param namespace - Namespace of the record to patch.
- * @param updates - Object whose keys are dot-notated paths and values are the
- * values to set.
+ * @param updates - Object whose keys are dot-notated paths and values are the values to set.
  * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
-const updateProtectedAttributesForUser = async (
+const updateProtectedAttributeKeysByNamespaceForUser = async (
   userId: string,
   namespace: string,
   updates: Record<string, any>,
@@ -432,13 +399,13 @@ const updateProtectedAttributesForUser = async (
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
-      'updateProtectedAttributesForUser',
+      'updateProtectedAttributeKeysByNamespaceForUser',
       JustinErrorCode.NOT_FOUND,
       `user (${userId}) not found`,
       { id: userId },
       { namespace },
     );
-  return updateProtectedAttributesByUniqueIdentifier(uid, namespace, updates);
+  return updateProtectedAttributeKeysByNamespace(uid, namespace, updates);
 };
 
 // ---------------------------------------------------------------------------
@@ -452,7 +419,7 @@ const updateProtectedAttributesForUser = async (
  * @param namespaces - A single namespace string or an array of namespace strings.
  * @returns A {@link CoreResult} with `successes: [null]` on success.
  */
-const deleteProtectedAttributesForUser = async (
+const deleteProtectedAttributeNamespacesForUser = async (
   userId: string,
   namespaces: string | string[],
 ): Promise<CoreResult<null>> => {
@@ -460,12 +427,12 @@ const deleteProtectedAttributesForUser = async (
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
-      'deleteProtectedAttributesForUser',
+      'deleteProtectedAttributeNamespacesForUser',
       JustinErrorCode.NOT_FOUND,
       `user (${userId}) not found`,
       { id: userId },
     );
-  return deleteProtectedAttributesByUniqueIdentifier(uid, namespaces);
+  return deleteProtectedAttributeNamespaces(uid, namespaces);
 };
 
 /**
@@ -485,49 +452,21 @@ const deleteAllProtectedAttributesForUser = async (userId: string): Promise<Core
       `user (${userId}) not found`,
       { id: userId },
     );
-  return deleteAllProtectedAttributesByUniqueIdentifier(uid);
+  return deleteAllProtectedAttributes(uid);
 };
 
 /**
- * Deletes a single nested key path within a namespace-scoped protected-attributes
- * record.
+ * Deletes one or more nested key paths within a namespace-scoped protected-attributes record.
+ *
+ * Pass a single path string or an array. Invalid or reserved paths are skipped and reported
+ * as failures; valid paths are deleted in a single DB write.
  *
  * @param userId - Primary key of the user.
  * @param namespace - Namespace of the record to patch.
- * @param keyPath - Dot-notated path of the key to delete.
- * @returns A {@link CoreResult} containing the updated record on success.
- */
-const deleteProtectedAttributeForUser = async (
-  userId: string,
-  namespace: string,
-  keyPath: string,
-): Promise<CoreResult<ProtectedAttributesRecord>> => {
-  _checkInit();
-  const uid = _resolveUniqueIdentifier(userId);
-  if (!uid)
-    return coreFailureResult(
-      'deleteProtectedAttributeForUser',
-      JustinErrorCode.NOT_FOUND,
-      `user (${userId}) not found`,
-      { id: userId },
-      { namespace, keyPath },
-    );
-  return deleteProtectedAttributeByUniqueIdentifier(uid, namespace, keyPath);
-};
-
-/**
- * Deletes multiple nested key paths within a namespace-scoped protected-attributes
- * record in a single call.
- *
- * Invalid or reserved paths are skipped and reported as failures; valid paths
- * are deleted and the updated record is returned.
- *
- * @param userId - Primary key of the user.
- * @param namespace - Namespace of the record to patch.
- * @param keyPaths - A single dot-notated path string or an array of them.
+ * @param keyPaths - A dot-notated path string or an array of them.
  * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
-const deleteProtectedAttributesFromNamespaceForUser = async (
+const deleteProtectedAttributeKeysByNamespaceForUser = async (
   userId: string,
   namespace: string,
   keyPaths: string | string[],
@@ -536,13 +475,13 @@ const deleteProtectedAttributesFromNamespaceForUser = async (
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
-      'deleteProtectedAttributesFromNamespaceForUser',
+      'deleteProtectedAttributeKeysByNamespaceForUser',
       JustinErrorCode.NOT_FOUND,
       `user (${userId}) not found`,
       { id: userId },
       { namespace },
     );
-  return deleteProtectedAttributesFromNamespaceByUniqueIdentifier(uid, namespace, keyPaths);
+  return deleteProtectedAttributeKeysByNamespace(uid, namespace, keyPaths);
 };
 
 // ---------------------------------------------------------------------------
@@ -578,14 +517,12 @@ export const UserManager = {
   setProtectedAttributesForUser,
 
   // protected attributes — key-level patch
-  updateProtectedAttributeForUser,
-  updateProtectedAttributesForUser,
+  updateProtectedAttributeKeysByNamespaceForUser,
 
   // protected attributes — delete
-  deleteProtectedAttributesForUser,
+  deleteProtectedAttributeNamespacesForUser,
   deleteAllProtectedAttributesForUser,
-  deleteProtectedAttributeForUser,
-  deleteProtectedAttributesFromNamespaceForUser,
+  deleteProtectedAttributeKeysByNamespaceForUser,
 };
 
 /**
