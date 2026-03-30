@@ -1,365 +1,401 @@
-import sinon from 'sinon';
-import { makeCoreManagersSandbox, type CoreManagersSandbox } from '../../testing';
-import DataManager from '../../data-manager/data-manager';
-import { USERS } from '../../data-manager/data-manager.constants';
-import { CollectionChangeType } from '../../data-manager/data-manager.type';
-import { UserManager, TestingUserManager } from '../user-manager';
+import {
+  makeTestJUser,
+  expectOk,
+  expectFailed,
+  expectFailedWithCode,
+  makeCoreManagersSandbox,
+  loggerSpies,
+  resetGlobalLoggerState,
+} from '../../testing';
+import type { CoreManagersSandbox, LoggerSpies } from '../../testing';
+import { JustinErrorCode } from '../../errors';
+import { UserManager } from '../user-manager';
+import { clearUsersCache, upsertUserInCache } from '../users/cache';
+import {
+  clearProtectedAttributesCache,
+  upsertProtectedAttributesInCache,
+} from '../protected-attributes/cache';
+import type { ProtectedAttributesRecord } from '../types';
 
-describe('UserManager (unit)', () => {
-  let cm: CoreManagersSandbox;
-  let dm: ReturnType<typeof DataManager.getInstance>;
+describe('UserManager unit tests', () => {
+  let t: CoreManagersSandbox;
+  let lg: LoggerSpies;
 
   beforeEach(() => {
-    cm = makeCoreManagersSandbox();
-    dm = cm.dm;
-
-    // Reset in-memory cache
-    TestingUserManager._users.clear();
+    t?.restore();
+    lg?.restore();
+    t = makeCoreManagersSandbox();
+    lg = loggerSpies();
+    clearUsersCache();
+    clearProtectedAttributesCache();
   });
 
   afterEach(() => {
-    cm.restore();
+    t?.restore();
+    lg?.restore();
+    resetGlobalLoggerState();
+    clearUsersCache();
+    clearProtectedAttributesCache();
   });
 
-  it('init: initializes DM, ensures store/indexes, refreshes cache, and sets up change listeners', async () => {
-    // arrange a couple of docs for refreshCache
-    (dm.getAllInCollection as sinon.SinonStub).resolves([
-      { id: 'u1', uniqueIdentifier: 'a', attributes: { x: 1 } },
-    ]);
+  function makePA(overrides: Partial<ProtectedAttributesRecord> = {}): ProtectedAttributesRecord {
+    return {
+      id: overrides.id ?? 'pa1',
+      uniqueIdentifier: overrides.uniqueIdentifier ?? 'alice',
+      namespace: overrides.namespace ?? 'health',
+      protectedAttributes: overrides.protectedAttributes ?? { steps: 1000 },
+    };
+  }
 
-    await expect(UserManager.init()).resolves.toBeUndefined();
+  describe('init', () => {
+    it('calls dm.init', async () => {
+      await UserManager.init();
+      expect((t.dm as any).init.calledOnce).toBe(true);
+    });
 
-    sinon.assert.calledOnce(dm.init as sinon.SinonStub);
-    sinon.assert.calledWith(dm.ensureStore as sinon.SinonStub, USERS);
-    sinon.assert.calledWith(dm.ensureIndexes as sinon.SinonStub, USERS, [
-      { name: 'uniq_user_identifier', key: { uniqueIdentifier: 1 }, unique: true },
-    ]);
+    it('ensures stores for users and protected_attributes', async () => {
+      await UserManager.init();
+      expect((t.dm as any).ensureStore.calledWith('users')).toBe(true);
+      expect((t.dm as any).ensureStore.calledWith('protected_attributes')).toBe(true);
+    });
 
-    // Change listeners registered for INSERT/UPDATE/DELETE
-    sinon.assert.calledThrice(cm.clm.addChangeListener as sinon.SinonStub);
+    it('sets up change listeners for users and protected_attributes', async () => {
+      await UserManager.init();
+      const collections = (t.clm as any).addChangeListener.args.map(([col]: [string]) => col);
+      expect(collections).toContain('users');
+      expect(collections).toContain('protected_attributes');
+    });
   });
 
-  it('shutdown: removes all user change listeners', () => {
-    UserManager.shutdown();
-
-    sinon.assert.calledWith(
-      cm.clm.removeChangeListener as sinon.SinonStub,
-      USERS,
-      CollectionChangeType.INSERT,
-    );
-    sinon.assert.calledWith(
-      cm.clm.removeChangeListener as sinon.SinonStub,
-      USERS,
-      CollectionChangeType.UPDATE,
-    );
-    sinon.assert.calledWith(
-      cm.clm.removeChangeListener as sinon.SinonStub,
-      USERS,
-      CollectionChangeType.DELETE,
-    );
+  describe('shutdown', () => {
+    it('removes all change listeners', async () => {
+      await UserManager.shutdown();
+      expect((t.clm as any).removeChangeListener.callCount).toBe(6);
+    });
   });
 
-  it('refreshCache: clears and repopulates cache with id transform', async () => {
-    (dm.getAllInCollection as sinon.SinonStub).resolves([
-      { id: 'x1', uniqueIdentifier: 'uid-1', attributes: { a: 1 } },
-      { id: 'x2', uniqueIdentifier: 'uid-2', attributes: { b: 2 } },
-    ]);
+  describe('createUser — uniqueIdentifier trimming', () => {
+    it('trims leading and trailing whitespace before delegating to crud', async () => {
+      const user = makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' });
+      (t.dm as any).addItemToCollection.resolves({ ok: true, successes: [user] });
 
-    await TestingUserManager.refreshCache();
-
-    expect(TestingUserManager._users.size).toBe(2);
-    expect(TestingUserManager._users.get('x1')).toEqual({
-      id: 'x1',
-      uniqueIdentifier: 'uid-1',
-      attributes: { a: 1 },
-    });
-    expect(TestingUserManager._users.get('x2')).toEqual({
-      id: 'x2',
-      uniqueIdentifier: 'uid-2',
-      attributes: { b: 2 },
-    });
-    sinon.assert.calledWith(dm.getAllInCollection as sinon.SinonStub, USERS);
-  });
-
-  it('addUser: validates payload and uniqueness; inserts and caches result', async () => {
-    // seed cache empty
-    TestingUserManager._users.clear();
-
-    // invalid shapes -> null
-    await expect(UserManager.addUser(null as any)).resolves.toBeNull();
-    await expect(UserManager.addUser({} as any)).resolves.toBeNull();
-
-    // duplicate uniqueIdentifier -> null
-    TestingUserManager._users.set('u1', {
-      id: 'u1',
-      uniqueIdentifier: 'dup',
-      attributes: {},
-    } as any);
-    await expect(
-      UserManager.addUser({ uniqueIdentifier: 'dup', initialAttributes: {} }),
-    ).resolves.toBeNull();
-
-    // new uniqueIdentifier -> DM insert, cache
-    (dm.addItemToCollection as sinon.SinonStub).resolves({
-      id: 'n1',
-      uniqueIdentifier: 'new',
-      attributes: { foo: 1 },
-    });
-
-    const out = await UserManager.addUser({
-      uniqueIdentifier: 'new',
-      initialAttributes: { foo: 1 },
-    });
-
-    expect(out).toEqual({
-      id: 'n1',
-      uniqueIdentifier: 'new',
-      attributes: { foo: 1 },
-    });
-    sinon.assert.calledWith(dm.addItemToCollection as sinon.SinonStub, USERS, {
-      uniqueIdentifier: 'new',
-      attributes: { foo: 1 },
-    });
-    expect(TestingUserManager._users.get('n1')).toEqual(out);
-  });
-
-  it('addUser: on DM error calls handleDbError (throws)', async () => {
-    (dm.addItemToCollection as sinon.SinonStub).rejects(new Error('fail-insert'));
-
-    await expect(
-      UserManager.addUser({ uniqueIdentifier: 'x', initialAttributes: {} }),
-    ).rejects.toThrow('fail-insert');
-
-    // Our sandbox stub throws; we just verify it was called with the right message
-    sinon.assert.calledWithMatch(
-      cm.handleDbErrorStub,
-      'Failed to add users:',
-      sinon.match.any,
-      sinon.match.instanceOf(Error),
-    );
-  });
-
-  it('addUsers: rejects on empty input; otherwise iterates addUser and returns successful inserts', async () => {
-    await expect(UserManager.addUsers([] as any)).rejects.toThrow(
-      'No users provided for insertion.',
-    );
-
-    // Ready state for addUser path
-    TestingUserManager._users.clear();
-
-    // Seed one duplicate
-    TestingUserManager._users.set('dupid', {
-      id: 'dupid',
-      uniqueIdentifier: 'dup',
-      attributes: {},
-    } as any);
-
-    (dm.addItemToCollection as sinon.SinonStub)
-      .onFirstCall()
-      .resolves({
-        id: 'u1',
-        uniqueIdentifier: 'a',
-        attributes: {},
-      })
-      .onSecondCall()
-      .resolves({
-        id: 'u2',
-        uniqueIdentifier: 'b',
+      const result = await UserManager.createUser({
+        uniqueIdentifier: '  alice  ',
         attributes: {},
       });
 
-    const res = await UserManager.addUsers([
-      { uniqueIdentifier: 'a', initialAttributes: {} },
-      { uniqueIdentifier: 'dup', initialAttributes: {} }, // duplicate → skipped
-      { uniqueIdentifier: 'b', initialAttributes: {} },
-    ]);
-
-    expect(res).toEqual([
-      { id: 'u1', uniqueIdentifier: 'a', attributes: {} },
-      { id: 'u2', uniqueIdentifier: 'b', attributes: {} },
-    ]);
-  });
-
-  it('getAllUsers returns cached list (requires init)', () => {
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('x', {
-      id: 'x',
-      uniqueIdentifier: 'u',
-      attributes: {},
-    } as any);
-
-    expect(TestingUserManager.getAllUsers()).toEqual([
-      { id: 'x', uniqueIdentifier: 'u', attributes: {} },
-    ]);
-  });
-
-  it('getUserByUniqueIdentifier finds a user or null', () => {
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('a', {
-      id: 'a',
-      uniqueIdentifier: 'u1',
-      attributes: {},
-    } as any);
-
-    expect(TestingUserManager.getUserByUniqueIdentifier('u1')).toEqual({
-      id: 'a',
-      uniqueIdentifier: 'u1',
-      attributes: {},
-    });
-    expect(TestingUserManager.getUserByUniqueIdentifier('nope')).toBeNull();
-  });
-
-  it('updateUserById merges attributes, writes via DM, updates cache', async () => {
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', {
-      id: 'u1',
-      uniqueIdentifier: 'a',
-      attributes: { a: 1, b: 1 },
-    } as any);
-
-    (dm.updateItemByIdInCollection as sinon.SinonStub).resolves({
-      id: 'u1',
-      uniqueIdentifier: 'a',
-      attributes: { a: 1, b: 2, c: 3 },
+      expectOk(result);
+      expect(result.successes[0].uniqueIdentifier).toBe('alice');
     });
 
-    const updated = await TestingUserManager.updateUserById('u1', {
-      b: 2,
-      c: 3,
+    it('passes through unchanged when uniqueIdentifier has no extra whitespace', async () => {
+      const user = makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' });
+      (t.dm as any).addItemToCollection.resolves({ ok: true, successes: [user] });
+
+      const result = await UserManager.createUser({
+        uniqueIdentifier: 'alice',
+        attributes: {},
+      });
+
+      expectOk(result);
     });
 
-    expect(updated).toEqual({
-      id: 'u1',
-      uniqueIdentifier: 'a',
-      attributes: { a: 1, b: 2, c: 3 },
-    });
+    it('returns ok:true even when protectedAttributes creation fails — user is still returned', async () => {
+      const user = makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' });
+      (t.dm as any).addItemToCollection.resolves({ ok: true, successes: [user] });
+      (t.dm as any).findItemsInCollection.resolves([]);
+      // Make PA creation fail
+      (t.dm as any).addItemToCollection
+        .onFirstCall()
+        .resolves({ ok: true, successes: [user] })
+        .onSecondCall()
+        .resolves({
+          ok: false,
+          successes: [],
+          failures: [{ code: 'DB_ERROR', reason: 'PA failed' }],
+        });
 
-    sinon.assert.calledWith(dm.updateItemByIdInCollection as sinon.SinonStub, USERS, 'u1', {
-      attributes: { a: 1, b: 2, c: 3 },
-    });
+      const result = await UserManager.createUser({
+        uniqueIdentifier: 'alice',
+        attributes: {},
+        protectedAttributes: [{ namespace: 'health', protectedAttributes: { steps: 0 } }],
+      });
 
-    expect(TestingUserManager._users.get('u1')).toEqual(updated);
-  });
-
-  it('updateUserByUniqueIdentifier validates inputs and reroutes to updateUserById', async () => {
-    // invalid args
-    await expect(TestingUserManager.updateUserByUniqueIdentifier('', { x: 1 })).rejects.toThrow(
-      'Invalid uniqueIdentifier: ',
-    );
-
-    await expect(
-      TestingUserManager.updateUserByUniqueIdentifier('u', {
-        uniqueIdentifier: 'nope',
-      } as any),
-    ).rejects.toThrow('Cannot update uniqueIdentifier field using updateUserByUniqueIdentifier');
-
-    await expect(TestingUserManager.updateUserByUniqueIdentifier('u', {} as any)).rejects.toThrow(
-      'Invalid updateData',
-    );
-
-    // not found
-    await expect(
-      TestingUserManager.updateUserByUniqueIdentifier('missing', { a: 1 }),
-    ).rejects.toThrow('User with uniqueIdentifier (missing) not found.');
-  });
-
-  it('modifyUserUniqueIdentifier validates and updates via DM; no-op if same value', async () => {
-    await expect(TestingUserManager.modifyUserUniqueIdentifier('old', '')).rejects.toThrow(
-      'uniqueIdentifier must be a non-empty string.',
-    );
-
-    await expect(TestingUserManager.modifyUserUniqueIdentifier('missing', 'new')).rejects.toThrow(
-      'User with uniqueIdentifier (missing) not found.',
-    );
-
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', {
-      id: 'u1',
-      uniqueIdentifier: 'same',
-      attributes: {},
-    } as any);
-
-    await expect(TestingUserManager.modifyUserUniqueIdentifier('same', 'same')).resolves.toEqual({
-      id: 'u1',
-      uniqueIdentifier: 'same',
-      attributes: {},
-    });
-
-    (dm.updateItemByIdInCollection as sinon.SinonStub).resolves({
-      id: 'u1',
-      uniqueIdentifier: 'new',
-      attributes: {},
-    });
-
-    const updated = await TestingUserManager.modifyUserUniqueIdentifier('same', 'new');
-
-    expect(updated).toEqual({
-      id: 'u1',
-      uniqueIdentifier: 'new',
-      attributes: {},
-    });
-    sinon.assert.calledWith(dm.updateItemByIdInCollection as sinon.SinonStub, USERS, 'u1', {
-      uniqueIdentifier: 'new',
+      // User is returned even though PA failed
+      expect(result.ok).toBe(true);
     });
   });
 
-  it('deleteUserById removes from DB and cache on success', async () => {
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', {
-      id: 'u1',
-      uniqueIdentifier: 'a',
-      attributes: {},
-    } as any);
+  describe('createUsers — uniqueIdentifier trimming', () => {
+    it('trims each uniqueIdentifier before delegating to crud', async () => {
+      const user = makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' });
+      (t.dm as any).addItemToCollection.resolves({ ok: true, successes: [user] });
 
-    (dm.removeItemFromCollection as sinon.SinonStub).resolves(true);
+      const result = await UserManager.createUsers([
+        { uniqueIdentifier: '  alice  ', attributes: {} },
+      ]);
 
-    const ok = await TestingUserManager.deleteUserById('u1');
-    expect(ok).toBe(true);
-    sinon.assert.calledWith(dm.removeItemFromCollection as sinon.SinonStub, USERS, 'u1');
-    expect(TestingUserManager._users.has('u1')).toBe(false);
+      expectOk(result);
+    });
+
+    it('returns ok:true with empty successes for empty input', async () => {
+      const result = await UserManager.createUsers([]);
+      expect(result.ok).toBe(true);
+      expect(result.successes).toHaveLength(0);
+    });
   });
 
-  it('deleteUserByUniqueIdentifier finds id then deletes via deleteUserById', async () => {
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', {
-      id: 'u1',
-      uniqueIdentifier: 'uid-1',
-      attributes: {},
-    } as any);
+  describe('deleteUserById', () => {
+    it('returns VALIDATION_ERROR for empty userId', async () => {
+      expectFailedWithCode(await UserManager.deleteUserById(''), JustinErrorCode.VALIDATION_ERROR);
+    });
 
-    (dm.removeItemFromCollection as sinon.SinonStub).resolves(true);
+    it('returns NOT_FOUND when user is not in cache', async () => {
+      expectFailedWithCode(await UserManager.deleteUserById('ghost'), JustinErrorCode.NOT_FOUND);
+    });
 
-    const ok = await TestingUserManager.deleteUserByUniqueIdentifier('uid-1');
-    expect(ok).toBe(true);
-    expect(TestingUserManager._users.has('u1')).toBe(false);
+    it('returns ok:true on successful deletion', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).removeItemFromCollection.resolves({ ok: true, successes: [null] });
+      (t.dm as any).getAllInCollection.resolves([]);
+      (t.dm as any).findItemsInCollection.resolves([]);
+
+      const result = await UserManager.deleteUserById('u1');
+
+      expectOk(result);
+    });
+
+    it('clears and refreshes the users cache after deletion', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).removeItemFromCollection.resolves({ ok: true, successes: [null] });
+      (t.dm as any).getAllInCollection.resolves([]);
+      (t.dm as any).findItemsInCollection.resolves([]);
+
+      await UserManager.deleteUserById('u1');
+
+      expect(UserManager.getUserById('u1')).toBeNull();
+    });
+
+    it('returns a failure when the DB remove fails', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).removeItemFromCollection.resolves({
+        ok: false,
+        successes: [],
+        failures: [{ code: 'DB_ERROR', reason: 'failed' }],
+      });
+      (t.dm as any).findItemsInCollection.resolves([]);
+
+      expectFailed(await UserManager.deleteUserById('u1'));
+    });
   });
 
-  it('deleteAllUsers clears DB and cache', async () => {
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', { id: 'u1' } as any);
+  describe('deleteUserByUniqueIdentifier', () => {
+    it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteUserByUniqueIdentifier(''),
+        JustinErrorCode.VALIDATION_ERROR,
+      );
+    });
 
-    await expect(TestingUserManager.deleteAllUsers()).resolves.toBeUndefined();
+    it('returns NOT_FOUND when user is not in cache', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteUserByUniqueIdentifier('nobody'),
+        JustinErrorCode.NOT_FOUND,
+      );
+    });
 
-    sinon.assert.calledWith(dm.clearCollection as sinon.SinonStub, USERS);
-    expect(TestingUserManager._users.size).toBe(0);
+    it('resolves uniqueIdentifier to id and delegates to deleteUserById', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).removeItemFromCollection.resolves({ ok: true, successes: [null] });
+      (t.dm as any).getAllInCollection.resolves([]);
+      (t.dm as any).findItemsInCollection.resolves([]);
+
+      const result = await UserManager.deleteUserByUniqueIdentifier('alice');
+
+      expectOk(result);
+    });
   });
 
-  it('isIdentifierUnique validates input; returns false when exists; true otherwise', async () => {
-    await expect(TestingUserManager.isIdentifierUnique('')).rejects.toThrow(
-      'Invalid unique identifier: ',
-    );
-    await expect(TestingUserManager.isIdentifierUnique('   ')).rejects.toThrow(
-      'Invalid unique identifier',
-    );
+  describe('deleteAllUsers', () => {
+    it('returns ok:true and clears both collections and caches', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      upsertProtectedAttributesInCache(makePA());
 
-    TestingUserManager._users.clear();
-    TestingUserManager._users.set('u1', {
-      id: 'u1',
-      uniqueIdentifier: 'exists',
-      attributes: {},
-    } as any);
+      const result = await UserManager.deleteAllUsers();
 
-    await expect(TestingUserManager.isIdentifierUnique('exists')).resolves.toBe(false);
-    await expect(TestingUserManager.isIdentifierUnique('new-one')).resolves.toBe(true);
+      expectOk(result);
+      expect(UserManager.getAllUsers()).toHaveLength(0);
+      expect(UserManager.getAllProtectedAttributesForUser('u1')).toHaveLength(0);
+      expect((t.dm as any).clearCollection.calledWith('users')).toBe(true);
+      expect((t.dm as any).clearCollection.calledWith('protected_attributes')).toBe(true);
+    });
+
+    it('returns ok:false when the users collection clear fails', async () => {
+      (t.dm as any).clearCollection.resolves({
+        ok: false,
+        successes: [],
+        failures: [{ code: JustinErrorCode.DB_ERROR, reason: 'clear failed' }],
+      });
+
+      expectFailed(await UserManager.deleteAllUsers());
+    });
+  });
+
+  describe('getAllProtectedAttributesForUser', () => {
+    it('returns all PA records for a known user', () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      upsertProtectedAttributesInCache(makePA({ uniqueIdentifier: 'alice', namespace: 'health' }));
+      upsertProtectedAttributesInCache(
+        makePA({ id: 'pa2', uniqueIdentifier: 'alice', namespace: 'fitness' }),
+      );
+
+      expect(UserManager.getAllProtectedAttributesForUser('u1')).toHaveLength(2);
+    });
+
+    it('returns empty array and logs a warning for an unknown userId', () => {
+      const result = UserManager.getAllProtectedAttributesForUser('ghost');
+
+      expect(result).toHaveLength(0);
+      expect(lg.findByMessage('userId invalid or user not found')).toHaveLength(1);
+    });
+  });
+
+  describe('getProtectedAttributesForUser', () => {
+    it('returns only the requested namespaces for a known user', () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      upsertProtectedAttributesInCache(makePA({ uniqueIdentifier: 'alice', namespace: 'health' }));
+      upsertProtectedAttributesInCache(
+        makePA({ id: 'pa2', uniqueIdentifier: 'alice', namespace: 'fitness' }),
+      );
+
+      const result = UserManager.getProtectedAttributesForUser('u1', ['health']);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].namespace).toBe('health');
+    });
+
+    it('returns empty array and logs a warning for an unknown userId', () => {
+      const result = UserManager.getProtectedAttributesForUser('ghost', ['health']);
+
+      expect(result).toHaveLength(0);
+      expect(lg.findByMessage('userId invalid or user not found')).toHaveLength(1);
+    });
+  });
+
+  describe('setProtectedAttributesForUser', () => {
+    it('returns NOT_FOUND for an unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.setProtectedAttributesForUser('ghost', {
+          namespace: 'health',
+          protectedAttributes: {},
+        }),
+        JustinErrorCode.NOT_FOUND,
+      );
+    });
+
+    it('resolves userId to uniqueIdentifier and delegates to PA crud', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      const pa = makePA({ uniqueIdentifier: 'alice' });
+      (t.dm as any).findItemsInCollection.resolves([]);
+      (t.dm as any).addItemToCollection.resolves({ ok: true, successes: [pa] });
+
+      const result = await UserManager.setProtectedAttributesForUser('u1', {
+        namespace: 'health',
+        protectedAttributes: { steps: 1000 },
+      });
+
+      expectOk(result);
+    });
+  });
+
+  describe('updateProtectedAttributeKeysByNamespaceForUser', () => {
+    it('returns NOT_FOUND for an unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.updateProtectedAttributeKeysByNamespaceForUser('ghost', 'health', { steps: 1 }),
+        JustinErrorCode.NOT_FOUND,
+      );
+    });
+
+    it('resolves userId to uniqueIdentifier and delegates', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      const existing = makePA({ uniqueIdentifier: 'alice', protectedAttributes: { steps: 0 } });
+      const updated = makePA({ uniqueIdentifier: 'alice', protectedAttributes: { steps: 42 } });
+      (t.dm as any).findItemsInCollection.resolves([existing]);
+      (t.dm as any).updateItemByIdInCollection.resolves({ ok: true, successes: [updated] });
+
+      const result = await UserManager.updateProtectedAttributeKeysByNamespaceForUser('u1', 'health', { steps: 42 });
+
+      expectOk(result);
+    });
+  });
+
+  describe('deleteProtectedAttributeNamespacesForUser', () => {
+    it('returns NOT_FOUND for an unknown userId', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributeNamespacesForUser('ghost', 'health'),
+        JustinErrorCode.NOT_FOUND,
+      );
+    });
+
+    it('resolves userId to uniqueIdentifier and delegates to PA crud', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).findItemsInCollection
+        .onFirstCall()
+        .resolves([makePA({ uniqueIdentifier: 'alice' })])
+        .onSecondCall()
+        .resolves([]);
+      (t.dm as any).removeItemsFromCollection.resolves({ ok: true, successes: [{ id: 'pa1' }] });
+
+      const result = await UserManager.deleteProtectedAttributeNamespacesForUser('u1', 'health');
+
+      expectOk(result);
+    });
+  });
+
+  describe('deleteAllProtectedAttributesForUser', () => {
+    it('returns NOT_FOUND for an unknown userId', async () => {
+      const result = await UserManager.deleteAllProtectedAttributesForUser('ghost');
+
+      expectFailedWithCode(result, JustinErrorCode.NOT_FOUND);
+      expect((t.dm as any).findItemsInCollection.called).toBe(false);
+    });
+
+    it('returns ok:true and deletes all PA records for a known user', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).findItemsInCollection.resolves([makePA({ uniqueIdentifier: 'alice' })]);
+      (t.dm as any).removeItemsFromCollection.resolves({ ok: true, successes: [{ id: 'pa1' }] });
+
+      const result = await UserManager.deleteAllProtectedAttributesForUser('u1');
+
+      expectOk(result);
+    });
+
+    it('returns ok:false when the DB removal fails', async () => {
+      upsertUserInCache(makeTestJUser({ id: 'u1', uniqueIdentifier: 'alice' }));
+      (t.dm as any).findItemsInCollection.resolves([makePA({ uniqueIdentifier: 'alice' })]);
+      (t.dm as any).removeItemsFromCollection.resolves({
+        ok: false,
+        successes: [],
+        failures: [{ code: JustinErrorCode.DB_ERROR, reason: 'write failed' }],
+      });
+
+      expectFailed(await UserManager.deleteAllProtectedAttributesForUser('u1'));
+    });
+  });
+
+  describe('deleteProtectedAttributeKeysByNamespaceForUser', () => {
+    it('returns NOT_FOUND for an unknown userId — single key', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser('ghost', 'health', 'steps'),
+        JustinErrorCode.NOT_FOUND,
+      );
+    });
+
+    it('returns NOT_FOUND for an unknown userId — multiple keys', async () => {
+      expectFailedWithCode(
+        await UserManager.deleteProtectedAttributeKeysByNamespaceForUser('ghost', 'health', ['steps']),
+        JustinErrorCode.NOT_FOUND,
+      );
+    });
   });
 });

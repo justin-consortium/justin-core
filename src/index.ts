@@ -1,21 +1,52 @@
-import DataManager from './data-manager/data-manager';
+// ---------------------------------------------------------------------------
+// DB configuration & lifecycle
+// ---------------------------------------------------------------------------
 
-export { DataManager };
+export { configureDB, shutdownCore, registerManager } from './lifecycle';
+export type { ShutdownCoreOptions, DBConfig } from './lifecycle';
 
-export { ChangeListenerManager } from './data-manager/change-listener.manager';
+// ---------------------------------------------------------------------------
+// DataManager (low-level — for packages building on core)
+// ---------------------------------------------------------------------------
 
-export { USERS, DBType, NO_ID } from './data-manager/data-manager.constants';
-export { CollectionChangeType } from './data-manager/data-manager.type';
+export { DataManager, ChangeListenerManager, DBType, NO_ID } from './data-manager';
+export type {
+  DataManagerAdapter,
+  CollectionChangeListener,
+  CollectionChangeNotifier,
+} from './data-manager';
+export { CollectionChangeType } from './data-manager/types';
 
-/**
- * UserManager
- */
-export { UserManager } from './user-manager/user-manager';
-export type { JUser, NewUserRecord } from './user-manager/user.type';
+// ---------------------------------------------------------------------------
+// UserManager
+// ---------------------------------------------------------------------------
 
-/**
- * Logging
- */
+export { UserManager, TestingUserManager } from './user-manager';
+export type {
+  JUser,
+  BaseJUser,
+  NewUserRecord,
+  NamespacedAttributes,
+  ProtectedAttributesRecord,
+  BaseProtectedAttributes,
+} from './user-manager';
+
+// ---------------------------------------------------------------------------
+// CoreResult
+// ---------------------------------------------------------------------------
+
+export type { CoreResult, FailureEntry } from './types';
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export { JustInError, JustinErrorCode } from './errors';
+
+// ---------------------------------------------------------------------------
+// Logger
+// ---------------------------------------------------------------------------
+
 export { createLogger, configureLogger } from './logger';
 export type {
   Logger,
@@ -25,9 +56,3 @@ export type {
   EmitFn,
   LoggerConfig,
 } from './logger';
-
-/**
- * Lifecycle
- */
-export { shutdownCore } from './lifecycle';
-export type { ShutdownCoreOptions } from './lifecycle';

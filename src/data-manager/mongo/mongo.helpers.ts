@@ -1,31 +1,35 @@
 import * as mongoDB from 'mongodb';
-import { NO_ID } from '../data-manager.constants';
-import { createLogger } from '../../logger/logger';
+import { NO_ID } from '../constants';
+import { handleError } from '../../utils';
+import { JustinErrorCode } from '../../errors';
 
-const Log = createLogger({
-  context: {
-    source: 'mongo-manager-helpers',
-  },
-});
 /**
- * Safely converts a string to a MongoDB `ObjectId`.
- *
- * Attempts to create an `ObjectId` from `id`. If conversion fails, logs and
- * returns `null` instead of throwing.
+ * Converts a string to a MongoDB `ObjectId`.
  *
  * @param id - The string to convert into an `ObjectId`.
- * @returns The created `ObjectId` or `null` if the format is invalid.
+ * @returns The created `ObjectId`.
+ * @throws {JustinError} If `id` is missing, not a string, or not a valid ObjectId format.
  */
-const toObjectId = (id: string | null | undefined): mongoDB.ObjectId | null => {
+const stringToMongoId = (id: string | null | undefined): mongoDB.ObjectId => {
   if (!id || typeof id !== 'string') {
-    Log.error(`Invalid ObjectId format: ${id}`, { function: 'toObjectId' });
-    return null;
+    return handleError(
+      `Invalid ObjectId — expected a non-empty string, received: ${id}`,
+      'stringToMongoId',
+      {
+        code: JustinErrorCode.VALIDATION_ERROR,
+        data: { id },
+      },
+    );
   }
+
   try {
     return new mongoDB.ObjectId(id);
-  } catch {
-    Log.error(`Invalid ObjectId format: ${id}`, { function: 'toObjectId' });
-    return null;
+  } catch (error) {
+    return handleError(`Invalid ObjectId format: "${id}"`, 'stringToMongoId', {
+      code: JustinErrorCode.VALIDATION_ERROR,
+      data: { id },
+      error,
+    });
   }
 };
 
@@ -109,4 +113,4 @@ const normalizeIndexKey = (key: mongoDB.IndexSpecification): string => {
     .join('|');
 };
 
-export { toObjectId, transformId, asIndexKey, normalizeIndexKey };
+export { stringToMongoId, transformId, asIndexKey, normalizeIndexKey };

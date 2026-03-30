@@ -1,231 +1,358 @@
-import sinon, { SinonSandbox, SinonStub } from 'sinon';
+import sinon from 'sinon';
 import { createLogger } from '../logger';
-import * as utils from '../utils';
-import * as globalFns from '../global';
+import { setGlobalLogCallback, setGlobalSeverityRanking } from '../global';
+import { loggerSpies, resetGlobalLoggerState } from '../../testing/testkit';
+import { expectLog } from '../../testing/helpers';
+import type { LoggerSpies } from '../../testing/testkit';
 
-describe('createLogger', () => {
-  let sb: SinonSandbox;
-
-  let normalizeExtraArgStub: SinonStub;
-
-  let getGlobalEmitFnStub: SinonStub;
-  let getGlobalLogCallbackStub: SinonStub;
-  let getGlobalLogContextStub: SinonStub;
-  let getGlobalMinLogLevelStub: SinonStub;
-  let getGlobalSeverityRankingStub: SinonStub;
-  let defaultEmitStub: SinonStub;
+describe('createLogger unit tests', () => {
+  let lg: LoggerSpies;
 
   beforeEach(() => {
-    sb = sinon.createSandbox();
-
-    normalizeExtraArgStub = sb
-      .stub(utils, 'normalizeExtraArg')
-      .callsFake((extras: unknown) => ({ normalized: extras }));
-
-    getGlobalEmitFnStub = sb.stub(globalFns, 'getGlobalEmitFn');
-    getGlobalLogCallbackStub = sb.stub(globalFns, 'getGlobalLogCallback');
-    getGlobalLogContextStub = sb
-      .stub(globalFns, 'getGlobalLogContext')
-      .returns({ globalKey: 'globalVal' });
-    getGlobalMinLogLevelStub = sb.stub(globalFns, 'getGlobalMinLogLevel').returns('DEBUG');
-    getGlobalSeverityRankingStub = sb
-      .stub(globalFns, 'getGlobalSeverityRanking')
-      .returns(undefined);
-    defaultEmitStub = sb.stub(globalFns, 'defaultEmit');
+    lg = loggerSpies();
   });
 
   afterEach(() => {
-    sb.restore();
+    lg.restore();
+    resetGlobalLoggerState();
   });
 
-  it('emits using the effective emit (instance → global → default)', () => {
-    const instanceEmit = sinon.spy();
+  describe('convenience methods', () => {
+    it('debug() emits at DEBUG severity', () => {
+      const Log = createLogger();
+      Log.debug('debug message');
 
-    const logger = createLogger({
-      emitFn: instanceEmit as any,
-      context: { service: 'test' },
+      expectLog(lg.last(), { severity: 'DEBUG', messageSubstr: 'debug message' });
     });
 
-    logger.emit('INFO', 'hello', { extra: 1 });
+    it('info() emits at INFO severity', () => {
+      const Log = createLogger();
+      Log.info('info message');
 
-    expect(normalizeExtraArgStub.calledWith({ extra: 1 })).toBe(true);
-
-    expect(instanceEmit.calledOnce).toBe(true);
-    const [entry, mergedCtx] = instanceEmit.getCall(0).args;
-
-    expect(entry).toMatchObject({
-      severity: 'INFO',
-      message: 'hello',
+      expectLog(lg.last(), { severity: 'INFO', messageSubstr: 'info message' });
     });
 
-    expect(mergedCtx).toEqual({
-      globalKey: 'globalVal',
-      service: 'test',
-      normalized: { extra: 1 },
+    it('warn() emits at WARNING severity', () => {
+      const Log = createLogger();
+      Log.warn('warn message');
+
+      expectLog(lg.last(), { severity: 'WARNING', messageSubstr: 'warn message' });
     });
 
-    expect(defaultEmitStub.called).toBe(false);
-  });
+    it('error() emits at ERROR severity', () => {
+      const Log = createLogger();
+      Log.error('error message');
 
-  it('falls back to global emit when no instance emit is provided', () => {
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
+      expectLog(lg.last(), { severity: 'ERROR', messageSubstr: 'error message' });
+    });
 
-    const logger = createLogger();
-    logger.info('hey');
+    it('emit() accepts an explicit severity string', () => {
+      const Log = createLogger();
+      Log.emit('WARNING', 'explicit severity');
 
-    expect(globalEmit.calledOnce).toBe(true);
-    const [entry, ctx] = globalEmit.getCall(0).args;
+      expectLog(lg.last(), { severity: 'WARNING', messageSubstr: 'explicit severity' });
+    });
 
-    expect(entry.severity).toBe('INFO');
-    expect(entry.message).toBe('hey');
-    expect(ctx).toEqual({ globalKey: 'globalVal' });
-  });
+    it('severity is normalised to uppercase', () => {
+      const Log = createLogger();
+      Log.emit('debug' as any, 'lowercase severity');
 
-  it('falls back to default emit when neither instance nor global emit are provided', () => {
-    getGlobalEmitFnStub.returns(undefined as any);
-
-    const logger = createLogger();
-    logger.warn('careful');
-
-    expect(defaultEmitStub.calledOnce).toBe(true);
-    const [entry, ctx] = defaultEmitStub.getCall(0).args;
-
-    expect(entry.severity).toBe('WARNING');
-    expect(entry.message).toBe('careful');
-    expect(ctx).toEqual({ globalKey: 'globalVal' });
-  });
-
-  it('respects the minimum log level from globals', () => {
-    getGlobalMinLogLevelStub.returns('WARNING');
-
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const logger = createLogger();
-
-    logger.debug('nope');
-    logger.info('still nope');
-    logger.warn('yes');
-    logger.error('also yes');
-
-    expect(globalEmit.callCount).toBe(2);
-    expect(globalEmit.getCall(0).args[0].severity).toBe('WARNING');
-    expect(globalEmit.getCall(1).args[0].severity).toBe('ERROR');
-  });
-
-  it('can override minimum log level per logger via options', () => {
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const logger = createLogger({ emitLevel: 'DEBUG' });
-
-    logger.debug('should emit');
-
-    expect(globalEmit.calledOnce).toBe(true);
-    expect(globalEmit.getCall(0).args[0].message).toBe('should emit');
-  });
-
-  it('setLevel updates min level at runtime', () => {
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const logger = createLogger();
-
-    logger.debug('first');
-    expect(globalEmit.callCount).toBe(1);
-
-    logger.setLevel('ERROR');
-
-    logger.info('second');
-    logger.warn('third');
-    expect(globalEmit.callCount).toBe(1);
-
-    logger.error('fourth');
-    expect(globalEmit.callCount).toBe(2);
-    expect(globalEmit.getCall(1).args[0].message).toBe('fourth');
-  });
-
-  it('setContext merges instance context for later emits', () => {
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const logger = createLogger({ context: { service: 'svc' } });
-
-    logger.info('before');
-    logger.setContext({ requestId: 'req-1' });
-    logger.info('after');
-
-    const [, ctx2] = globalEmit.getCall(1).args;
-    expect(ctx2).toEqual({
-      globalKey: 'globalVal',
-      service: 'svc',
-      requestId: 'req-1',
+      expectLog(lg.last(), { severity: 'DEBUG' });
     });
   });
 
-  it('uppercases severity passed to emit', () => {
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
+  describe('severity filtering', () => {
+    it('emits entries at or above the global min level', () => {
+      lg.restore();
+      lg = loggerSpies({ minLevel: 'WARNING' });
 
-    const logger = createLogger();
+      const Log = createLogger();
+      Log.warn('should emit');
+      Log.error('should also emit');
 
-    logger.emit('info' as any, 'message');
-
-    expect(globalEmit.calledOnce).toBe(true);
-    const [entry] = globalEmit.getCall(0).args;
-    expect((entry as any).severity).toBe('INFO');
-  });
-
-  it('calls instance callback first, otherwise global callback', () => {
-    const globalCb = sinon.spy();
-    getGlobalLogCallbackStub.returns(globalCb as any);
-
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const instanceCb = sinon.spy();
-    const logger = createLogger({ cb: instanceCb as any });
-
-    logger.info('hi');
-
-    expect(instanceCb.calledOnce).toBe(true);
-    expect(globalCb.called).toBe(false);
-  });
-
-  it('calls global callback when no instance callback is provided', () => {
-    const globalCb = sinon.spy();
-    getGlobalLogCallbackStub.returns(globalCb as any);
-
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const logger = createLogger();
-    logger.info('hey');
-
-    expect(globalCb.calledOnce).toBe(true);
-    const [entry] = globalCb.getCall(0).args;
-    expect((entry as any).message).toBe('hey');
-  });
-
-  it('passes normalized extras in the merged context', () => {
-    const globalEmit = sinon.spy();
-    getGlobalEmitFnStub.returns(globalEmit as any);
-
-    const logger = createLogger();
-
-    logger.info('has extras', { user: { id: 'u1' } });
-
-    expect(normalizeExtraArgStub.calledWith({ user: { id: 'u1' } })).toBe(true);
-
-    const [entry, ctx] = globalEmit.getCall(0).args;
-    expect(entry).toEqual({
-      severity: 'INFO',
-      message: 'has extras',
+      expect(lg.captured).toHaveLength(2);
     });
-    expect(ctx).toEqual({
-      globalKey: 'globalVal',
-      normalized: { user: { id: 'u1' } },
+
+    it('suppresses entries below the global min level', () => {
+      lg.restore();
+      lg = loggerSpies({ minLevel: 'WARNING' });
+
+      const Log = createLogger();
+      Log.debug('suppressed');
+      Log.info('also suppressed');
+
+      expect(lg.captured).toHaveLength(0);
+    });
+
+    it('instance emitLevel overrides the global min level', () => {
+      lg.restore();
+      lg = loggerSpies({ minLevel: 'DEBUG' });
+
+      const Log = createLogger({ emitLevel: 'ERROR' });
+      Log.debug('suppressed');
+      Log.warn('suppressed');
+      Log.error('emitted');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'ERROR' });
+    });
+
+    it('instance emitLevel accepts a numeric rank', () => {
+      lg.restore();
+      lg = loggerSpies({ minLevel: 'DEBUG' });
+
+      const Log = createLogger({ emitLevel: 70 }); // ERROR rank
+      Log.warn('suppressed');
+      Log.error('emitted');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'ERROR' });
+    });
+
+    it('instance emitLevel accepts a lowercase severity string', () => {
+      lg.restore();
+      lg = loggerSpies({ minLevel: 'DEBUG' });
+
+      const Log = createLogger({ emitLevel: 'error' });
+      Log.warn('suppressed');
+      Log.error('emitted');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'ERROR' });
+    });
+  });
+
+  describe('instance context', () => {
+    it('instance context is merged into every emitted entry', () => {
+      const Log = createLogger({ context: { source: 'my-module' } });
+      Log.info('test');
+
+      expect(lg.last()?.ctx?.source).toBe('my-module');
+    });
+
+    it('instance context merges on top of global context', () => {
+      lg.restore();
+      lg = loggerSpies({ ctx: { app: 'justin' } });
+
+      const Log = createLogger({ context: { source: 'my-module' } });
+      Log.info('test');
+
+      expect(lg.last()?.ctx?.app).toBe('justin');
+      expect(lg.last()?.ctx?.source).toBe('my-module');
+    });
+
+    it('instance context wins over global context on key collision', () => {
+      lg.restore();
+      lg = loggerSpies({ ctx: { source: 'global' } });
+
+      const Log = createLogger({ context: { source: 'instance' } });
+      Log.info('test');
+
+      expect(lg.last()?.ctx?.source).toBe('instance');
+    });
+
+    it('extras are merged on top of both global and instance context', () => {
+      const Log = createLogger({ context: { source: 'my-module' } });
+      Log.info('test', { requestId: 'abc' });
+
+      expect(lg.last()?.ctx?.source).toBe('my-module');
+      expect(lg.last()?.ctx?.requestId).toBe('abc');
+    });
+  });
+
+  describe('setContext', () => {
+    it('merges new fields into the instance context', () => {
+      const Log = createLogger({ context: { source: 'mod' } });
+      Log.setContext({ requestId: 'abc' });
+      Log.info('test');
+
+      expect(lg.last()?.ctx?.source).toBe('mod');
+      expect(lg.last()?.ctx?.requestId).toBe('abc');
+    });
+
+    it('new context wins over old context on key collision', () => {
+      const Log = createLogger({ context: { source: 'old' } });
+      Log.setContext({ source: 'new' });
+      Log.info('test');
+
+      expect(lg.last()?.ctx?.source).toBe('new');
+    });
+
+    it('does not affect other logger instances', () => {
+      const LogA = createLogger({ context: { source: 'a' } });
+      const LogB = createLogger({ context: { source: 'b' } });
+
+      LogA.setContext({ extra: 'only-a' });
+      LogB.info('from b');
+
+      expect(lg.last()?.ctx?.source).toBe('b');
+      expect(lg.last()?.ctx?.extra).toBeUndefined();
+    });
+  });
+
+  describe('setLevel', () => {
+    it('updates the min level and suppresses entries below the new level', () => {
+      const Log = createLogger();
+      Log.setLevel('ERROR');
+      Log.warn('suppressed');
+      Log.error('emitted');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'ERROR' });
+    });
+
+    it('accepts a numeric rank', () => {
+      const Log = createLogger();
+      Log.setLevel(70); // ERROR rank
+      Log.warn('suppressed');
+      Log.error('emitted');
+
+      expect(lg.captured).toHaveLength(1);
+    });
+
+    it('accepts a lowercase severity string', () => {
+      const Log = createLogger();
+      Log.setLevel('error');
+      Log.warn('suppressed');
+      Log.error('emitted');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'ERROR' });
+    });
+
+    it('lowering the level re-enables suppressed severities', () => {
+      const Log = createLogger({ emitLevel: 'ERROR' });
+      Log.setLevel('DEBUG');
+      Log.debug('now emitted');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'DEBUG' });
+    });
+  });
+
+  describe('instance emitFn', () => {
+    it('instance emitFn is called instead of the global emitFn', () => {
+      const instanceEmit = sinon.stub();
+      const Log = createLogger({ emitFn: instanceEmit });
+      Log.info('test');
+
+      expect(instanceEmit.calledOnce).toBe(true);
+      expect(lg.captured).toHaveLength(0);
+    });
+
+    it('instance emitFn receives the entry and merged context', () => {
+      const instanceEmit = sinon.stub();
+      const Log = createLogger({ emitFn: instanceEmit, context: { source: 'mod' } });
+      Log.info('hello');
+
+      const [entry, ctx] = instanceEmit.firstCall.args;
+      expect(entry.severity).toBe('INFO');
+      expect(entry.message).toBe('hello');
+      expect(ctx.source).toBe('mod');
+    });
+
+    it('setEmitFn overrides the emit function after creation', () => {
+      const newEmit = sinon.stub();
+      const Log = createLogger();
+      Log.setEmitFn(newEmit);
+      Log.info('test');
+
+      expect(newEmit.calledOnce).toBe(true);
+      expect(lg.captured).toHaveLength(0);
+    });
+  });
+
+  describe('instance callback', () => {
+    it('instance callback is called after the emit function', () => {
+      const cb = sinon.stub();
+      const Log = createLogger({ callback: cb });
+      Log.info('test');
+
+      expect(cb.calledOnce).toBe(true);
+      expect(lg.captured).toHaveLength(1);
+    });
+
+    it('instance callback receives the log entry', () => {
+      const cb = sinon.stub();
+      const Log = createLogger({ callback: cb });
+      Log.error('something broke');
+
+      const entry = cb.firstCall.args[0];
+      expect(entry.severity).toBe('ERROR');
+      expect(entry.message).toBe('something broke');
+    });
+
+    it('instance callback overrides the global callback', () => {
+      const globalCb = sinon.stub();
+      const instanceCb = sinon.stub();
+
+      lg.restore();
+      setGlobalLogCallback(globalCb);
+      lg = loggerSpies();
+
+      const Log = createLogger({ callback: instanceCb });
+      Log.info('test');
+
+      expect(instanceCb.calledOnce).toBe(true);
+      expect(globalCb.called).toBe(false);
+    });
+
+    it('a throwing callback is swallowed — does not affect the emit', () => {
+      const Log = createLogger({
+        callback: () => {
+          throw new Error('callback blew up');
+        },
+      });
+
+      expect(() => Log.info('test')).not.toThrow();
+      expect(lg.captured).toHaveLength(1);
+    });
+
+    it('setCallback clears the callback when called with undefined', () => {
+      const cb = sinon.stub();
+      const Log = createLogger({ callback: cb });
+      Log.setCallback(undefined);
+      Log.info('test');
+
+      expect(cb.called).toBe(false);
+    });
+  });
+
+  // Note: global emitFn and context are read at emit time — this is implicitly
+  // proven by every test in this suite that uses the loggerSpies sandbox. The
+  // sandbox stubs those globals and the logger picks them up without any
+  // special setup, which is the contract. The min level behaves differently —
+  // it is captured at creation time. Use setLevel() to change it afterwards,
+  // which is covered in the setLevel describe block above.
+
+  describe('custom severity rankings', () => {
+    it('custom severity levels are emitted when they meet the min rank', () => {
+      type AppSeverity = 'TRACE' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+
+      lg.restore();
+      resetGlobalLoggerState();
+      setGlobalSeverityRanking({ TRACE: 5 });
+      lg = loggerSpies({ minLevel: 'DEBUG' });
+
+      const Log = createLogger<AppSeverity>({ emitLevel: 'TRACE' as AppSeverity });
+      Log.emit('TRACE', 'trace message');
+
+      expect(lg.captured).toHaveLength(1);
+      expectLog(lg.last(), { severity: 'TRACE', messageSubstr: 'trace message' });
+    });
+
+    it('custom severity levels below the min rank are suppressed', () => {
+      type AppSeverity = 'TRACE' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+
+      lg.restore();
+      resetGlobalLoggerState();
+      setGlobalSeverityRanking({ TRACE: 5 });
+      lg = loggerSpies({ minLevel: 'DEBUG' });
+
+      const Log = createLogger<AppSeverity>();
+      Log.emit('TRACE', 'suppressed trace');
+
+      expect(lg.captured).toHaveLength(0);
     });
   });
 });

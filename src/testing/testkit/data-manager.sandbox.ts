@@ -1,9 +1,8 @@
 import sinon from 'sinon';
-// eslint-disable-next-line no-duplicate-imports
 import type { SinonSandbox, SinonSpy, SinonStub } from 'sinon';
 import { ChangeListenerManager as CLM } from '../../data-manager/change-listener.manager';
 import { MongoDBManager as mongoFns } from '../../data-manager/mongo/mongo-data-manager';
-import * as Helpers from '../../data-manager/data-manager.helpers';
+import * as Helpers from '../../utils/error.helpers';
 
 type ClmMock = {
   addChangeListener: SinonStub;
@@ -29,15 +28,59 @@ type DataManagerUnitSandbox = {
     findItemsInCollection: SinonStub;
     getCollectionChangeReadable: SinonStub;
   };
-  handleDbErrorSpy: SinonSpy;
+  handleErrorSpy: SinonSpy;
   restore(): void;
 };
 
 /**
- * Sandbox for DataManager unit tests that stub the MongoDBManager module functions
- * and ChangeListenerManager singleton instance.
+ * Restores any existing sinon stubs on the MongoDBManager module and
+ * ChangeListenerManager class before creating new ones.
+ *
+ * makeDataManagerSandbox stubs module-level objects (mongoFns, CLM) that
+ * persist across test runs. If a previous sandbox was not restored — e.g.
+ * because beforeEach threw mid-way — those stubs are still in place and
+ * sinon will throw "already wrapped" on the next call. Calling this first
+ * makes the sandbox safe to create even after a partially-failed teardown.
+ */
+function _restoreExistingStubs(): void {
+  const mongoMethods = [
+    'init',
+    'ensureStore',
+    'ensureIndexes',
+    'close',
+    'addItemToCollection',
+    'updateItemInCollection',
+    'removeItemFromCollection',
+    'getAllInCollection',
+    'clearCollection',
+    'isCollectionEmpty',
+    'findItemByIdInCollection',
+    'findItemsInCollection',
+    'getCollectionChangeReadable',
+  ] as const;
+
+  for (const method of mongoMethods) {
+    const fn = (mongoFns as any)[method];
+    if (fn && typeof fn.restore === 'function') fn.restore();
+  }
+
+  const clmFn = (CLM as any).getInstance;
+  if (clmFn && typeof clmFn.restore === 'function') clmFn.restore();
+
+  const handleErrorFn = (Helpers as any).handleError;
+  if (handleErrorFn && typeof handleErrorFn.restore === 'function') handleErrorFn.restore();
+}
+
+/**
+ * Sandbox for DataManager unit tests that stub the MongoDBManager module
+ * functions and ChangeListenerManager singleton instance.
+ *
+ * Safe to call even after a partially-failed teardown — restores any
+ * pre-existing stubs before creating new ones.
  */
 function makeDataManagerSandbox(): DataManagerUnitSandbox {
+  _restoreExistingStubs();
+
   const sb = sinon.createSandbox();
 
   const clm: ClmMock = {
@@ -63,17 +106,18 @@ function makeDataManagerSandbox(): DataManagerUnitSandbox {
     getCollectionChangeReadable: sb.stub(mongoFns, 'getCollectionChangeReadable'),
   };
 
-  const handleDbErrorSpy = sb.spy(Helpers, 'handleDbError');
+  const handleErrorSpy = sb.spy(Helpers, 'handleError');
 
   return {
     sb,
     clm,
     mongo,
-    handleDbErrorSpy,
+    handleErrorSpy,
     restore() {
       sb.restore();
     },
   };
 }
 
-export { makeDataManagerSandbox, DataManagerUnitSandbox };
+export type { DataManagerUnitSandbox };
+export { makeDataManagerSandbox };

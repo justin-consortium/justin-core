@@ -1,5 +1,5 @@
 import sinon from 'sinon';
-import DataManager from '../../data-manager/data-manager';
+import { DataManager } from '../../data-manager';
 import { makeStream } from '../../testing';
 
 type Key = string; // `${collection}:${type}`
@@ -10,6 +10,10 @@ type Key = string; // `${collection}:${type}`
  * - getChangeStream() returns a stable Readable per (collection, changeType)
  */
 function mockDataManager() {
+  // Restore any existing stub on getInstance before re-wrapping
+  const existingStub = (DataManager as any).getInstance;
+  if (existingStub && typeof existingStub.restore === 'function') existingStub.restore();
+
   const sb = sinon.createSandbox();
   const streams = new Map<Key, ReturnType<typeof makeStream>>();
 
@@ -50,17 +54,25 @@ function createDataManagerMock() {
     close: sinon.stub().resolves(),
     getInitializationStatus: sinon.stub().returns(true),
 
-    // CRUD-ish
+    // single-item CRUD
     addItemToCollection: sinon.stub(),
     updateItemByIdInCollection: sinon.stub(),
     removeItemFromCollection: sinon.stub(),
-    getAllInCollection: sinon.stub(),
-    clearCollection: sinon.stub().resolves(),
-    isCollectionEmpty: sinon.stub(),
     findItemByIdInCollection: sinon.stub(),
     findItemsInCollection: sinon.stub(),
 
-    // change streams (optional)
+    // bulk CRUD
+    addItemsToCollection: sinon.stub(),
+    updateItemsByIdInCollection: sinon.stub(),
+    removeItemsFromCollection: sinon.stub(),
+    findItemsByIdsInCollection: sinon.stub(),
+
+    // collection-level
+    getAllInCollection: sinon.stub(),
+    clearCollection: sinon.stub().resolves(),
+    isCollectionEmpty: sinon.stub(),
+
+    // change streams
     getChangeStream: sinon.stub(),
   };
 }

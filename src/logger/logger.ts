@@ -1,4 +1,4 @@
-import {
+import type {
   BaseSeverity,
   CreateLoggerOptions,
   EmitFn,
@@ -24,224 +24,128 @@ const BASE_RANKS: Record<BaseSeverity, number> = {
 };
 
 /**
- * Build the effective severity→rank map by combining the built-in ranks
+ * Builds the effective severity → rank map by merging the built-in ranks
  * with any globally configured custom ranks.
- *
- * @typeParam T - Severity union.
- * @returns A map from severity string to numeric rank.
  */
 function buildRankMap<T extends string>(): Record<T, number> {
   const merged: Record<string, number> = { ...BASE_RANKS };
   const globalRanking = getGlobalSeverityRanking();
+
   if (globalRanking) {
     for (const [k, v] of Object.entries(globalRanking)) {
       merged[k] = v;
     }
   }
-  // ensure the base severities always exist
+
   for (const base of Object.keys(BASE_RANKS) as BaseSeverity[]) {
-    if (merged[base] == null) {
-      merged[base] = BASE_RANKS[base];
-    }
+    if (merged[base] === null) merged[base] = BASE_RANKS[base];
   }
+
   return merged as Record<T, number>;
 }
 
 /**
- * Convert a severity string or numeric level into its numeric rank.
+ * Converts a severity string or numeric level into its numeric rank.
  *
- * @typeParam T - Severity union.
  * @param value - Severity name or numeric rank.
- * @param ranks - Map of severity to numeric rank.
- * @returns Numeric rank for comparison.
+ * @param ranks - Map of severity → numeric rank.
  */
-function toRank<T extends string>(value: T | number, ranks: Record<T, number>): number {
+function toRank<T extends string>(value: string | number, ranks: Record<T, number>): number {
   if (typeof value === 'number') return value;
-  return ranks[value] ?? 0;
+  return (ranks as Record<string, number>)[value.toUpperCase()] ?? 0;
 }
 
 /**
- * Create a new logger instance with optional instance-level configuration.
+ * Creates a new logger instance with optional instance-level configuration.
  *
- * This version **flattens** extras into the context that is passed to the
- * emit function. That is:
+ * Every file that needs logging should create its own instance with a `source`
+ * context so entries are always traceable back to their origin.
  *
- * - we build an entry with only `{ severity, message }`
- * - we build a merged context with:
- *   - global context
- *   - instance context
- *   - normalized extras (user/event/error/etc.)
- * - we call the effective emit with `(entry, mergedFlatContext)`
+ * Instance-level settings override their global equivalents but leave the
+ * global config untouched. The global config is read at emit time, so changes
+ * made via {@link configureLogger} after instance creation are picked up
+ * automatically unless the instance has its own override.
  *
- * So the emit function always receives:
- *
+ * @example
  * ```ts
- * {
- *   severity: 'INFO',
- *   message: 'something'
- * }
+ * const Log = createLogger({ context: { source: 'user-manager' } });
+ *
+ * Log.debug('cache refreshed', { count: users.length });
+ * Log.error('DB write failed', { error, collection: 'users' });
  * ```
  *
- * and
- *
- * ```ts
- * {
- *   ...globalContext,
- *   ...instanceContext,
- *   ...extrasNormalized
- * }
- * ```
- *
- * @typeParam T - Severity union for this logger.
- * @param options - Logger creation options.
- * @returns A structured (but flattened) logger instance.
+ * @param options - Optional instance-level configuration.
+ * @returns A structured, transport-agnostic logger instance.
  */
 function createLogger<T extends string = BaseSeverity>(
   options: CreateLoggerOptions<T> = {},
 ): Logger<T> {
-  // build severity→rank map
   const ranks: Record<T, number> = buildRankMap<T>();
 
-  // figure out initial min level (instance → global)
   let minLevelRank =
     options.emitLevel !== undefined
       ? toRank(options.emitLevel, ranks)
       : toRank(getGlobalMinLogLevel() as T, ranks);
 
-  // instance-level context and overrides
   let instanceContext: Record<string, unknown> = { ...(options.context ?? {}) };
   let instanceEmitFn: EmitFn<T> | undefined = options.emitFn;
-  let instanceCallback: LoggerCallback<T> | undefined = options.cb;
+  let instanceCallback: LoggerCallback<T> | undefined = options.callback;
 
-  /**
-   * Check if a severity should be emitted with current min level.
-   *
-   * @param sev - Severity to check.
-   * @returns True if it should be emitted.
-   */
   const shouldEmit = (sev: T) => toRank(sev, ranks) >= minLevelRank;
 
-  /**
-   * Core emit function used by the convenience methods.
-   *
-   * @param severity - Severity string.
-   * @param message - Log message.
-   * @param extras - Optional extras (user, event, error, etc.).
-   */
   const emit = (severity: T, message: string, extras?: unknown): void => {
-    // always normalize severity to upper-case for consistency
     const sevUpper = String(severity).toUpperCase() as T;
     if (!shouldEmit(sevUpper)) return;
 
-    // normalize extras into a flat object (or undefined)
     const normalizedExtras = extras ? normalizeExtraArg(extras) : undefined;
 
-    // build the entry WITHOUT tucking things under `fields`
-    const entry: LoggerEntry<T> = {
-      severity: sevUpper,
-      message,
-      // fields: undefined   ← we intentionally do not set this
-    };
+    const entry: LoggerEntry<T> = { severity: sevUpper, message };
 
-    // build the flattened context to pass to emit
     const mergedContext = {
       ...getGlobalLogContext(),
       ...instanceContext,
       ...(normalizedExtras ?? {}),
     };
 
-    // pick the effective emit fn
     const effectiveEmit = instanceEmitFn ?? getGlobalEmitFn<T>() ?? defaultEmit<T>;
-
-    // call it with the flattened shape
     effectiveEmit(entry, mergedContext);
 
-    // handle callbacks (instance → global)
     const globalCb = getGlobalLogCallback<T>();
-    if (instanceCallback) {
+    const cb = instanceCallback ?? globalCb;
+    if (cb) {
       try {
-        instanceCallback(entry);
+        cb(entry);
       } catch {
-        /* ignore */
-      }
-    } else if (globalCb) {
-      try {
-        globalCb(entry);
-      } catch {
-        /* ignore */
+        /* swallow — callbacks must handle their own errors */
       }
     }
   };
 
-  /**
-   * Convenience DEBUG logger.
-   *
-   * @param message - Log message.
-   * @param extras - Optional extras to flatten into context.
-   */
+  /** Emits a DEBUG-level log. */
   const debug = (message: string, extras?: unknown) => emit('DEBUG' as T, message, extras);
 
-  /**
-   * Convenience INFO logger.
-   *
-   * @param message - Log message.
-   * @param extras - Optional extras to flatten into context.
-   */
+  /** Emits an INFO-level log. */
   const info = (message: string, extras?: unknown) => emit('INFO' as T, message, extras);
 
-  /**
-   * Convenience WARNING logger.
-   *
-   * @param message - Log message.
-   * @param extras - Optional extras to flatten into context.
-   */
+  /** Emits a WARNING-level log. */
   const warn = (message: string, extras?: unknown) => emit('WARNING' as T, message, extras);
 
-  /**
-   * Convenience ERROR logger.
-   *
-   * @param message - Log message.
-   * @param extras - Optional extras to flatten into context.
-   */
+  /** Emits an ERROR-level log. */
   const error = (message: string, extras?: unknown) => emit('ERROR' as T, message, extras);
 
   return {
-    /**
-     * Instance-level min logging level.
-     *
-     * @param level - New minimum level (string or numeric).
-     */
-    setLevel(level: T | number) {
+    setLevel(level: string | number) {
       minLevelRank = toRank(level, ranks);
     },
-
-    /**
-     * Merge additional context into this logger.
-     *
-     * @param next - Additional context to include on every line.
-     */
     setContext(next: Record<string, unknown>) {
       instanceContext = { ...instanceContext, ...next };
     },
-
-    /**
-     * Override the emit function for this logger instance.
-     *
-     * @param next - New emit function.
-     */
     setEmitFn(next: EmitFn<T>) {
       instanceEmitFn = next;
     },
-
-    /**
-     * Override the callback for this logger instance.
-     *
-     * @param next - New callback function.
-     */
     setCallback(next?: LoggerCallback<T>) {
       instanceCallback = next;
     },
-
     emit,
     debug,
     info,
