@@ -37,7 +37,7 @@ import {
   getProtectedAttributes,
   getAllProtectedAttributes,
   setProtectedAttributes,
-  updateProtectedAttributeKeysByNamespace,
+  setProtectedAttributeKeysByNamespace,
   deleteProtectedAttributeNamespaces,
   deleteAllProtectedAttributes,
   deleteProtectedAttributeKeysByNamespace,
@@ -390,7 +390,7 @@ const setProtectedAttributesForUser = async (
  * @param updates - Object whose keys are dot-notated paths and values are the values to set.
  * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
  */
-const updateProtectedAttributeKeysByNamespaceForUser = async (
+const setProtectedAttributeKeysByNamespaceForUser = async (
   userId: string,
   namespace: string,
   updates: Record<string, any>,
@@ -399,13 +399,13 @@ const updateProtectedAttributeKeysByNamespaceForUser = async (
   const uid = _resolveUniqueIdentifier(userId);
   if (!uid)
     return coreFailureResult(
-      'updateProtectedAttributeKeysByNamespaceForUser',
+      'setProtectedAttributeKeysByNamespaceForUser',
       JustinErrorCode.NOT_FOUND,
       `user (${userId}) not found`,
       { id: userId },
       { namespace },
     );
-  return updateProtectedAttributeKeysByNamespace(uid, namespace, updates);
+  return setProtectedAttributeKeysByNamespace(uid, namespace, updates);
 };
 
 // ---------------------------------------------------------------------------
@@ -517,7 +517,7 @@ export const UserManager = {
   setProtectedAttributesForUser,
 
   // protected attributes — key-level patch
-  updateProtectedAttributeKeysByNamespaceForUser,
+  setProtectedAttributeKeysByNamespaceForUser,
 
   // protected attributes — delete
   deleteProtectedAttributeNamespacesForUser,
