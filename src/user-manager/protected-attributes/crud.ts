@@ -326,18 +326,22 @@ const setProtectedAttributes = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Updates one or more nested key paths within a namespace-scoped protected attributes object.
+ * Sets one or more nested key paths within a namespace-scoped protected attributes object.
  *
- * Pass a single `{ keyPath: value }` entry or multiple entries. Invalid or reserved paths
- * are skipped and reported as failures; valid paths are applied in a single DB write.
+ * If the namespace record does not exist it is created with the provided key paths as its
+ * initial content. If it already exists the valid key paths are applied on top of the
+ * existing content in a single DB write.
+ *
+ * Invalid or reserved paths are skipped and reported as failures; all valid paths are
+ * applied regardless.
  *
  * @param uniqueIdentifier - The user's uniqueIdentifier.
- * @param namespace - The namespace to update.
+ * @param namespace - The namespace to set keys on.
  * @param updates - Object whose keys are dot-notated paths and values are the values to set.
- * @returns A {@link CoreResult} with the updated record and any skipped-path failures.
+ * @returns A {@link CoreResult} with the created or updated record and any skipped-path failures.
  * @throws {JustinError} If DataManager has not been initialized.
  */
-const updateProtectedAttributeKeysByNamespace = async (
+const setProtectedAttributeKeysByNamespace = async (
   uniqueIdentifier: string,
   namespace: string,
   updates: Record<string, any>,
@@ -346,14 +350,14 @@ const updateProtectedAttributeKeysByNamespace = async (
 
   if (!isNonEmptyString(uniqueIdentifier))
     return coreFailureResult(
-      'updateProtectedAttributeKeysByNamespace',
+      'setProtectedAttributeKeysByNamespace',
       JustinErrorCode.VALIDATION_ERROR,
       'uniqueIdentifier must be a non-empty string',
       { uniqueIdentifier },
     );
   if (!isNonEmptyString(namespace))
     return coreFailureResult(
-      'updateProtectedAttributeKeysByNamespace',
+      'setProtectedAttributeKeysByNamespace',
       JustinErrorCode.VALIDATION_ERROR,
       'namespace must be a non-empty string',
       { uniqueIdentifier },
@@ -361,7 +365,7 @@ const updateProtectedAttributeKeysByNamespace = async (
     );
   if (!isPlainObject(updates))
     return coreFailureResult(
-      'updateProtectedAttributeKeysByNamespace',
+      'setProtectedAttributeKeysByNamespace',
       JustinErrorCode.VALIDATION_ERROR,
       'updates must be a plain object',
       { uniqueIdentifier },
@@ -369,31 +373,14 @@ const updateProtectedAttributeKeysByNamespace = async (
     );
 
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
-  if (!existing)
-    return coreFailureResult(
-      'updateProtectedAttributeKeysByNamespace',
-      JustinErrorCode.NOT_FOUND,
-      `protected attributes record not found for (${uniqueIdentifier}/${namespace})`,
-      { uniqueIdentifier },
-      { namespace },
-    );
 
-  const existingId = existing?.id;
-  if (!existingId)
-    return coreFailureResult(
-      'updateProtectedAttributeKeysByNamespace',
-      JustinErrorCode.VALIDATION_ERROR,
-      'protected attributes record is missing id',
-      { uniqueIdentifier },
-      { namespace },
-    );
-
-  let updatedProtectedAttributes = isPlainObject(existing.protectedAttributes)
-    ? { ...existing.protectedAttributes }
+  // Build the updated protectedAttributes from existing content (or empty for new namespace)
+  let updatedProtectedAttributes: Record<string, any> = isPlainObject(existing?.protectedAttributes)
+    ? { ...existing!.protectedAttributes }
     : {};
 
   const skipCollector = makeLoopFailureCollector<ProtectedAttributesRecord>(
-    'updateProtectedAttributeKeysByNamespace',
+    'setProtectedAttributeKeysByNamespace',
     { uniqueIdentifier },
   );
 
@@ -419,23 +406,53 @@ const updateProtectedAttributeKeysByNamespace = async (
     updatedProtectedAttributes = setValueAtPath(updatedProtectedAttributes, keyPath, value);
   }
 
-  const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
-    await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
-      protectedAttributes: updatedProtectedAttributes,
-    }),
-    'updateProtectedAttributeKeysByNamespace',
-    { uniqueIdentifier },
-    { namespace },
-  );
-  if (!updateResult.ok) {
-    return coreFailure([...skipCollector.failures, ...updateResult.failures]);
+  let record: ProtectedAttributesRecord;
+
+  if (!existing) {
+    // Namespace does not exist — create it with the computed attributes
+    const addResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+      await dm.addItemToCollection(PROTECTED_ATTRIBUTES, {
+        uniqueIdentifier,
+        namespace,
+        protectedAttributes: updatedProtectedAttributes,
+      }),
+      'setProtectedAttributeKeysByNamespace',
+      { uniqueIdentifier },
+      { namespace },
+    );
+    if (!addResult.ok) {
+      return coreFailure([...skipCollector.failures, ...addResult.failures]);
+    }
+    record = addResult.successes[0] as ProtectedAttributesRecord;
+  } else {
+    const existingId = existing.id;
+    if (!existingId)
+      return coreFailureResult(
+        'setProtectedAttributeKeysByNamespace',
+        JustinErrorCode.VALIDATION_ERROR,
+        'protected attributes record is missing id',
+        { uniqueIdentifier },
+        { namespace },
+      );
+
+    const updateResult = unwrapSuccess<object, ProtectedAttributesRecord>(
+      await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, existingId, {
+        protectedAttributes: updatedProtectedAttributes,
+      }),
+      'setProtectedAttributeKeysByNamespace',
+      { uniqueIdentifier },
+      { namespace },
+    );
+    if (!updateResult.ok) {
+      return coreFailure([...skipCollector.failures, ...updateResult.failures]);
+    }
+    record = updateResult.successes[0] as ProtectedAttributesRecord;
   }
 
-  const updated = updateResult.successes[0] as ProtectedAttributesRecord;
-  upsertProtectedAttributesInCache(updated);
+  upsertProtectedAttributesInCache(record);
   return skipCollector.hasFailures
-    ? coreFailure(skipCollector.failures, [updated])
-    : coreSuccess([updated]);
+    ? coreFailure(skipCollector.failures, [record])
+    : coreSuccess([record]);
 };
 
 // ---------------------------------------------------------------------------
@@ -690,7 +707,7 @@ export {
   getProtectedAttributes,
   getAllProtectedAttributes,
   setProtectedAttributes,
-  updateProtectedAttributeKeysByNamespace,
+  setProtectedAttributeKeysByNamespace,
   deleteProtectedAttributeNamespaces,
   deleteAllProtectedAttributes,
   deleteProtectedAttributeKeysByNamespace,

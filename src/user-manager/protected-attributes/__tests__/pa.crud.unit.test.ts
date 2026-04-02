@@ -17,7 +17,7 @@ import {
   getProtectedAttributes,
   getAllProtectedAttributes,
   setProtectedAttributes,
-  updateProtectedAttributeKeysByNamespace,
+  setProtectedAttributeKeysByNamespace,
   deleteProtectedAttributeNamespaces,
   deleteAllProtectedAttributes,
   deleteProtectedAttributeKeysByNamespace,
@@ -232,14 +232,14 @@ describe('protected attributes crud unit tests', () => {
   // Key-level patch
   // ---------------------------------------------------------------------------
 
-  describe('updateProtectedAttributeKeysByNamespace', () => {
+  describe('setProtectedAttributeKeysByNamespace', () => {
     it('returns ok:true updating a single key', async () => {
       const existing = makePA({ protectedAttributes: { steps: 100 } });
       const updated = makePA({ protectedAttributes: { steps: 999 } });
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { steps: 999 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { steps: 999 });
 
       expectOk(result);
       expect(result.successes[0].protectedAttributes.steps).toBe(999);
@@ -251,7 +251,7 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { a: 10, b: 20 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { a: 10, b: 20 });
 
       expectOk(result);
     });
@@ -262,48 +262,49 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { 'daily.steps': 500 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { 'daily.steps': 500 });
 
       expectOk(result);
     });
 
     it('returns VALIDATION_ERROR for empty uniqueIdentifier', async () => {
       expectFailedWithCode(
-        await updateProtectedAttributeKeysByNamespace('', 'health', { steps: 1 }),
+        await setProtectedAttributeKeysByNamespace('', 'health', { steps: 1 }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('returns VALIDATION_ERROR for empty namespace', async () => {
       expectFailedWithCode(
-        await updateProtectedAttributeKeysByNamespace('alice', '', { steps: 1 }),
+        await setProtectedAttributeKeysByNamespace('alice', '', { steps: 1 }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('returns VALIDATION_ERROR when updates is not a plain object', async () => {
       expectFailedWithCode(
-        await updateProtectedAttributeKeysByNamespace('alice', 'health', null as any),
+        await setProtectedAttributeKeysByNamespace('alice', 'health', null as any),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
-    it('returns NOT_FOUND when no record exists for the namespace', async () => {
+    it('creates the namespace when it does not exist', async () => {
       stubFindItems(null);
+      stubAddItem(makePA({ protectedAttributes: { steps: 1 } }));
 
-      expectFailedWithCode(
-        await updateProtectedAttributeKeysByNamespace('alice', 'health', { steps: 1 }),
-        JustinErrorCode.NOT_FOUND,
-      );
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { steps: 1 });
+
+      expectOk(result);
+      expect(result.successes[0].protectedAttributes.steps).toBe(1);
     });
 
-    it('skips skips reserved keyPaths and propagates partial failures with valid successes', async () => {
+    it('skips reserved keyPaths and propagates partial failures with valid successes', async () => {
       const existing = makePA({ protectedAttributes: { safe: 0 } });
       const updated = makePA({ protectedAttributes: { safe: 99 } });
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await updateProtectedAttributeKeysByNamespace('alice', 'health', { id: 'hack', safe: 99 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { id: 'hack', safe: 99 });
 
       expect(result.ok).toBe(false);
       expect(result.successes).toHaveLength(1);
@@ -319,7 +320,7 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      await updateProtectedAttributeKeysByNamespace('alice', 'health', { steps: 42 });
+      await setProtectedAttributeKeysByNamespace('alice', 'health', { steps: 42 });
 
       expect(getAllProtectedAttributes('alice')[0].protectedAttributes.steps).toBe(42);
     });

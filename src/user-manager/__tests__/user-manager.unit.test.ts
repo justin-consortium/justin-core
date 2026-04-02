@@ -308,10 +308,10 @@ describe('UserManager unit tests', () => {
     });
   });
 
-  describe('updateProtectedAttributeKeysByNamespaceForUser', () => {
+  describe('setProtectedAttributeKeysByNamespaceForUser', () => {
     it('returns NOT_FOUND for an unknown userId', async () => {
       expectFailedWithCode(
-        await UserManager.updateProtectedAttributeKeysByNamespaceForUser('ghost', 'health', { steps: 1 }),
+        await UserManager.setProtectedAttributeKeysByNamespaceForUser('ghost', 'health', { steps: 1 }),
         JustinErrorCode.NOT_FOUND,
       );
     });
@@ -323,7 +323,7 @@ describe('UserManager unit tests', () => {
       (t.dm as any).findItemsInCollection.resolves([existing]);
       (t.dm as any).updateItemByIdInCollection.resolves({ ok: true, successes: [updated] });
 
-      const result = await UserManager.updateProtectedAttributeKeysByNamespaceForUser('u1', 'health', { steps: 42 });
+      const result = await UserManager.setProtectedAttributeKeysByNamespaceForUser('u1', 'health', { steps: 42 });
 
       expectOk(result);
     });
