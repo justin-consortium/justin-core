@@ -53,8 +53,6 @@ export default [
       '@typescript-eslint/no-floating-promises': 'error',
       // Catches async functions passed where sync is expected (e.g. array callbacks)
       '@typescript-eslint/no-misused-promises': 'error',
-      // Surfaces any casts that may hide real type errors
-      '@typescript-eslint/no-explicit-any': 'warn',
 
       /*
        * Unused vars — handled by unused-imports plugin (covers both vars and imports)
@@ -88,6 +86,14 @@ export default [
     },
   },
 
+// Logger — console is the intended default transport, not an accidental debug statement
+  {
+    files: ['src/logger/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
   // Type declaration files — relax exports-last and type-imports enforcement
   {
     files: ['src/**/*.d.ts', 'src/**/*.type.ts'],
@@ -97,11 +103,10 @@ export default [
     },
   },
 
-  // Test files — relax no-explicit-any and no-console
+  // Test files — relax no-console
   {
     files: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/**/__tests__/**/*.ts'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
       'no-console': 'off',
     },
   },
