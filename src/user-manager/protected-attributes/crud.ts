@@ -227,9 +227,7 @@ const getProtectedAttributes = (
  * @returns All records for the user, or an empty array.
  * @throws {JustinError} If DataManager has not been initialized.
  */
-const getAllProtectedAttributes = (
-  uniqueIdentifier: string,
-): ProtectedAttributesRecord[] => {
+const getAllProtectedAttributes = (uniqueIdentifier: string): ProtectedAttributesRecord[] => {
   _checkInitialization();
 
   if (!isNonEmptyString(uniqueIdentifier)) return [];
@@ -274,10 +272,9 @@ const setProtectedAttributes = async (
   if (items.length === 0) return coreSuccess([]);
 
   const successes: ProtectedAttributesRecord[] = [];
-  const collector = makeLoopFailureCollector<ProtectedAttributesRecord>(
-    'setProtectedAttributes',
-    { uniqueIdentifier },
-  );
+  const collector = makeLoopFailureCollector<ProtectedAttributesRecord>('setProtectedAttributes', {
+    uniqueIdentifier,
+  });
 
   for (const item of items) {
     const namespace = item?.namespace;

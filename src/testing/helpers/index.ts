@@ -1,3 +1,4 @@
+export * from './async';
 export * from './clock';
 export * from './streams';
 export * from './reset-singleton';
