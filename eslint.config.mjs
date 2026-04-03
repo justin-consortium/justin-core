@@ -86,14 +86,6 @@ export default [
     },
   },
 
-// Logger — console is the intended default transport, not an accidental debug statement
-  {
-    files: ['src/logger/*.ts'],
-    rules: {
-      'no-console': 'off',
-    },
-  },
-
   // Type declaration files — relax exports-last and type-imports enforcement
   {
     files: ['src/**/*.d.ts', 'src/**/*.type.ts'],
@@ -103,11 +95,43 @@ export default [
     },
   },
 
-  // Test files — relax no-console
+  // Test files — relax no-console and inline export restriction
   {
     files: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/**/__tests__/**/*.ts'],
     rules: {
       'no-console': 'off',
+      'no-restricted-syntax': 'off',
+    },
+  },
+
+  // Logger — console is the intended default transport, not an accidental debug statement
+  {
+    files: ['src/logger/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
+  // Flag inline `export const` declarations — these files need converting to the
+  // declare-then-export pattern so that import/exports-last covers them uniformly.
+  // Test files and testing helpers are excluded since inline exports are acceptable there.
+  {
+    files: ['src/**/*.ts'],
+    ignores: [
+      'src/**/*.test.ts',
+      'src/**/*.spec.ts',
+      'src/**/__tests__/**/*.ts',
+      'src/testing/**/*.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'warn',
+        {
+          selector: 'ExportNamedDeclaration > VariableDeclaration',
+          message:
+            'Prefer the declare-then-export pattern. Declare the value without export, then add it to an export block at the bottom of the file.',
+        },
+      ],
     },
   },
 ];
