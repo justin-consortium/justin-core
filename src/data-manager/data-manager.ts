@@ -286,7 +286,7 @@ class DataManager extends EventEmitter {
    */
   public async findItemsInCollection<T>(
     collectionName: string,
-    criteria: Record<string, any>,
+    criteria: Record<string, unknown>,
   ): Promise<T[]> {
     if (!criteria || !collectionName) return [];
 

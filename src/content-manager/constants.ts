@@ -1,1 +1,3 @@
-export const CONTENT = 'content' as const;
+const CONTENT = 'content' as const;
+
+export { CONTENT };

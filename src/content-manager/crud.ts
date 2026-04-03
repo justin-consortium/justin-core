@@ -22,7 +22,7 @@ const RESERVED_CONTENT_KEYS = ['id', 'uniqueIdentifier', 'type'] as const;
  * Returns `true` if the value is a non-null plain object.
  * @private
  */
-const _isPlainObject = (v: unknown): v is Record<string, any> =>
+const _isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
@@ -35,7 +35,7 @@ const _isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && 
  * Returns `true` if the object contains none of the reserved keys.
  * @private
  */
-const _hasNoReservedKeys = (obj: Record<string, any>): boolean =>
+const _hasNoReservedKeys = (obj: Record<string, unknown>): boolean =>
   RESERVED_CONTENT_KEYS.every((k) => !(k in obj));
 
 /**
@@ -64,8 +64,9 @@ const _findByUniqueIdentifier = async (uniqueIdentifier: string): Promise<JConte
 const createContentRecord = async (record: NewContentRecord): Promise<CoreResult<JContent>> => {
   _checkInit();
 
-  const uid = _isNonEmptyString((record as any)?.uniqueIdentifier)
-    ? ((record as any).uniqueIdentifier as string)
+  const _record = record as unknown as Record<string, unknown>;
+  const uid = _isNonEmptyString(_record?.uniqueIdentifier)
+    ? (_record.uniqueIdentifier as string)
     : '(unknown)';
 
   if (!_isPlainObject(record))
@@ -149,8 +150,9 @@ const createContentRecords = async (records: NewContentRecord[]): Promise<CoreRe
   const allFailures: FailureEntry[] = [];
 
   for (const record of records) {
-    const uniqueIdentifier = _isNonEmptyString((record as any)?.uniqueIdentifier)
-      ? ((record as any).uniqueIdentifier as string)
+    const _rec = record as unknown as Record<string, unknown>;
+    const uniqueIdentifier = _isNonEmptyString(_rec?.uniqueIdentifier)
+      ? (_rec.uniqueIdentifier as string)
       : '(unknown)';
 
     const collector = makeLoopFailureCollector<JContent>('createContentRecords', {
@@ -331,7 +333,7 @@ const updateContentById = async (
     }
   }
 
-  const updatePayload: Record<string, any> = {};
+  const updatePayload: Record<string, unknown> = {};
   if (update.uniqueIdentifier !== undefined)
     updatePayload.uniqueIdentifier = update.uniqueIdentifier;
   if (update.value !== undefined) updatePayload.value = update.value;

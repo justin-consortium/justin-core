@@ -393,7 +393,7 @@ const setProtectedAttributesForUser = async (
 const setProtectedAttributeKeysByNamespaceForUser = async (
   userId: string,
   namespace: string,
-  updates: Record<string, any>,
+  updates: Record<string, unknown>,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInit();
   const uid = _resolveUniqueIdentifier(userId);

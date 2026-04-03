@@ -783,7 +783,7 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
  * This module is not re-exported from the package entry; higher-level
  * code should depend on the adapter-agnostic `DataManager` instead.
  */
-export const MongoDBManager = {
+const MongoDBManager = {
   // connection lifecycle
   init,
   close,
@@ -827,9 +827,12 @@ export const MongoDBManager = {
  *
  * @internal
  */
-export const TestingMongoDBManager = {
+const TestingMongoDBManager = {
   ...MongoDBManager,
   _setDatabaseInstance,
   _setClient,
   _setIsConnected,
 };
+
+export { MongoDBManager, TestingMongoDBManager };
+

@@ -33,7 +33,7 @@ const _cache: CacheManager<JUser> = createCacheManager<JUser>().addIndex('unique
 export const refreshUsersCache = async (): Promise<void> => {
   _checkInit();
   const docs = await dm.getAllInCollection<JUser>(USERS);
-  const valid = docs.filter((u: any) => {
+  const valid = docs.filter((u) => {
     if (!u?.id) {
       Log.error('refreshUsersCache: skipping malformed record — missing id', { record: u });
       return false;

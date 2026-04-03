@@ -40,7 +40,7 @@ type BaseJContent = {
  */
 type JContent = BaseJContent & {
   /** Open-ended payload whose shape is defined by the content `type`. */
-  value: Record<string, any>;
+  value: Record<string, unknown>;
 };
 
 /**
@@ -55,7 +55,7 @@ type JContent = BaseJContent & {
 type NewContentRecord = {
   uniqueIdentifier: string;
   type: string;
-  value: Record<string, any>;
+  value: Record<string, unknown>;
 };
 
 /**
@@ -68,7 +68,7 @@ type ContentUpdateRecord = {
   /** New human-readable slug. Must remain unique if changed. */
   uniqueIdentifier?: string;
   /** Replacement `value` payload. Fully replaces the existing value. */
-  value?: Record<string, any>;
+  value?: Record<string, unknown>;
 };
 
 export type { BaseJContent, JContent, NewContentRecord, ContentUpdateRecord };

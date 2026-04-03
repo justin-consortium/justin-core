@@ -1,7 +1,9 @@
-export const JustinErrorCode = {
+const JustinErrorCode = {
   DB_ERROR: 'DB_ERROR',
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   NOT_INITIALIZED: 'NOT_INITIALIZED',
   NOT_FOUND: 'NOT_FOUND',
   PARTIAL_SUCCESS: 'PARTIAL_SUCCESS',
-} as const;
+};
+
+export { JustinErrorCode };

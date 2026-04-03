@@ -686,7 +686,7 @@ describe('UserManager public API — e2e', () => {
           'daily.steps': 9999,
         }),
       );
-      expect(updated.protectedAttributes.daily.steps).toBe(9999);
+      expect((updated.protectedAttributes.daily as any).steps).toBe(9999);
     });
 
     it('creates intermediate objects for deep paths', async () => {
@@ -701,7 +701,7 @@ describe('UserManager public API — e2e', () => {
           'a.b.c': 'deep',
         }),
       );
-      expect(updated.protectedAttributes.a.b.c).toBe('deep');
+      expect((updated.protectedAttributes.a as any).b.c).toBe('deep');
     });
 
     it('updates the cache', async () => {
@@ -976,7 +976,7 @@ describe('UserManager public API — e2e', () => {
         ),
       );
       expect(updated.protectedAttributes.daily).not.toHaveProperty('steps');
-      expect(updated.protectedAttributes.daily.calories).toBe(200);
+      expect((updated.protectedAttributes.daily as any).calories).toBe(200);
     });
 
     it('updates cache after key deletion', async () => {

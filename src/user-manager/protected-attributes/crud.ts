@@ -41,7 +41,7 @@ const _checkInitialization = (): void => {
  * @returns True if valid; false if not a plain object or contains reserved keys.
  * @private
  */
-const _isValidProtectedAttributesPayload = (protectedAttributes: Record<string, any>): boolean => {
+const _isValidProtectedAttributesPayload = (protectedAttributes: Record<string, unknown>): boolean => {
   if (!isPlainObject(protectedAttributes)) return false;
   if (!assertNoReservedKeysDeep(protectedAttributes, RESERVED_PROTECTED_ATTRIBUTE_KEYS))
     return false;
@@ -83,9 +83,9 @@ const _findProtectedAttributesRecord = async (
  * @private
  */
 const _mergeProtectedAttributes = (
-  existing: Record<string, any>,
-  incoming: Record<string, any>,
-): Record<string, any> => {
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> => {
   return {
     ...(isPlainObject(existing) ? existing : {}),
     ...incoming,
@@ -136,7 +136,7 @@ type _UpsertSingleResult =
 const _upsertSingleProtectedAttributesRecord = async (
   uniqueIdentifier: string,
   namespace: string,
-  protectedAttributes: Record<string, any>,
+  protectedAttributes: Record<string, unknown>,
 ): Promise<_UpsertSingleResult> => {
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
 
@@ -341,7 +341,7 @@ const setProtectedAttributes = async (
 const setProtectedAttributeKeysByNamespace = async (
   uniqueIdentifier: string,
   namespace: string,
-  updates: Record<string, any>,
+  updates: Record<string, unknown>,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
@@ -372,7 +372,7 @@ const setProtectedAttributeKeysByNamespace = async (
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
 
   // Build the updated protectedAttributes from existing content (or empty for new namespace)
-  let updatedProtectedAttributes: Record<string, any> = isPlainObject(existing?.protectedAttributes)
+  let updatedProtectedAttributes: Record<string, unknown> = isPlainObject(existing?.protectedAttributes)
     ? { ...existing!.protectedAttributes }
     : {};
 

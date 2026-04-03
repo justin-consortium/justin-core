@@ -293,13 +293,13 @@ describe('user-manager helpers unit tests', () => {
     it('sets a nested key via dot notation', () => {
       const result = setValueAtPath({ daily: { steps: 100 } }, 'daily.steps', 999);
 
-      expect(result.daily.steps).toBe(999);
+      expect((result.daily as any).steps).toBe(999);
     });
 
     it('creates intermediate objects when the path does not exist', () => {
       const result = setValueAtPath({}, 'a.b.c', 'deep');
 
-      expect(result.a.b.c).toBe('deep');
+      expect((result as any).a.b.c).toBe('deep');
     });
 
     it('preserves sibling keys when setting a nested value', () => {

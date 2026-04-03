@@ -59,8 +59,9 @@ export const isIdentifierUnique = (uniqueIdentifier: string): boolean => {
 export const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
   _checkInit();
 
-  const uid = isNonEmptyString((record as any)?.uniqueIdentifier)
-    ? ((record as any).uniqueIdentifier as string)
+  const _record = record as unknown as Record<string, unknown>;
+  const uid = isNonEmptyString(_record?.uniqueIdentifier)
+    ? (_record.uniqueIdentifier as string)
     : '(unknown)';
 
   if (!isPlainObject(record))
@@ -79,7 +80,7 @@ export const createUserRecord = async (record: NewUserRecord): Promise<CoreResul
       { uniqueIdentifier: uid },
     );
 
-  const attrs = (record as any).attributes;
+  const attrs = (record as unknown as Record<string, unknown>).attributes;
   if (!isPlainObject(attrs))
     return coreFailureResult(
       'createUserRecord',
@@ -104,7 +105,7 @@ export const createUserRecord = async (record: NewUserRecord): Promise<CoreResul
       { uniqueIdentifier: uid },
     );
 
-  const doc: Record<string, any> = { uniqueIdentifier: record.uniqueIdentifier, ...attrs };
+  const doc: Record<string, unknown> = { uniqueIdentifier: record.uniqueIdentifier, ...attrs };
 
   const addResult = unwrapSuccess<typeof doc & { id: string }, JUser>(
     await dm.addItemToCollection(USERS, doc),
@@ -137,8 +138,9 @@ export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreR
   const allFailures: FailureEntry[] = [];
 
   for (const record of records) {
-    const uniqueIdentifier = isNonEmptyString((record as any)?.uniqueIdentifier)
-      ? ((record as any).uniqueIdentifier as string)
+    const _rec = record as unknown as Record<string, unknown>;
+    const uniqueIdentifier = isNonEmptyString(_rec?.uniqueIdentifier)
+      ? (_rec.uniqueIdentifier as string)
       : '(unknown)';
 
     const collector = makeLoopFailureCollector<JUser>('createUserRecords', { uniqueIdentifier });
@@ -157,7 +159,7 @@ export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreR
       continue;
     }
 
-    const attrs = (record as any).attributes;
+    const attrs = (record as unknown as Record<string, unknown>).attributes;
     if (!isPlainObject(attrs)) {
       collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object');
       allFailures.push(...collector.failures);
@@ -284,7 +286,7 @@ export const updateUserById = async (
     );
 
   const merged = omitKeys(
-    { ...existing, ...attributesToUpdate } as any,
+    { ...existing, ...attributesToUpdate } as Record<string, unknown>,
     ['id', 'uniqueIdentifier'] as const,
   );
 
@@ -312,7 +314,7 @@ export const updateUserById = async (
  */
 export const updateUserByUniqueIdentifier = async (
   uniqueIdentifier: string,
-  attributesToUpdate: Record<string, any>,
+  attributesToUpdate: Record<string, unknown>,
 ): Promise<CoreResult<JUser>> => {
   _checkInit();
 

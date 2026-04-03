@@ -63,7 +63,7 @@ export type DataManagerAdapter = {
   findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
   findItemsInCollection: (
     collectionName: string,
-    criteria: Record<string, any>,
+    criteria: Record<string, unknown>,
   ) => Promise<object[]>;
   findItemsByIdsInCollection?: (collectionName: string, ids: string[]) => Promise<object[]>;
 

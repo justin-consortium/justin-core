@@ -28,7 +28,7 @@ export type FailureEntry = {
   /** Human-readable description suitable for logging. */
   reason: string;
   /** Optional operation-specific context, e.g. `{ namespace: 'pii', keyPath: 'ssn' }`. */
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 };
 
 // ---------------------------------------------------------------------------
