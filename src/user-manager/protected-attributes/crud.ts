@@ -41,7 +41,9 @@ const _checkInitialization = (): void => {
  * @returns True if valid; false if not a plain object or contains reserved keys.
  * @private
  */
-const _isValidProtectedAttributesPayload = (protectedAttributes: Record<string, unknown>): boolean => {
+const _isValidProtectedAttributesPayload = (
+  protectedAttributes: Record<string, unknown>,
+): boolean => {
   if (!isPlainObject(protectedAttributes)) return false;
   if (!assertNoReservedKeysDeep(protectedAttributes, RESERVED_PROTECTED_ATTRIBUTE_KEYS))
     return false;
@@ -372,7 +374,9 @@ const setProtectedAttributeKeysByNamespace = async (
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
 
   // Build the updated protectedAttributes from existing content (or empty for new namespace)
-  let updatedProtectedAttributes: Record<string, unknown> = isPlainObject(existing?.protectedAttributes)
+  let updatedProtectedAttributes: Record<string, unknown> = isPlainObject(
+    existing?.protectedAttributes,
+  )
     ? { ...existing!.protectedAttributes }
     : {};
 
@@ -700,6 +704,20 @@ const deleteProtectedAttributeKeysByNamespace = async (
 // Exports
 // ---------------------------------------------------------------------------
 
+/**
+ * Testing exports for protected-attributes CRUD internals.
+ * @private
+ */
+const __testing__protectedAttributesCrud = {
+  _checkInitialization,
+  _isValidProtectedAttributesPayload,
+  _normalizeNamespacedAttributesInput,
+  _findProtectedAttributesRecord,
+  _mergeProtectedAttributes,
+  _isValidKeyPath,
+  _upsertSingleProtectedAttributesRecord,
+};
+
 export {
   getProtectedAttributes,
   getAllProtectedAttributes,
@@ -708,18 +726,5 @@ export {
   deleteProtectedAttributeNamespaces,
   deleteAllProtectedAttributes,
   deleteProtectedAttributeKeysByNamespace,
-};
-
-/**
- * Testing exports for protected-attributes CRUD internals.
- * @private
- */
-export const __testing__protectedAttributesCrud = {
-  _checkInitialization,
-  _isValidProtectedAttributesPayload,
-  _normalizeNamespacedAttributesInput,
-  _findProtectedAttributesRecord,
-  _mergeProtectedAttributes,
-  _isValidKeyPath,
-  _upsertSingleProtectedAttributesRecord,
+  __testing__protectedAttributesCrud,
 };

@@ -52,7 +52,7 @@ function _deregisterUid(record: ProtectedAttributesRecord): void {
  * Loads all protected-attributes records from the database into the
  * in-memory cache, replacing whatever was there before.
  */
-export const refreshProtectedAttributesCache = async (): Promise<void> => {
+const refreshProtectedAttributesCache = async (): Promise<void> => {
   _checkInit();
   const docs = await dm.getAllInCollection<ProtectedAttributesRecord>(PROTECTED_ATTRIBUTES);
 
@@ -74,7 +74,7 @@ export const refreshProtectedAttributesCache = async (): Promise<void> => {
 /**
  * Clears all protected-attributes records and indexes from the cache.
  */
-export const clearProtectedAttributesCache = (): void => {
+const clearProtectedAttributesCache = (): void => {
   _cache.clear();
   _byUniqueIdentifier.clear();
 };
@@ -84,7 +84,7 @@ export const clearProtectedAttributesCache = (): void => {
  *
  * @param record - Record to upsert.
  */
-export const upsertProtectedAttributesInCache = (record: ProtectedAttributesRecord): void => {
+const upsertProtectedAttributesInCache = (record: ProtectedAttributesRecord): void => {
   _checkInit();
   if (!record?.id) {
     Log.error('upsertProtectedAttributesInCache: skipping malformed record — missing id', {
@@ -105,7 +105,7 @@ export const upsertProtectedAttributesInCache = (record: ProtectedAttributesReco
  *
  * @param id - Primary key of the record to remove.
  */
-export const deleteProtectedAttributesByIdFromCache = (id: string): void => {
+const deleteProtectedAttributesByIdFromCache = (id: string): void => {
   _checkInit();
   const record = _cache.getById(id);
   if (!record) return;
@@ -118,9 +118,7 @@ export const deleteProtectedAttributesByIdFromCache = (id: string): void => {
  *
  * @param uniqueIdentifier - User whose records should be evicted.
  */
-export const deleteProtectedAttributesByUniqueIdentifierFromCache = (
-  uniqueIdentifier: string,
-): void => {
+const deleteProtectedAttributesByUniqueIdentifierFromCache = (uniqueIdentifier: string): void => {
   _checkInit();
   const ids = _byUniqueIdentifier.get(uniqueIdentifier);
   if (!ids) return;
@@ -134,7 +132,7 @@ export const deleteProtectedAttributesByUniqueIdentifierFromCache = (
  *
  * @param uniqueIdentifier - User whose records to retrieve.
  */
-export const getAllProtectedAttributesByUniqueIdentifier = (
+const getAllProtectedAttributesByUniqueIdentifier = (
   uniqueIdentifier: string,
 ): ProtectedAttributesRecord[] => {
   _checkInit();
@@ -157,7 +155,7 @@ export const getAllProtectedAttributesByUniqueIdentifier = (
  * @param uniqueIdentifier - User whose records to retrieve.
  * @param namespaces - Namespaces to include.
  */
-export const getProtectedAttributesByUniqueIdentifier = (
+const getProtectedAttributesByUniqueIdentifier = (
   uniqueIdentifier: string,
   namespaces: string[],
 ): ProtectedAttributesRecord[] => {
@@ -168,4 +166,15 @@ export const getProtectedAttributesByUniqueIdentifier = (
 };
 
 /** @internal — exposed for testing only */
-export const __testing__protectedAttributesCache = { _cache, _byUniqueIdentifier };
+const __testing__protectedAttributesCache = { _cache, _byUniqueIdentifier };
+
+export {
+  refreshProtectedAttributesCache,
+  clearProtectedAttributesCache,
+  upsertProtectedAttributesInCache,
+  deleteProtectedAttributesByIdFromCache,
+  deleteProtectedAttributesByUniqueIdentifierFromCache,
+  getAllProtectedAttributesByUniqueIdentifier,
+  getProtectedAttributesByUniqueIdentifier,
+  __testing__protectedAttributesCache,
+};

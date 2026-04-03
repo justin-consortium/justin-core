@@ -488,7 +488,7 @@ const deleteProtectedAttributeKeysByNamespaceForUser = async (
 // Public API
 // ---------------------------------------------------------------------------
 
-export const UserManager = {
+const UserManager = {
   init,
   shutdown,
 
@@ -533,10 +533,12 @@ export const UserManager = {
  *
  * @internal
  */
-export const TestingUserManager = {
+const TestingUserManager = {
   ...UserManager,
   refreshUsersCache,
   refreshProtectedAttributesCache,
   clearUsersCache,
   clearProtectedAttributesCache,
 };
+
+export { UserManager, TestingUserManager };

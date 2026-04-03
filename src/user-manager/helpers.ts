@@ -167,7 +167,10 @@ const setValueAtPath = (
  * @param path - The dot-notated path to delete.
  * @returns A new object with the value removed at the provided path.
  */
-const deleteValueAtPath = (source: Record<string, unknown>, path: string): Record<string, unknown> => {
+const deleteValueAtPath = (
+  source: Record<string, unknown>,
+  path: string,
+): Record<string, unknown> => {
   const segments = getPathSegments(path);
   if (segments.length === 0 || !isPlainObject(source)) {
     return isPlainObject(source) ? { ...source } : {};
