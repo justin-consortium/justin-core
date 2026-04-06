@@ -115,15 +115,15 @@ Test names should read like sentences:
 
 **Good**
 
-- `returns null when identifier is invalid`
-- `logs and rethrows the same Error instance`
-- `cache is updated after change stream fires`
+- `it(returns null when identifier is invalid, ...)`
+- `it(logs and rethrows the same Error instance, ...)`
+- `it(cache is updated after change stream fires, ...)`
 
 **Bad**
 
-- `test update`
-- `misc edge case`
-- `works fine`
+- `it(test update, ...)`
+- `it(misc edge case, ...)`
+- `it(works fine, ...)`
 
 If a test name doesn't explain behavior, rewrite it.
 
