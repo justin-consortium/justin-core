@@ -6,7 +6,9 @@ import { createLogger } from '../../logger';
 import type { ProtectedAttributesRecord } from '../types';
 import { PROTECTED_ATTRIBUTES } from '../constants';
 
-const Log = createLogger({ context: { source: 'protected-attributes-cache' } });
+const Log = createLogger({
+  context: { package: '@just-in/core', source: 'protected-attributes-cache' },
+});
 
 const dm = DataManager.getInstance();
 

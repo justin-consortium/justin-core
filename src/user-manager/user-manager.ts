@@ -45,7 +45,7 @@ import {
 import { setupUserChangeListeners } from './users/listeners';
 import { setupProtectedAttributesChangeListeners } from './protected-attributes/listeners';
 
-const Log = createLogger({ context: { source: 'user-manager' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'user-manager' } });
 
 const dm = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();

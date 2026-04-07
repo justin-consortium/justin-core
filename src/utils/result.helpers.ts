@@ -2,7 +2,7 @@ import { JustInError, JustinErrorCode } from '../errors';
 import type { CoreResult, FailureEntry } from '../types';
 import { createLogger } from '../logger';
 
-const Log = createLogger({ context: { source: 'result-helpers' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'result-helpers' } });
 
 /**
  * Builds a successful {@link CoreResult}.

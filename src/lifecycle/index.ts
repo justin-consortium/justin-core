@@ -2,7 +2,7 @@ import { DataManager, ChangeListenerManager, configureDB as _configureDB } from 
 import type { DBConfig } from '../data-manager/types';
 import { createLogger } from '../logger';
 
-const Log = createLogger({ context: { source: 'lifecycle' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'lifecycle' } });
 
 // ---------------------------------------------------------------------------
 // Manager registry

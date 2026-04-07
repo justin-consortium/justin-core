@@ -4,7 +4,9 @@ import type { ProtectedAttributesRecord } from '../types';
 import { deleteProtectedAttributesByIdFromCache, upsertProtectedAttributesInCache } from './cache';
 import { createLogger } from '../../logger';
 
-const Log = createLogger({ context: { source: 'protected-attributes-listeners' } });
+const Log = createLogger({
+  context: { package: '@just-in/core', source: 'protected-attributes-listeners' },
+});
 
 const clm = ChangeListenerManager.getInstance();
 

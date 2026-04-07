@@ -18,7 +18,7 @@ import {
   clearAllContent,
 } from './crud';
 
-const Log = createLogger({ context: { source: 'content-manager' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'content-manager' } });
 
 const dm = DataManager.getInstance();
 

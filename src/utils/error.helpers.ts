@@ -1,7 +1,7 @@
 import { JustInError, JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 
-const Log = createLogger({ context: { source: 'error-helpers' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'error-helpers' } });
 
 /**
  * Ensures every error is logged exactly once at its origin and propagates

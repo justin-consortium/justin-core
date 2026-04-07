@@ -6,7 +6,7 @@ import { createLogger } from '../../logger';
 import type { JUser } from '../types';
 import { USERS } from '../constants';
 
-const Log = createLogger({ context: { source: 'users-cache' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'users-cache' } });
 
 const dm = DataManager.getInstance();
 

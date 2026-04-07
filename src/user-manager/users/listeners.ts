@@ -4,7 +4,7 @@ import type { JUser } from '../types';
 import { deleteUserFromCache, upsertUserInCache } from './cache';
 import { createLogger } from '../../logger';
 
-const Log = createLogger({ context: { source: 'user-listeners' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'user-listeners' } });
 
 const clm = ChangeListenerManager.getInstance();
 

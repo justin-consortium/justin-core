@@ -9,7 +9,7 @@ import { handleError, coreSuccess, coreFailure, failureEntryFromError } from '..
 import { JustInError, JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 
-const Log = createLogger({ context: { source: 'data-manager' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'data-manager' } });
 
 // ---------------------------------------------------------------------------
 // Pending DB config
