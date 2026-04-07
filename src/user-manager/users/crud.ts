@@ -36,7 +36,7 @@ const _checkInit = (): void => checkInitialized(dm.getInitializationStatus(), 'U
  *
  * @param uniqueIdentifier - The identifier to check.
  */
-export const isIdentifierUnique = (uniqueIdentifier: string): boolean => {
+const isIdentifierUnique = (uniqueIdentifier: string): boolean => {
   _checkInit();
   if (!isNonEmptyString(uniqueIdentifier)) return false;
   return !Boolean(getUserIdByUniqueIdentifierFromCache(uniqueIdentifier));
@@ -56,11 +56,12 @@ export const isIdentifierUnique = (uniqueIdentifier: string): boolean => {
  * @param record - New user data.
  * @returns A {@link CoreResult} containing the created {@link JUser} on success.
  */
-export const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
+const createUserRecord = async (record: NewUserRecord): Promise<CoreResult<JUser>> => {
   _checkInit();
 
-  const uid = isNonEmptyString((record as any)?.uniqueIdentifier)
-    ? ((record as any).uniqueIdentifier as string)
+  const _record = record as unknown as Record<string, unknown>;
+  const uid = isNonEmptyString(_record?.uniqueIdentifier)
+    ? (_record.uniqueIdentifier as string)
     : '(unknown)';
 
   if (!isPlainObject(record))
@@ -79,7 +80,7 @@ export const createUserRecord = async (record: NewUserRecord): Promise<CoreResul
       { uniqueIdentifier: uid },
     );
 
-  const attrs = (record as any).attributes;
+  const attrs = (record as unknown as Record<string, unknown>).attributes;
   if (!isPlainObject(attrs))
     return coreFailureResult(
       'createUserRecord',
@@ -104,7 +105,7 @@ export const createUserRecord = async (record: NewUserRecord): Promise<CoreResul
       { uniqueIdentifier: uid },
     );
 
-  const doc: Record<string, any> = { uniqueIdentifier: record.uniqueIdentifier, ...attrs };
+  const doc: Record<string, unknown> = { uniqueIdentifier: record.uniqueIdentifier, ...attrs };
 
   const addResult = unwrapSuccess<typeof doc & { id: string }, JUser>(
     await dm.addItemToCollection(USERS, doc),
@@ -128,7 +129,7 @@ export const createUserRecord = async (record: NewUserRecord): Promise<CoreResul
  * @param records - Array of new user data.
  * @returns A {@link CoreResult} with per-record success and failure detail.
  */
-export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
+const createUserRecords = async (records: NewUserRecord[]): Promise<CoreResult<JUser>> => {
   _checkInit();
 
   if (!Array.isArray(records) || records.length === 0) return coreSuccess([]);
@@ -137,8 +138,9 @@ export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreR
   const allFailures: FailureEntry[] = [];
 
   for (const record of records) {
-    const uniqueIdentifier = isNonEmptyString((record as any)?.uniqueIdentifier)
-      ? ((record as any).uniqueIdentifier as string)
+    const _rec = record as unknown as Record<string, unknown>;
+    const uniqueIdentifier = isNonEmptyString(_rec?.uniqueIdentifier)
+      ? (_rec.uniqueIdentifier as string)
       : '(unknown)';
 
     const collector = makeLoopFailureCollector<JUser>('createUserRecords', { uniqueIdentifier });
@@ -157,7 +159,7 @@ export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreR
       continue;
     }
 
-    const attrs = (record as any).attributes;
+    const attrs = (record as unknown as Record<string, unknown>).attributes;
     if (!isPlainObject(attrs)) {
       collector.push(JustinErrorCode.VALIDATION_ERROR, 'attributes must be a plain object');
       allFailures.push(...collector.failures);
@@ -200,7 +202,7 @@ export const createUserRecords = async (records: NewUserRecord[]): Promise<CoreR
  *
  * @returns All cached {@link JUser} records as an array, or an empty array if the cache is empty.
  */
-export const getAllUsers = (): JUser[] => {
+const getAllUsers = (): JUser[] => {
   _checkInit();
   return getAllUsersFromCache();
 };
@@ -211,7 +213,7 @@ export const getAllUsers = (): JUser[] => {
  * @param userId - Primary key to look up.
  * @returns The matching {@link JUser}, or `null` if not found or if `userId` is empty.
  */
-export const getUserById = (userId: string): JUser | null => {
+const getUserById = (userId: string): JUser | null => {
   _checkInit();
   if (!isNonEmptyString(userId)) return null;
   return getUserByIdFromCache(userId);
@@ -223,7 +225,7 @@ export const getUserById = (userId: string): JUser | null => {
  * @param uniqueIdentifier - Unique identifier to look up.
  * @returns The matching {@link JUser}, or `null` if not found or if `uniqueIdentifier` is empty.
  */
-export const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
+const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | null => {
   _checkInit();
   if (!isNonEmptyString(uniqueIdentifier)) return null;
   return getUserByUniqueIdentifierFromCache(uniqueIdentifier);
@@ -244,7 +246,7 @@ export const getUserByUniqueIdentifier = (uniqueIdentifier: string): JUser | nul
  * @param attributesToUpdate - Partial application data to merge.
  * @returns A {@link CoreResult} containing the updated {@link JUser} on success.
  */
-export const updateUserById = async (
+const updateUserById = async (
   userId: string,
   attributesToUpdate: object,
 ): Promise<CoreResult<JUser>> => {
@@ -284,7 +286,7 @@ export const updateUserById = async (
     );
 
   const merged = omitKeys(
-    { ...existing, ...attributesToUpdate } as any,
+    { ...existing, ...attributesToUpdate } as Record<string, unknown>,
     ['id', 'uniqueIdentifier'] as const,
   );
 
@@ -310,9 +312,9 @@ export const updateUserById = async (
  * @param attributesToUpdate - Partial application data to merge.
  * @returns A {@link CoreResult} containing the updated {@link JUser} on success.
  */
-export const updateUserByUniqueIdentifier = async (
+const updateUserByUniqueIdentifier = async (
   uniqueIdentifier: string,
-  attributesToUpdate: Record<string, any>,
+  attributesToUpdate: Record<string, unknown>,
 ): Promise<CoreResult<JUser>> => {
   _checkInit();
 
@@ -350,4 +352,15 @@ export const updateUserByUniqueIdentifier = async (
     );
 
   return updateUserById(user.id, attributesToUpdate);
+};
+
+export {
+  isIdentifierUnique,
+  createUserRecord,
+  createUserRecords,
+  getAllUsers,
+  getUserById,
+  getUserByUniqueIdentifier,
+  updateUserById,
+  updateUserByUniqueIdentifier,
 };

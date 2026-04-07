@@ -18,7 +18,7 @@ export type BaseJUser = {
  *
  * @typeParam TUserData - Additional application-defined fields stored for the user.
  */
-export type JUser<TUserData extends Record<string, any> = Record<string, any>> = BaseJUser &
+export type JUser<TUserData extends Record<string, unknown> = Record<string, unknown>> = BaseJUser &
   TUserData;
 
 /**
@@ -39,7 +39,7 @@ export type JUser<TUserData extends Record<string, any> = Record<string, any>> =
  *   };
  * };
  */
-export type ProtectedAttributesSchema = Record<string, Record<string, any>>;
+export type ProtectedAttributesSchema = Record<string, Record<string, unknown>>;
 
 /**
  * A single namespaced protected-attributes payload.
@@ -85,7 +85,7 @@ export type NamespacedAttributes<
  * @typeParam TProtectedSchema - Map of namespace names to protected payload shapes.
  */
 export type NewUserRecord<
-  TUserData extends Record<string, any> = Record<string, any>,
+  TUserData extends Record<string, unknown> = Record<string, unknown>,
   TProtectedSchema extends ProtectedAttributesSchema = ProtectedAttributesSchema,
 > = {
   uniqueIdentifier: string;
@@ -116,7 +116,7 @@ export type BaseProtectedAttributes = {
  */
 export type ProtectedAttributesRecord<
   TNamespace extends string = string,
-  TProtectedData extends Record<string, any> = Record<string, any>,
+  TProtectedData extends Record<string, unknown> = Record<string, unknown>,
 > = BaseProtectedAttributes & {
   namespace: TNamespace;
   protectedAttributes: TProtectedData;

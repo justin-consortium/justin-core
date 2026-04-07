@@ -9,7 +9,7 @@ import { handleError, coreSuccess, coreFailure, failureEntryFromError } from '..
 import { JustInError, JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 
-const Log = createLogger({ context: { source: 'data-manager' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'data-manager' } });
 
 // ---------------------------------------------------------------------------
 // Pending DB config
@@ -286,7 +286,7 @@ class DataManager extends EventEmitter {
    */
   public async findItemsInCollection<T>(
     collectionName: string,
-    criteria: Record<string, any>,
+    criteria: Record<string, unknown>,
   ): Promise<T[]> {
     if (!criteria || !collectionName) return [];
 

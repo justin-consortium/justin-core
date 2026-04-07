@@ -68,7 +68,7 @@ function toRank<T extends string>(value: string | number, ranks: Record<T, numbe
  *
  * @example
  * ```ts
- * const Log = createLogger({ context: { source: 'user-manager' } });
+ * const Log = createLogger({ context: { package: '@just-in/core', source: 'user-manager' } });
  *
  * Log.debug('cache refreshed', { count: users.length });
  * Log.error('DB write failed', { error, collection: 'users' });

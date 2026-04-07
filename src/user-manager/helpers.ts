@@ -39,7 +39,7 @@ const cleanStrings = (values: string[]): string[] => {
  * @param value - Unknown input.
  * @returns True if value is a plain object.
  */
-const isPlainObject = (value: unknown): value is Record<string, any> => {
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
@@ -93,7 +93,7 @@ const assertNoReservedKeysDeep = (value: unknown, reservedKeys: string[]): boole
  * @param keys - Keys to remove.
  * @returns A copy without the specified keys.
  */
-const omitKeys = <T extends Record<string, any>, K extends keyof T>(
+const omitKeys = <T extends Record<string, unknown>, K extends keyof T>(
   obj: T,
   keys: readonly K[],
 ): Omit<T, K> => {
@@ -134,24 +134,24 @@ const getPathSegments = (path: string): string[] => {
  * @returns A new object with the value set at the provided path.
  */
 const setValueAtPath = (
-  source: Record<string, any>,
+  source: Record<string, unknown>,
   path: string,
-  value: any,
-): Record<string, any> => {
+  value: unknown,
+): Record<string, unknown> => {
   const segments = getPathSegments(path);
   if (segments.length === 0) {
     return source;
   }
 
-  const result: Record<string, any> = isPlainObject(source) ? { ...source } : {};
-  let current: Record<string, any> = result;
+  const result: Record<string, unknown> = isPlainObject(source) ? { ...source } : {};
+  let current: Record<string, unknown> = result;
 
   for (let index = 0; index < segments.length - 1; index += 1) {
     const segment = segments[index] as string;
     const nextValue = current[segment];
 
     current[segment] = isPlainObject(nextValue) ? { ...nextValue } : {};
-    current = current[segment] as Record<string, any>;
+    current = current[segment] as Record<string, unknown>;
   }
 
   current[segments[segments.length - 1] as string] = value;
@@ -167,14 +167,17 @@ const setValueAtPath = (
  * @param path - The dot-notated path to delete.
  * @returns A new object with the value removed at the provided path.
  */
-const deleteValueAtPath = (source: Record<string, any>, path: string): Record<string, any> => {
+const deleteValueAtPath = (
+  source: Record<string, unknown>,
+  path: string,
+): Record<string, unknown> => {
   const segments = getPathSegments(path);
   if (segments.length === 0 || !isPlainObject(source)) {
     return isPlainObject(source) ? { ...source } : {};
   }
 
-  const result: Record<string, any> = { ...source };
-  let current: Record<string, any> = result;
+  const result: Record<string, unknown> = { ...source };
+  let current: Record<string, unknown> = result;
 
   for (let index = 0; index < segments.length - 1; index += 1) {
     const segment = segments[index] as string;
@@ -184,8 +187,8 @@ const deleteValueAtPath = (source: Record<string, any>, path: string): Record<st
       return result;
     }
 
-    current[segment] = { ...nextValue };
-    current = current[segment] as Record<string, any>;
+    current[segment] = { ...(nextValue as Record<string, unknown>) };
+    current = current[segment] as Record<string, unknown>;
   }
 
   delete current[segments[segments.length - 1] as string];

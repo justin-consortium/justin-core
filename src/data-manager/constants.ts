@@ -1,6 +1,8 @@
-export enum DBType {
+enum DBType {
   MONGO = 'MONGO',
   POSTGRES = 'POSTGRES',
 }
 
-export const NO_ID: string = 'NO_ID';
+const NO_ID: string = 'NO_ID';
+
+export { DBType, NO_ID };

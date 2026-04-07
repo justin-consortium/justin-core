@@ -53,7 +53,7 @@
     "test:integration": "yarn build && jest --config=jest.integration.config.js --verbose --passWithNoTests --runInBand --detectOpenHandles",
     "test:system": "yarn build && jest --config=jest.system.config.js --verbose --passWithNoTests --runInBand --detectOpenHandles",
     "test:e2e": "yarn build && jest --config=jest.e2e.config.js --verbose --passWithNoTests --runInBand --detectOpenHandles",
-    "test": "yarn test:unit && yarn test:integration",
+    "test": "yarn test:unit && yarn test:integration && yarn test:e2e",
     "test:coverage": "yarn test:unit && yarn test:integration --coverage"
   },
   "dependencies": {

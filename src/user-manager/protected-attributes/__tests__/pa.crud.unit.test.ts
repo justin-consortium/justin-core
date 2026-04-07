@@ -9,10 +9,7 @@ import {
 import type { CoreManagersSandbox, LoggerSpies } from '../../../testing';
 import { JustinErrorCode } from '../../../errors';
 import type { ProtectedAttributesRecord } from '../../types';
-import {
-  clearProtectedAttributesCache,
-  upsertProtectedAttributesInCache,
-} from '../cache';
+import { clearProtectedAttributesCache, upsertProtectedAttributesInCache } from '../cache';
 import {
   getProtectedAttributes,
   getAllProtectedAttributes,
@@ -156,8 +153,10 @@ describe('protected attributes crud unit tests', () => {
       const fitness = makePA({ id: 'pa2', namespace: 'fitness' });
       stubFindItems(null);
       (t.dm as any).addItemToCollection
-        .onFirstCall().resolves({ ok: true, successes: [health] })
-        .onSecondCall().resolves({ ok: true, successes: [fitness] });
+        .onFirstCall()
+        .resolves({ ok: true, successes: [health] })
+        .onSecondCall()
+        .resolves({ ok: true, successes: [fitness] });
 
       const result = await setProtectedAttributes('alice', [
         { namespace: 'health', protectedAttributes: { steps: 1000 } },
@@ -190,14 +189,20 @@ describe('protected attributes crud unit tests', () => {
 
     it('returns VALIDATION_ERROR when protectedAttributes is not a plain object', async () => {
       expectFailedWithCode(
-        await setProtectedAttributes('alice', { namespace: 'health', protectedAttributes: null as any }),
+        await setProtectedAttributes('alice', {
+          namespace: 'health',
+          protectedAttributes: null as any,
+        }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
 
     it('returns VALIDATION_ERROR when protectedAttributes contains reserved key', async () => {
       expectFailedWithCode(
-        await setProtectedAttributes('alice', { namespace: 'health', protectedAttributes: { id: 'hack' } }),
+        await setProtectedAttributes('alice', {
+          namespace: 'health',
+          protectedAttributes: { id: 'hack' },
+        }),
         JustinErrorCode.VALIDATION_ERROR,
       );
     });
@@ -222,7 +227,10 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(null);
       stubAddItem(created);
 
-      await setProtectedAttributes('alice', { namespace: 'health', protectedAttributes: { steps: 1000 } });
+      await setProtectedAttributes('alice', {
+        namespace: 'health',
+        protectedAttributes: { steps: 1000 },
+      });
 
       expect(getAllProtectedAttributes('alice')).toHaveLength(1);
     });
@@ -251,7 +259,10 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { a: 10, b: 20 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', {
+        a: 10,
+        b: 20,
+      });
 
       expectOk(result);
     });
@@ -262,7 +273,9 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { 'daily.steps': 500 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', {
+        'daily.steps': 500,
+      });
 
       expectOk(result);
     });
@@ -304,7 +317,10 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', { id: 'hack', safe: 99 });
+      const result = await setProtectedAttributeKeysByNamespace('alice', 'health', {
+        id: 'hack',
+        safe: 99,
+      });
 
       expect(result.ok).toBe(false);
       expect(result.successes).toHaveLength(1);
@@ -358,8 +374,10 @@ describe('protected attributes crud unit tests', () => {
 
     it('accepts an array of namespaces', async () => {
       (t.dm as any).findItemsInCollection
-        .onFirstCall().resolves([makePA({ id: 'pa1', namespace: 'health' })])
-        .onSecondCall().resolves([makePA({ id: 'pa2', namespace: 'fitness' })]);
+        .onFirstCall()
+        .resolves([makePA({ id: 'pa1', namespace: 'health' })])
+        .onSecondCall()
+        .resolves([makePA({ id: 'pa2', namespace: 'fitness' })]);
       stubRemoveItems(2);
 
       const result = await deleteProtectedAttributeNamespaces('alice', ['health', 'fitness']);
@@ -371,8 +389,10 @@ describe('protected attributes crud unit tests', () => {
       upsertProtectedAttributesInCache(makePA({ id: 'pa1', namespace: 'health' }));
       (t.dm as any).removeItemsFromCollection.resolves({ ok: true, successes: [{ id: 'pa1' }] });
       (t.dm as any).findItemsInCollection
-        .onFirstCall().resolves([makePA()])
-        .onSecondCall().resolves([]);
+        .onFirstCall()
+        .resolves([makePA()])
+        .onSecondCall()
+        .resolves([]);
 
       await deleteProtectedAttributeNamespaces('alice', 'health');
 
@@ -460,7 +480,11 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', 'daily.steps');
+      const result = await deleteProtectedAttributeKeysByNamespace(
+        'alice',
+        'health',
+        'daily.steps',
+      );
 
       expectOk(result);
     });
@@ -503,7 +527,10 @@ describe('protected attributes crud unit tests', () => {
       stubFindItems(existing);
       stubUpdateItem(updated);
 
-      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', ['id', 'safe']);
+      const result = await deleteProtectedAttributeKeysByNamespace('alice', 'health', [
+        'id',
+        'safe',
+      ]);
 
       expect(result.ok).toBe(false);
       expect(result.successes).toHaveLength(1);

@@ -453,7 +453,7 @@ const getAllInCollection = async (collectionName: string): Promise<object[]> => 
 const addItemToCollection = async (collectionName: string, item: object): Promise<string> => {
   ensureInitialized();
 
-  const { id, _id, ...filteredObject } = item as WithId;
+  const { id: _existingId, _id, ...filteredObject } = item as WithId;
 
   try {
     const { insertedId } = await _db!.collection(collectionName).insertOne(filteredObject);
@@ -493,7 +493,7 @@ const addItemsToCollection = async (
   if (!Array.isArray(items) || items.length === 0) return [];
 
   const filtered = items.map((item) => {
-    const { id, _id, ...rest } = item as WithId;
+    const { id: _existingId, _id, ...rest } = item as WithId;
     return rest;
   });
 
@@ -505,7 +505,7 @@ const addItemsToCollection = async (
     const result = await _db!.collection(collectionName).bulkWrite(ops, { ordered: false });
 
     // Build per-item result array. insertedIds is keyed by original index.
-    const out: Array<{ id: string } | { error: string }> = items.map((_, i) => ({
+    const out: Array<{ id: string } | { error: string }> = items.map((_item, _i) => ({
       error: 'Not inserted',
     }));
 
@@ -783,7 +783,7 @@ const isCollectionEmpty = async (collectionName: string): Promise<boolean> => {
  * This module is not re-exported from the package entry; higher-level
  * code should depend on the adapter-agnostic `DataManager` instead.
  */
-export const MongoDBManager = {
+const MongoDBManager = {
   // connection lifecycle
   init,
   close,
@@ -827,9 +827,11 @@ export const MongoDBManager = {
  *
  * @internal
  */
-export const TestingMongoDBManager = {
+const TestingMongoDBManager = {
   ...MongoDBManager,
   _setDatabaseInstance,
   _setClient,
   _setIsConnected,
 };
+
+export { MongoDBManager, TestingMongoDBManager };

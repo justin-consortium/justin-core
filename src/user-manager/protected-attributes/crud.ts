@@ -41,7 +41,9 @@ const _checkInitialization = (): void => {
  * @returns True if valid; false if not a plain object or contains reserved keys.
  * @private
  */
-const _isValidProtectedAttributesPayload = (protectedAttributes: Record<string, any>): boolean => {
+const _isValidProtectedAttributesPayload = (
+  protectedAttributes: Record<string, unknown>,
+): boolean => {
   if (!isPlainObject(protectedAttributes)) return false;
   if (!assertNoReservedKeysDeep(protectedAttributes, RESERVED_PROTECTED_ATTRIBUTE_KEYS))
     return false;
@@ -83,9 +85,9 @@ const _findProtectedAttributesRecord = async (
  * @private
  */
 const _mergeProtectedAttributes = (
-  existing: Record<string, any>,
-  incoming: Record<string, any>,
-): Record<string, any> => {
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> => {
   return {
     ...(isPlainObject(existing) ? existing : {}),
     ...incoming,
@@ -136,7 +138,7 @@ type _UpsertSingleResult =
 const _upsertSingleProtectedAttributesRecord = async (
   uniqueIdentifier: string,
   namespace: string,
-  protectedAttributes: Record<string, any>,
+  protectedAttributes: Record<string, unknown>,
 ): Promise<_UpsertSingleResult> => {
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
 
@@ -227,9 +229,7 @@ const getProtectedAttributes = (
  * @returns All records for the user, or an empty array.
  * @throws {JustinError} If DataManager has not been initialized.
  */
-const getAllProtectedAttributes = (
-  uniqueIdentifier: string,
-): ProtectedAttributesRecord[] => {
+const getAllProtectedAttributes = (uniqueIdentifier: string): ProtectedAttributesRecord[] => {
   _checkInitialization();
 
   if (!isNonEmptyString(uniqueIdentifier)) return [];
@@ -274,10 +274,9 @@ const setProtectedAttributes = async (
   if (items.length === 0) return coreSuccess([]);
 
   const successes: ProtectedAttributesRecord[] = [];
-  const collector = makeLoopFailureCollector<ProtectedAttributesRecord>(
-    'setProtectedAttributes',
-    { uniqueIdentifier },
-  );
+  const collector = makeLoopFailureCollector<ProtectedAttributesRecord>('setProtectedAttributes', {
+    uniqueIdentifier,
+  });
 
   for (const item of items) {
     const namespace = item?.namespace;
@@ -344,7 +343,7 @@ const setProtectedAttributes = async (
 const setProtectedAttributeKeysByNamespace = async (
   uniqueIdentifier: string,
   namespace: string,
-  updates: Record<string, any>,
+  updates: Record<string, unknown>,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInitialization();
 
@@ -375,7 +374,9 @@ const setProtectedAttributeKeysByNamespace = async (
   const existing = await _findProtectedAttributesRecord(uniqueIdentifier, namespace);
 
   // Build the updated protectedAttributes from existing content (or empty for new namespace)
-  let updatedProtectedAttributes: Record<string, any> = isPlainObject(existing?.protectedAttributes)
+  let updatedProtectedAttributes: Record<string, unknown> = isPlainObject(
+    existing?.protectedAttributes,
+  )
     ? { ...existing!.protectedAttributes }
     : {};
 
@@ -703,6 +704,20 @@ const deleteProtectedAttributeKeysByNamespace = async (
 // Exports
 // ---------------------------------------------------------------------------
 
+/**
+ * Testing exports for protected-attributes CRUD internals.
+ * @private
+ */
+const __testing__protectedAttributesCrud = {
+  _checkInitialization,
+  _isValidProtectedAttributesPayload,
+  _normalizeNamespacedAttributesInput,
+  _findProtectedAttributesRecord,
+  _mergeProtectedAttributes,
+  _isValidKeyPath,
+  _upsertSingleProtectedAttributesRecord,
+};
+
 export {
   getProtectedAttributes,
   getAllProtectedAttributes,
@@ -711,18 +726,5 @@ export {
   deleteProtectedAttributeNamespaces,
   deleteAllProtectedAttributes,
   deleteProtectedAttributeKeysByNamespace,
-};
-
-/**
- * Testing exports for protected-attributes CRUD internals.
- * @private
- */
-export const __testing__protectedAttributesCrud = {
-  _checkInitialization,
-  _isValidProtectedAttributesPayload,
-  _normalizeNamespacedAttributesInput,
-  _findProtectedAttributesRecord,
-  _mergeProtectedAttributes,
-  _isValidKeyPath,
-  _upsertSingleProtectedAttributesRecord,
+  __testing__protectedAttributesCrud,
 };

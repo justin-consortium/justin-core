@@ -45,7 +45,7 @@ import {
 import { setupUserChangeListeners } from './users/listeners';
 import { setupProtectedAttributesChangeListeners } from './protected-attributes/listeners';
 
-const Log = createLogger({ context: { source: 'user-manager' } });
+const Log = createLogger({ context: { package: '@just-in/core', source: 'user-manager' } });
 
 const dm = DataManager.getInstance();
 const clm = ChangeListenerManager.getInstance();
@@ -393,7 +393,7 @@ const setProtectedAttributesForUser = async (
 const setProtectedAttributeKeysByNamespaceForUser = async (
   userId: string,
   namespace: string,
-  updates: Record<string, any>,
+  updates: Record<string, unknown>,
 ): Promise<CoreResult<ProtectedAttributesRecord>> => {
   _checkInit();
   const uid = _resolveUniqueIdentifier(userId);
@@ -488,7 +488,7 @@ const deleteProtectedAttributeKeysByNamespaceForUser = async (
 // Public API
 // ---------------------------------------------------------------------------
 
-export const UserManager = {
+const UserManager = {
   init,
   shutdown,
 
@@ -533,10 +533,12 @@ export const UserManager = {
  *
  * @internal
  */
-export const TestingUserManager = {
+const TestingUserManager = {
   ...UserManager,
   refreshUsersCache,
   refreshProtectedAttributesCache,
   clearUsersCache,
   clearProtectedAttributesCache,
 };
+
+export { UserManager, TestingUserManager };

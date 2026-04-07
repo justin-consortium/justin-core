@@ -1,4 +1,5 @@
 import type { Readable } from 'stream';
+import type { DBType } from './constants';
 
 export enum CollectionChangeType {
   INSERT = 'insert',
@@ -24,7 +25,7 @@ export enum CollectionChangeType {
  */
 export type DBConfig = {
   /** Database type. Currently only `DBType.MONGO` is supported. */
-  dbType: import('./constants').DBType;
+  dbType: DBType;
   /** Connection string for the database. */
   uri: string;
   /** Database name. Falls back to the adapter default if omitted. */
@@ -62,7 +63,7 @@ export type DataManagerAdapter = {
   findItemByIdInCollection: (collectionName: string, id: string) => Promise<object | null>;
   findItemsInCollection: (
     collectionName: string,
-    criteria: Record<string, any>,
+    criteria: Record<string, unknown>,
   ) => Promise<object[]>;
   findItemsByIdsInCollection?: (collectionName: string, ids: string[]) => Promise<object[]>;
 
