@@ -4,7 +4,6 @@ import { diffForAdd, diffForUpdate, diffForDelete, emptyDiff } from './diff';
 import type { LedgerStore } from './store';
 import type {
   DatabaseSnapshot,
-  LedgerCommitContext,
   LedgerEntry,
   LedgerWriteEvent,
   LedgerWriteHook,
@@ -23,7 +22,7 @@ const Log = createLogger({ context: { package: '@just-in/core', source: 'ledger-
  * const ledgerStore = new MongoLedgerStore(db);
  * const ledger      = new LedgerManager(ledgerStore);
  *
- * DataManager.getInstance().registerWriteHook(ledger.asWriteHook());
+ * DataManager.getInstance().registerLedgerHook(ledger.asWriteHook());
  * ```
  *
  * **ADD** — look up open entry (none expected), compute all-added diff,
@@ -52,7 +51,7 @@ class LedgerManager {
 
   /**
    * Returns a {@link LedgerWriteHook} for passing to
-   * `DataManager.registerWriteHook()`.
+   * `DataManager.registerLedgerHook()`.
    *
    * The returned hook never throws — any failure is logged and swallowed so
    * that business operations are never blocked by audit failures.

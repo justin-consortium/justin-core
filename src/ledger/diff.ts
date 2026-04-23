@@ -98,10 +98,8 @@ const diffForAdd = (snapshot: Record<string, unknown>): LedgerDiff => deepDiff({
  * @param prev - The snapshot from the most recent open ledger entry.
  * @param next - The post-image returned by the DataManager update.
  */
-const diffForUpdate = (
-  prev: Record<string, unknown>,
-  next: Record<string, unknown>,
-): LedgerDiff => deepDiff(prev, next);
+const diffForUpdate = (prev: Record<string, unknown>, next: Record<string, unknown>): LedgerDiff =>
+  deepDiff(prev, next);
 
 /**
  * Builds the {@link LedgerDiff} for a DELETE operation.

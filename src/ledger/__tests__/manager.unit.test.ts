@@ -36,11 +36,7 @@ const makeUpdateEvent = (
   commit: { commitId: `commit-upd-${recordId}`, committedAt: at },
 });
 
-const makeDeleteEvent = (
-  entity: string,
-  recordId: string,
-  at: Date,
-): LedgerWriteEvent => ({
+const makeDeleteEvent = (entity: string, recordId: string, at: Date): LedgerWriteEvent => ({
   entity,
   recordId,
   operation: 'DELETE',
@@ -110,7 +106,9 @@ describe('ledger/manager unit tests', () => {
   describe('UPDATE', () => {
     it('closes the previous open entry and appends a new UPDATE entry', async () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', name: 'Alice' }, T0));
-      await ledger._handleWriteEvent(makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1));
+      await ledger._handleWriteEvent(
+        makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1),
+      );
 
       expect(ledgerStore._all).toHaveLength(2);
 
@@ -123,7 +121,9 @@ describe('ledger/manager unit tests', () => {
 
     it('stores the post-image snapshot on the UPDATE entry', async () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', name: 'Alice' }, T0));
-      await ledger._handleWriteEvent(makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1));
+      await ledger._handleWriteEvent(
+        makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1),
+      );
 
       expect(ledgerStore._all[1].snapshot).toEqual({ id: 'u1', name: 'Alicia' });
     });
@@ -144,7 +144,9 @@ describe('ledger/manager unit tests', () => {
 
     it('handles multiple sequential updates — each closes the previous', async () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', name: 'Alice' }, T0));
-      await ledger._handleWriteEvent(makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1));
+      await ledger._handleWriteEvent(
+        makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1),
+      );
       await ledger._handleWriteEvent(makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Ali' }, T2));
 
       expect(ledgerStore._all).toHaveLength(3);
@@ -198,12 +200,18 @@ describe('ledger/manager unit tests', () => {
       const ctx = beginLedgerCommit({ initiatedBy: 'test-suite' });
 
       const event1: LedgerWriteEvent = {
-        entity: 'users', recordId: 'u1', operation: 'ADD',
-        snapshot: { id: 'u1' }, commit: ctx,
+        entity: 'users',
+        recordId: 'u1',
+        operation: 'ADD',
+        snapshot: { id: 'u1' },
+        commit: ctx,
       };
       const event2: LedgerWriteEvent = {
-        entity: 'profiles', recordId: 'p1', operation: 'ADD',
-        snapshot: { id: 'p1' }, commit: ctx,
+        entity: 'profiles',
+        recordId: 'p1',
+        operation: 'ADD',
+        snapshot: { id: 'p1' },
+        commit: ctx,
       };
 
       await ledger._handleWriteEvent(event1);
@@ -227,7 +235,9 @@ describe('ledger/manager unit tests', () => {
   describe('getRecordAsOf', () => {
     it('returns the snapshot active at the requested time', async () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', name: 'Alice' }, T0));
-      await ledger._handleWriteEvent(makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T2));
+      await ledger._handleWriteEvent(
+        makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T2),
+      );
 
       const snap = await ledger.getRecordAsOf('users', 'u1', T1);
       expect(snap).toEqual({ id: 'u1', name: 'Alice' });
@@ -235,7 +245,9 @@ describe('ledger/manager unit tests', () => {
 
     it('returns the updated snapshot after the update time', async () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', name: 'Alice' }, T0));
-      await ledger._handleWriteEvent(makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1));
+      await ledger._handleWriteEvent(
+        makeUpdateEvent('users', 'u1', { id: 'u1', name: 'Alicia' }, T1),
+      );
 
       const snap = await ledger.getRecordAsOf('users', 'u1', T2);
       expect(snap).toEqual({ id: 'u1', name: 'Alicia' });
@@ -267,16 +279,24 @@ describe('ledger/manager unit tests', () => {
 
   describe('queryAsOf', () => {
     it('returns all live records at the requested time', async () => {
-      await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', status: 'active' }, T0));
-      await ledger._handleWriteEvent(makeAddEvent('users', 'u2', { id: 'u2', status: 'inactive' }, T0));
+      await ledger._handleWriteEvent(
+        makeAddEvent('users', 'u1', { id: 'u1', status: 'active' }, T0),
+      );
+      await ledger._handleWriteEvent(
+        makeAddEvent('users', 'u2', { id: 'u2', status: 'inactive' }, T0),
+      );
 
       const results = await ledger.queryAsOf('users', () => true, T1);
       expect(results).toHaveLength(2);
     });
 
     it('applies filterFn to the snapshots', async () => {
-      await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1', status: 'active' }, T0));
-      await ledger._handleWriteEvent(makeAddEvent('users', 'u2', { id: 'u2', status: 'inactive' }, T0));
+      await ledger._handleWriteEvent(
+        makeAddEvent('users', 'u1', { id: 'u1', status: 'active' }, T0),
+      );
+      await ledger._handleWriteEvent(
+        makeAddEvent('users', 'u2', { id: 'u2', status: 'inactive' }, T0),
+      );
 
       const results = await ledger.queryAsOf('users', (s) => s.status === 'active', T1);
       expect(results).toHaveLength(1);
@@ -360,9 +380,7 @@ describe('ledger/manager unit tests', () => {
 
       const hook = ledger.asWriteHook();
 
-      await expect(
-        hook(makeAddEvent('users', 'u1', { id: 'u1' }, T0)),
-      ).resolves.toBeUndefined();
+      await expect(hook(makeAddEvent('users', 'u1', { id: 'u1' }, T0))).resolves.toBeUndefined();
     });
   });
 });

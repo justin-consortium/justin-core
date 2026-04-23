@@ -97,7 +97,7 @@ reconstruction query will see both writes or neither:
 ```ts
 const ctx = beginLedgerCommit({ initiatedBy: 'onboarding-flow' });
 
-await dm.addItemToCollection('users',    newUser,    ctx);
+await dm.addItemToCollection('users', newUser, ctx);
 await dm.addItemToCollection('profiles', newProfile, ctx);
 ```
 
@@ -118,7 +118,7 @@ regardless of where you direct log output. You cannot accidentally pollute the
 ledger with log entries.
 
 The one thing to be aware of: if a third-party developer stores log entries in
-their own collection *through DataManager* — say they call
+their own collection _through DataManager_ — say they call
 `dm.addItemToCollection('logs', entry)` — those writes will be tracked by the
 ledger just like any other write. That is working as designed, since they made
 an explicit choice to route through `DataManager`, but they should know it will

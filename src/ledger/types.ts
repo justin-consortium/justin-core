@@ -1,4 +1,3 @@
-
 /** The type of write operation that produced a {@link LedgerEntry}. */
 type LedgerOperation = 'ADD' | 'UPDATE' | 'DELETE';
 

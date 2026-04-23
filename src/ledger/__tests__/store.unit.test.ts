@@ -75,7 +75,7 @@ describe('ledger/store unit tests', () => {
     });
 
     it('does not close entries for other entities', async () => {
-      await ledgerStore.append(makeEntry({ entity: 'users',    recordId: 'u1', validFrom: T0 }));
+      await ledgerStore.append(makeEntry({ entity: 'users', recordId: 'u1', validFrom: T0 }));
       await ledgerStore.append(makeEntry({ entity: 'profiles', recordId: 'u1', validFrom: T0 }));
 
       await ledgerStore.closeOpenVersions('users', 'u1', T1);
@@ -180,10 +180,22 @@ describe('ledger/store unit tests', () => {
 
     it('returns the correct version when multiple versions exist for a record', async () => {
       await ledgerStore.append(
-        makeEntry({ entity: 'users', recordId: 'u1', validFrom: T0, validTo: T1, snapshot: { v: 1 } }),
+        makeEntry({
+          entity: 'users',
+          recordId: 'u1',
+          validFrom: T0,
+          validTo: T1,
+          snapshot: { v: 1 },
+        }),
       );
       await ledgerStore.append(
-        makeEntry({ entity: 'users', recordId: 'u1', validFrom: T1, validTo: null, snapshot: { v: 2 } }),
+        makeEntry({
+          entity: 'users',
+          recordId: 'u1',
+          validFrom: T1,
+          validTo: null,
+          snapshot: { v: 2 },
+        }),
       );
 
       const atT0 = await ledgerStore.findVersionAsOf('users', 'u1', T0);
@@ -243,7 +255,7 @@ describe('ledger/store unit tests', () => {
     });
 
     it('only returns entries for the requested entity', async () => {
-      await ledgerStore.append(makeEntry({ entity: 'users',    recordId: 'u1', validFrom: T0 }));
+      await ledgerStore.append(makeEntry({ entity: 'users', recordId: 'u1', validFrom: T0 }));
       await ledgerStore.append(makeEntry({ entity: 'profiles', recordId: 'p1', validFrom: T0 }));
 
       const results = await ledgerStore.findAllVersionsAsOf('users', T1);
@@ -255,9 +267,9 @@ describe('ledger/store unit tests', () => {
 
   describe('listEntities', () => {
     it('returns all distinct entity names', async () => {
-      await ledgerStore.append(makeEntry({ entity: 'users',    recordId: 'u1' }));
+      await ledgerStore.append(makeEntry({ entity: 'users', recordId: 'u1' }));
       await ledgerStore.append(makeEntry({ entity: 'profiles', recordId: 'p1' }));
-      await ledgerStore.append(makeEntry({ entity: 'users',    recordId: 'u2' }));
+      await ledgerStore.append(makeEntry({ entity: 'users', recordId: 'u2' }));
 
       const entities = await ledgerStore.listEntities();
 

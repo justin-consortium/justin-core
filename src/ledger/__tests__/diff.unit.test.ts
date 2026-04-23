@@ -1,4 +1,3 @@
-
 import { deepDiff, diffForAdd, diffForUpdate, diffForDelete, emptyDiff } from '../diff';
 
 describe('ledger/diff unit tests', () => {
@@ -83,10 +82,7 @@ describe('ledger/diff unit tests', () => {
     });
 
     it('does not emit intermediate path segments on their own', () => {
-      const result = deepDiff(
-        { address: { city: 'Detroit' } },
-        { address: { city: 'Dearborn' } },
-      );
+      const result = deepDiff({ address: { city: 'Detroit' } }, { address: { city: 'Dearborn' } });
 
       expect(result.changed).not.toHaveProperty('address');
       expect(result.changed['address.city']).toBeDefined();

@@ -15,7 +15,7 @@
  * const ledgerStore = new MongoLedgerStore(db);
  * const ledger      = new LedgerManager(ledgerStore);
  *
- * DataManager.getInstance().registerWriteHook(ledger.asWriteHook());
+ * DataManager.getInstance().registerLedgerHook(ledger.asWriteHook());
  * ```
  */
 
