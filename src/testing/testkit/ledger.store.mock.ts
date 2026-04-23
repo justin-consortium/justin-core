@@ -52,11 +52,7 @@ class InMemoryLedgerStore implements LedgerStore {
     return null;
   }
 
-  async findVersionAsOf(
-    entity: string,
-    recordId: string,
-    asOf: Date,
-  ): Promise<LedgerEntry | null> {
+  async findVersionAsOf(entity: string, recordId: string, asOf: Date): Promise<LedgerEntry | null> {
     const asOfMs = asOf.getTime();
     const candidates = this._entries.filter(
       (e) =>

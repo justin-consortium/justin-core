@@ -86,6 +86,7 @@ export function makeCoreManagersSandbox(): CoreManagersSandbox {
   sb.stub(dm, 'ensureStore').resolves();
   sb.stub(dm, 'ensureIndexes').resolves();
   sb.stub(dm, 'getInitializationStatus').returns(true);
+  sb.stub(dm, 'registerLedgerHook').value(() => {});
 
   // Single-item CRUD
   sb.stub(dm, 'addItemToCollection').resolves(null as any);
