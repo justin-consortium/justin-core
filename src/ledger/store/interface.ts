@@ -1,4 +1,4 @@
-import type { LedgerEntry } from './types';
+import type { LedgerEntry } from '../types';
 
 /**
  * Storage contract for the ledger's audit history.
@@ -7,9 +7,8 @@ import type { LedgerEntry } from './types';
  * the ledger logic never references a specific database driver. This mirrors
  * the `DataManagerAdapter` pattern already used in the rest of the codebase.
  *
- * The production implementation is `MongoLedgerStore`
- * (`src/ledger/mongo/store.ts`), which writes to the single shared
- * `ledger_history` collection in MongoDB.
+ * The production implementation is {@link MongoLedgerStore}, which writes to
+ * the single shared `ledger_history` collection in MongoDB.
  *
  * For tests, use `InMemoryLedgerStore` from `src/testing/testkit`.
  *

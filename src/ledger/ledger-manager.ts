@@ -1,7 +1,7 @@
 import { createLogger } from '../logger';
 import { makeImplicitCommit } from './commit';
 import { diffForAdd, diffForUpdate, diffForDelete, emptyDiff } from './diff';
-import type { LedgerStore } from './store';
+import type { LedgerStore } from './store/interface';
 import type {
   DatabaseSnapshot,
   LedgerEntry,

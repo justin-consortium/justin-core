@@ -1,5 +1,5 @@
 import type { LedgerEntry } from '../../ledger/types';
-import type { LedgerStore } from '../../ledger/store';
+import type { LedgerStore } from '../../ledger/store/interface';
 
 /**
  * In-memory implementation of {@link LedgerStore} for use in tests.

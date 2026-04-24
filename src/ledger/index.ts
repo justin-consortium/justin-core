@@ -19,9 +19,10 @@
  * ```
  */
 
-export { LedgerManager } from './manager';
+export { LedgerManager } from './ledger-manager';
 
 export type { LedgerStore } from './store';
+export { MongoLedgerStore } from './store';
 
 export { beginLedgerCommit } from './commit';
 
