@@ -1,6 +1,6 @@
 import sinon from 'sinon';
 
-import { LedgerManager } from '../manager';
+import { LedgerManager } from '../ledger-manager';
 import { InMemoryLedgerStore } from '../../testing/testkit/ledger.store.mock';
 import { beginLedgerCommit } from '../commit';
 import type { LedgerWriteEvent } from '../types';
