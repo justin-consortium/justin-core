@@ -142,26 +142,27 @@ class LedgerManager {
   }
 
   /**
-   * Returns all records in `entity` matching `filterFn` at `asOf`.
+   * Returns all records in `entity` that were live at `asOf`.
    *
    * Queries the **ledger store only**.
    *
-   * Pass `() => true` to retrieve all live records at `asOf`.
+   * An optional `filterFn` narrows the results. Omit it to get all live
+   * records at `asOf`.
    *
    * @param entity   - Collection name.
-   * @param filterFn - Predicate applied to each record snapshot.
    * @param asOf     - Point in time to reconstruct.
+   * @param filterFn - Optional predicate applied to each record snapshot.
    */
   async queryAsOf(
     entity: string,
-    filterFn: (snapshot: Record<string, unknown>) => boolean,
     asOf: Date,
+    filterFn?: (snapshot: Record<string, unknown>) => boolean,
   ): Promise<Array<Record<string, unknown>>> {
     const entries = await this.store.findAllVersionsAsOf(entity, asOf);
-    return entries
+    const live = entries
       .filter((e) => e.operation !== 'DELETE' && e.snapshot !== undefined)
-      .map((e) => e.snapshot as Record<string, unknown>)
-      .filter(filterFn);
+      .map((e) => e.snapshot as Record<string, unknown>);
+    return filterFn ? live.filter(filterFn) : live;
   }
 
   /**
@@ -178,7 +179,7 @@ class LedgerManager {
     const entities = await this.store.listEntities();
     const result: DatabaseSnapshot = {};
     for (const entity of entities) {
-      result[entity] = await this.queryAsOf(entity, () => true, asOf);
+      result[entity] = await this.queryAsOf(entity, asOf);
     }
     return result;
   }

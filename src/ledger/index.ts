@@ -10,7 +10,7 @@
  *
  * ```ts
  * import { LedgerManager } from './ledger';
- * import { MongoLedgerStore } from './ledger/mongo/store';
+ * import { MongoLedgerStore } from './ledger/store';
  *
  * const ledgerStore = new MongoLedgerStore(db);
  * const ledger      = new LedgerManager(ledgerStore);

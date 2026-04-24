@@ -286,7 +286,7 @@ describe('ledger/manager unit tests', () => {
         makeAddEvent('users', 'u2', { id: 'u2', status: 'inactive' }, T0),
       );
 
-      const results = await ledger.queryAsOf('users', () => true, T1);
+      const results = await ledger.queryAsOf('users', T1);
       expect(results).toHaveLength(2);
     });
 
@@ -298,7 +298,7 @@ describe('ledger/manager unit tests', () => {
         makeAddEvent('users', 'u2', { id: 'u2', status: 'inactive' }, T0),
       );
 
-      const results = await ledger.queryAsOf('users', (s) => s.status === 'active', T1);
+      const results = await ledger.queryAsOf('users', T1, (s) => s.status === 'active');
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ id: 'u1' });
     });
@@ -308,7 +308,7 @@ describe('ledger/manager unit tests', () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u2', { id: 'u2' }, T0));
       await ledger._handleWriteEvent(makeDeleteEvent('users', 'u1', T1));
 
-      const results = await ledger.queryAsOf('users', () => true, T2);
+      const results = await ledger.queryAsOf('users', T2);
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ id: 'u2' });
     });
@@ -317,14 +317,14 @@ describe('ledger/manager unit tests', () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1' }, T0));
       await ledger._handleWriteEvent(makeDeleteEvent('users', 'u1', T2));
 
-      const results = await ledger.queryAsOf('users', () => true, T1);
+      const results = await ledger.queryAsOf('users', T1);
       expect(results).toHaveLength(1);
     });
 
     it('returns empty array when no records existed at asOf', async () => {
       await ledger._handleWriteEvent(makeAddEvent('users', 'u1', { id: 'u1' }, T2));
 
-      const results = await ledger.queryAsOf('users', () => true, T0);
+      const results = await ledger.queryAsOf('users', T0);
       expect(results).toHaveLength(0);
     });
   });
