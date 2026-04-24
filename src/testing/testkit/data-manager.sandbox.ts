@@ -18,6 +18,7 @@ type DataManagerUnitSandbox = {
     ensureStore: SinonStub;
     ensureIndexes: SinonStub;
     close: SinonStub;
+    getDb: SinonStub;
     addItemToCollection: SinonStub;
     updateItemInCollection: SinonStub;
     removeItemFromCollection: SinonStub;
@@ -48,6 +49,7 @@ function _restoreExistingStubs(): void {
     'ensureStore',
     'ensureIndexes',
     'close',
+    'getDb',
     'addItemToCollection',
     'updateItemInCollection',
     'removeItemFromCollection',
@@ -95,6 +97,7 @@ function makeDataManagerSandbox(): DataManagerUnitSandbox {
     ensureStore: sb.stub(mongoFns, 'ensureStore').resolves(),
     ensureIndexes: sb.stub(mongoFns, 'ensureIndexes').resolves(),
     close: sb.stub(mongoFns, 'close').resolves(),
+    getDb: sb.stub(mongoFns, 'getDb').returns(null),
     addItemToCollection: sb.stub(mongoFns, 'addItemToCollection'),
     updateItemInCollection: sb.stub(mongoFns, 'updateItemInCollection'),
     removeItemFromCollection: sb.stub(mongoFns, 'removeItemFromCollection'),

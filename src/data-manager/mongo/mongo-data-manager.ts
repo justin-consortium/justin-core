@@ -74,6 +74,17 @@ const ensureInitialized = (): void => {
 };
 
 /**
+ * Returns the active MongoDB `Db` instance.
+ *
+ * Used internally by {@link DataManager.init} to pass the live database
+ * reference to {@link MongoLedgerStore} after the connection is established.
+ * Both share the same connection — no second client is created.
+ *
+ * Returns `null` if the connection has not been established yet.
+ */
+const getDb = (): mongoDB.Db | null => _db;
+
+/**
  * Initializes the MongoDB connection.
  *
  * Uses the provided URI and database name, or falls back to
@@ -788,6 +799,7 @@ const MongoDBManager = {
   init,
   close,
   ensureInitialized,
+  getDb,
 
   // schema
   ensureStore,

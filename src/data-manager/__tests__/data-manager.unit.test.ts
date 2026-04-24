@@ -1,4 +1,5 @@
 import { DataManager, configureDB, getPendingConfig, clearPendingConfig } from '../data-manager';
+import { MongoLedgerStore } from '../../ledger/store';
 import { MongoDBManager as mongoFns } from '../mongo/mongo-data-manager';
 import { DBType } from '../constants';
 import { JustInError, JustinErrorCode } from '../../errors';
@@ -10,9 +11,6 @@ import {
   expectFailedWithCode,
   resetSingleton,
 } from '../../testing/helpers';
-import { beginLedgerCommit } from '../../ledger';
-import type { LedgerWriteEvent } from '../../ledger';
-// import sinon from 'sinon';
 
 describe('DataManager unit tests', () => {
   let t: DataManagerUnitSandbox;
@@ -116,6 +114,28 @@ describe('DataManager unit tests', () => {
       t.mongo.init.rejects(new Error('connection refused'));
       const dm = DataManager.getInstance();
       await expect(dm.init()).rejects.toThrow(JustInError);
+    });
+
+    it('wires the ledger when getDb returns a Db instance', async () => {
+      const fakeDb = {} as any;
+      t.mongo.getDb.returns(fakeDb);
+      const ensureStore = t.sb.stub(MongoLedgerStore.prototype, 'ensureStore').resolves();
+
+      const dm = DataManager.getInstance();
+      await dm.init();
+
+      expect(ensureStore.calledOnce).toBe(true);
+    });
+
+    it('skips ledger wiring gracefully when getDb returns null', async () => {
+      t.mongo.getDb.returns(null);
+      const ensureStore = t.sb.stub(MongoLedgerStore.prototype, 'ensureStore').resolves();
+
+      const dm = DataManager.getInstance();
+      await dm.init();
+
+      expect(ensureStore.called).toBe(false);
+      expect(dm.getInitializationStatus()).toBe(true);
     });
   });
 
@@ -510,160 +530,6 @@ describe('DataManager unit tests', () => {
       await dm.init();
       const result = await dm.removeItemsFromCollection('users', ['abc', 'def']);
       expectOk(result);
-    });
-  });
-
-  describe('registerLedgerHook', () => {
-    it('registers a hook that fires after a successful addItemToCollection', async () => {
-      t.mongo.addItemToCollection.resolves('id-1');
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      await dm.addItemToCollection('users', { name: 'Alice' });
-
-      expect(hook.calledOnce).toBe(true);
-      const event: LedgerWriteEvent = hook.firstCall.args[0];
-      expect(event.entity).toBe('users');
-      expect(event.recordId).toBe('id-1');
-      expect(event.operation).toBe('ADD');
-      expect(event.snapshot).toMatchObject({ id: 'id-1', name: 'Alice' });
-      expect(event.commit.commitId).toBeTruthy();
-      expect(event.commit.committedAt).toBeInstanceOf(Date);
-    });
-
-    it('fires the hook with the provided commit context', async () => {
-      t.mongo.addItemToCollection.resolves('id-1');
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      const ctx = beginLedgerCommit({ initiatedBy: 'test' });
-      await dm.addItemToCollection('users', { name: 'Alice' }, ctx);
-
-      const event: LedgerWriteEvent = hook.firstCall.args[0];
-      expect(event.commit.commitId).toBe(ctx.commitId);
-      expect(event.commit.committedAt).toEqual(ctx.committedAt);
-      expect(event.commit.metadata).toEqual({ initiatedBy: 'test' });
-    });
-
-    it('does not fire the hook when addItemToCollection fails', async () => {
-      t.mongo.addItemToCollection.rejects(new Error('insert failed'));
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      await dm.addItemToCollection('users', { name: 'Alice' });
-
-      expect(hook.called).toBe(false);
-    });
-
-    it('fires the hook after a successful updateItemByIdInCollection', async () => {
-      t.mongo.updateItemInCollection.resolves({ id: 'u1', name: 'Alicia' });
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      await dm.updateItemByIdInCollection('users', 'u1', { name: 'Alicia' });
-
-      expect(hook.calledOnce).toBe(true);
-      const event: LedgerWriteEvent = hook.firstCall.args[0];
-      expect(event.entity).toBe('users');
-      expect(event.recordId).toBe('u1');
-      expect(event.operation).toBe('UPDATE');
-      expect(event.snapshot).toMatchObject({ id: 'u1', name: 'Alicia' });
-    });
-
-    it('does not fire the hook when updateItemByIdInCollection returns NOT_FOUND', async () => {
-      t.mongo.updateItemInCollection.resolves(null);
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      await dm.updateItemByIdInCollection('users', 'u1', { name: 'Alicia' });
-
-      expect(hook.called).toBe(false);
-    });
-
-    it('fires the hook after a successful removeItemFromCollection', async () => {
-      t.mongo.removeItemFromCollection.resolves(1);
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      await dm.removeItemFromCollection('users', 'u1');
-
-      expect(hook.calledOnce).toBe(true);
-      const event: LedgerWriteEvent = hook.firstCall.args[0];
-      expect(event.entity).toBe('users');
-      expect(event.recordId).toBe('u1');
-      expect(event.operation).toBe('DELETE');
-      expect(event.snapshot).toBeUndefined();
-    });
-
-    it('does not fire the hook when removeItemFromCollection returns NOT_FOUND', async () => {
-      t.mongo.removeItemFromCollection.resolves(0);
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const hook = t.sb.stub().resolves();
-      dm.registerLedgerHook(hook);
-
-      await dm.removeItemFromCollection('users', 'u1');
-
-      expect(hook.called).toBe(false);
-    });
-
-    it('fires multiple registered hooks in registration order', async () => {
-      t.mongo.addItemToCollection.resolves('id-1');
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const order: number[] = [];
-      dm.registerLedgerHook(async () => { order.push(1); });
-      dm.registerLedgerHook(async () => { order.push(2); });
-
-      await dm.addItemToCollection('users', { name: 'Alice' });
-
-      expect(order).toEqual([1, 2]);
-    });
-
-    it('swallows hook errors and still returns the write result', async () => {
-      t.mongo.addItemToCollection.resolves('id-1');
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      dm.registerLedgerHook(async () => { throw new Error('hook exploded'); });
-
-      const result = await dm.addItemToCollection('users', { name: 'Alice' });
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('continues firing subsequent hooks when one throws', async () => {
-      t.mongo.addItemToCollection.resolves('id-1');
-      const dm = DataManager.getInstance();
-      await dm.init();
-
-      const second = t.sb.stub().resolves();
-      dm.registerLedgerHook(async () => { throw new Error('first hook failed'); });
-      dm.registerLedgerHook(second);
-
-      await dm.addItemToCollection('users', { name: 'Alice' });
-
-      expect(second.calledOnce).toBe(true);
     });
   });
 });

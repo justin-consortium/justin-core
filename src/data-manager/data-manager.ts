@@ -10,6 +10,8 @@ import { JustInError, JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
 import { makeImplicitCommit } from '../ledger/commit';
 import type { LedgerCommitContext, LedgerWriteHook, LedgerWriteEvent } from '../ledger/types';
+import { MongoLedgerStore } from '../ledger/store';
+import { LedgerManager } from '../ledger';
 
 const Log = createLogger({ context: { package: '@just-in/core', source: 'data-manager' } });
 
@@ -204,6 +206,15 @@ class DataManager extends EventEmitter {
       await (this.db as typeof MongoDBManager).init(config.uri, config.dbName);
       this.isInitialized = true;
       Log.debug('DataManager initialised', { dbType: config.dbType });
+
+      const db = (this.db as typeof MongoDBManager).getDb();
+      if (db) {
+        const ledgerStore = new MongoLedgerStore(db);
+        await ledgerStore.ensureStore();
+        const ledger = new LedgerManager(ledgerStore);
+        this.registerLedgerHook(ledger.asWriteHook());
+        Log.debug('Ledger initialised');
+      }
     } catch (error) {
       return handleError('Failed to initialise DataManager', 'DataManager.init', { error });
     }
