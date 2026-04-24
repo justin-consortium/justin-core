@@ -1,206 +1,244 @@
 # Ledger
 
 The Ledger is the audit system for `@just-in/core`. Every time a record is
-created, updated, or deleted through the system, the Ledger writes down what
-happened, what the record looked like before, what it looks like after, and
-exactly when it happened. That history never changes and never gets deleted.
+created, updated, or deleted, the Ledger captures it — what the record looked
+like, exactly what changed, and when. That history is permanent and immutable.
 
-The goal is simple: given any point in time, you should be able to ask
-"what did this record look like then?" or "what did the entire database look
-like then?" and get a correct answer.
+The result is a system where you can ask "what did this look like at 9:47am on
+March 1st?" and get a correct answer, for any record or the entire database.
 
 ---
 
-## How to use it
+## What you can do with it
 
-### Querying a single record at a point in time
+### Ask what a single record looked like at any point in time
 
 ```ts
 const snap = await ledger.getRecordAsOf('users', userId, new Date('2024-03-01'));
 ```
 
-This returns the full record as it existed on March 1st, or `null` if it
-didn't exist yet or had already been deleted by then.
-
-### Querying all records in a collection at a point in time
+Returns the full record as it existed on March 1st. Returns `null` if it
+didn't exist yet or had already been deleted.
 
 ```ts
-const activeUsers = await ledger.queryAsOf(
+// Result
+{
+  id:     'abc123',
+    name:   'Alice',
+  status: 'active',
+  score:  42,
+}
+```
+
+### Ask what a whole collection looked like at any point in time
+
+```ts
+// All users at that moment
+const everyone = await ledger.queryAsOf('users', new Date('2024-03-01'));
+
+// Only active users at that moment
+const active = await ledger.queryAsOf(
   'users',
-  (snap) => snap.status === 'active',
   new Date('2024-03-01'),
+  (snap) => snap.status === 'active',
 );
 ```
 
-Pass `() => true` as the filter to get everything that was live at that moment.
+The filter is optional — leave it out to get everything that was live.
 
-### Reconstructing the entire database at a point in time
+```ts
+// Result
+[
+  { id: 'abc123', name: 'Alice',  status: 'active', score: 42 },
+  { id: 'def456', name: 'Carlos', status: 'active', score: 18 },
+]
+```
+
+### Reconstruct the entire database at any point in time
 
 ```ts
 const db = await ledger.getDatabaseAsOf(new Date('2024-03-01'));
-// {
-//   users:                [ { id: '...', name: 'Alice', ... }, ... ],
-//   protected_attributes: [ { id: '...', ... }, ... ],
-// }
 ```
 
-Every collection that has ever been written is included. Collections where all
-records had been deleted by that point come back as empty arrays.
-
-### What a ledger record looks like
-
-Each row in `ledger_history` looks like this:
+Every collection is included. If all records in a collection had been deleted
+by that point, it comes back as an empty array.
 
 ```ts
+// Result
+{
+  users: [
+    { id: 'abc123', name: 'Alice',  status: 'active' },
+    { id: 'def456', name: 'Carlos', status: 'active' },
+  ],
+    protected_attributes: [
+  {
+    id: 'pa1',
+    uniqueIdentifier: 'alice',
+    namespace: 'health',
+    protectedAttributes: { steps: 8000 },
+  },
+],
+  interventions: [],
+}
+```
+
+---
+
+## What each ledger row looks like
+
+Every write produces a row in `ledger_history`. Here is what a full history
+looks like for a single user that was created, updated, then deleted.
+
+```ts
+// Created at 9:00
 {
   entity:      'users',
     recordId:    'abc123',
-    operation:   'UPDATE',
-    validFrom:   2024-03-01T09:30:00Z,
-    validTo:     2024-03-01T10:00:00Z,
-    snapshot: {
-    id:     'abc123',
-      name:   'Alicia',
-      status: 'active',
+  operation:   'ADD',
+  validFrom:   '2024-03-01T09:00:00Z',
+  validTo:     '2024-03-01T09:30:00Z',
+  snapshot: {
+  id:     'abc123',
+    name:   'Alice',
+    status: 'active',
+},
+  diff: {
+    added:   { id: 'abc123', name: 'Alice', status: 'active' },
+    changed: {},
+    removed: {},
   },
+  commitId:    'c1',
+    committedAt: '2024-03-01T09:00:00Z',
+}
+
+// Name updated at 9:30
+{
+  entity:      'users',
+    recordId:    'abc123',
+  operation:   'UPDATE',
+  validFrom:   '2024-03-01T09:30:00Z',
+  validTo:     '2024-03-01T10:00:00Z',
+  snapshot: {
+  id:     'abc123',
+    name:   'Alicia',
+    status: 'active',
+},
   diff: {
     added:   {},
     changed: { name: { from: 'Alice', to: 'Alicia' } },
     removed: {},
   },
-  commitId:    '01hv3m...',
-    committedAt: 2024-03-01T09:30:00Z,
-    metadata: {
-    initiatedBy: 'admin-script',
+  commitId:    'c2',
+    committedAt: '2024-03-01T09:30:00Z',
+}
+
+// Deleted at 10:00
+{
+  entity:      'users',
+    recordId:    'abc123',
+  operation:   'DELETE',
+  validFrom:   '2024-03-01T10:00:00Z',
+  validTo:     null,
+  snapshot: {
+  id:     'abc123',
+    name:   'Alicia',
+    status: 'active',
+},
+  diff: {
+    added:   {},
+    changed: {},
+    removed: { id: 'abc123', name: 'Alicia', status: 'active' },
   },
+  commitId:    'c3',
+    committedAt: '2024-03-01T10:00:00Z',
 }
 ```
 
-The `diff` field breaks changes down to the field level, including nested
-fields using dot notation — so `address.city` changing shows up as
-`'address.city': { from: 'Detroit', to: 'Dearborn' }` rather than the whole
-address object being replaced.
+Query at `9:15` → row 1 matches → `{ name: 'Alice' }`
+Query at `9:45` → row 2 matches → `{ name: 'Alicia' }`
+Query at `10:30` → row 3 matches → `null` (deleted)
 
-### Grouping writes together
+The `diff` field tracks changes at the field level, including nested fields
+using dot notation. If `address.city` changed from Detroit to Dearborn, the
+diff shows `'address.city': { from: 'Detroit', to: 'Dearborn' }` — not just
+"the address changed."
 
-By default every write gets its own `commitId` and `committedAt`. That works
-fine for independent operations. The problem is when two writes are part of
-the same logical operation — say creating a user and their profile at the same
-time. Without grouping, those two writes get different timestamps. If you call
-`getDatabaseAsOf` at a moment that lands between them, you will see a
-half-created state that never actually existed in your application.
+---
 
-To prevent this, group the writes under a single commit context. Both rows in
-the ledger will share the same `commitId` and `committedAt`, so any
-reconstruction query will see both writes or neither:
+## Grouping related writes
+
+Every write gets its own `commitId` by default. If two writes belong to the
+same logical operation — say creating a user and their profile together — and
+you don't group them, a reconstruction query landing between the two writes
+will see a half-created state that never actually existed.
+
+Group them with a commit context and both rows share the same `commitId` and
+`committedAt`:
 
 ```ts
 const ctx = beginLedgerCommit({ initiatedBy: 'onboarding-flow' });
 
-await dm.addItemToCollection('users', newUser, ctx);
+await dm.addItemToCollection('users',    newUser,    ctx);
 await dm.addItemToCollection('profiles', newProfile, ctx);
 ```
 
-The `initiatedBy` field is optional but useful for audit trails — it records
-who or what triggered the change. You can put anything in metadata that helps
-you understand the history later.
-
-### What the Ledger does and does not track
-
-The Ledger tracks everything written through `DataManager`. If a write goes
-through `DataManager`, it will appear in `ledger_history`. If it doesn't, it
-won't.
-
-The logger is completely separate. The logger has its own output path —
-console by default, or whatever a third-party developer wires it to. Log
-entries never pass through `DataManager`, so they never appear in the ledger
-regardless of where you direct log output. You cannot accidentally pollute the
-ledger with log entries.
-
-The one thing to be aware of: if a third-party developer stores log entries in
-their own collection _through DataManager_ — say they call
-`dm.addItemToCollection('logs', entry)` — those writes will be tracked by the
-ledger just like any other write. That is working as designed, since they made
-an explicit choice to route through `DataManager`, but they should know it will
-be captured.
-
-The rule is simple: DataManager in, ledger sees it. Everything else, ledger
-does not.
+Any `getDatabaseAsOf` query will now see both writes or neither.
 
 ---
 
-## How it works under the hood
+## What gets tracked and what doesn't
 
-### One table for everything
+The Ledger captures everything written through `DataManager`. That's it.
 
-There is one `ledger_history` collection in MongoDB. Every collection — users,
-interventions, protected attributes, anything — shares it. Each row knows
-which collection it belongs to via the `entity` field.
+The logger is separate. Log entries go to console (or wherever you wire them)
+and never pass through `DataManager`. You cannot accidentally get log entries
+in the ledger.
 
-This is a deliberate choice. The whole point of the Ledger is cross-collection
-reconstruction. One table makes `getDatabaseAsOf` straightforward. Separate
-tables per collection would require N queries and a registry of what collections
-exist.
-
-### Validity intervals
-
-Every row has a `validFrom` and `validTo` date. Together they describe the
-window of time when that version of the record was the current version.
-
-When a record is created, it gets a row with `validFrom = now` and
-`validTo = null`. The null means "this is the current version."
-
-When the record is updated, the old row gets its `validTo` filled in and a new
-row is written with the updated data and `validTo = null`.
-
-When the record is deleted, the same thing happens — the last open row is
-closed and a final tombstone row is written marking the deletion.
-
-To find what a record looked like at time T, the query is:
-
-```
-validFrom <= T  AND  (validTo IS NULL OR validTo > T)
-```
-
-### How the delete pre-image works
-
-When a record is deleted, the Ledger still needs to record what the record
-looked like at the moment of deletion. Rather than fetching it from the main
-database (which may have already removed it), the Ledger looks up the most
-recent open row in `ledger_history` for that record. That row already has the
-last known snapshot. No extra database call is needed.
-
-This is only possible because the Ledger has been capturing every write — if a
-write ever bypassed the Ledger, the open row might be missing or stale.
-
-### How writes are captured
-
-The Ledger hooks into `DataManager` at startup. Every successful write that
-passes through `DataManager` — from any manager, first-party or third-party —
-fires the hook. The hook then writes to `ledger_history`. No manager needs to
-know the Ledger exists.
-
-### The storage layer
-
-`LedgerStore` is an interface. The production implementation is
-`MongoLedgerStore`, which writes to the `ledger_history` collection. The
-testing package provides `InMemoryLedgerStore`, which holds entries in memory
-and is used in tests. The two are interchangeable — `LedgerManager` only
-depends on the interface.
+If a third-party developer routes writes through `DataManager` — for example
+storing their own log entries via `dm.addItemToCollection('logs', entry)` —
+those will appear in the ledger. That's by design. The rule is simple:
+DataManager in, ledger sees it. Everything else, ledger does not.
 
 ---
 
-## What is still needed
+## How it works
 
-The Ledger logic is complete. What is not built yet:
+Every successful write through `DataManager` fires a hook. The hook calls
+`LedgerManager`, which computes a diff and writes to `ledger_history` via
+`MongoLedgerStore`. No manager needs to know any of this exists.
 
-- **`MongoLedgerStore`** — writes to and reads from the real `ledger_history`
-  collection in MongoDB. Tests currently use `InMemoryLedgerStore` as a
-  stand-in.
+```
+UserManager / ContentManager / any manager
+        |
+        v
+  DataManager  ->  writes to main collection
+        |  (on success)
+        v
+  registerLedgerHook
+        |
+        v
+  LedgerManager  ->  computes diff, writes to ledger_history
+```
 
-- **DataManager wiring** — the hook registration point inside `DataManager`
-  that fires after every successful write, plus the optional commit context
-  parameter on write methods. Until this is in place the Ledger receives
-  nothing.
+Each row in `ledger_history` has a `validFrom` and `validTo` date. When a
+record is updated, the old row's `validTo` is closed and a new row opens.
+When deleted, the last row is closed and a tombstone row is written. Point-in-
+time queries find the row whose window contains the requested time.
 
-Once those two pieces are in place, the Ledger is production-ready.
+Deletes are handled without an extra database call — the tombstone snapshot
+comes from the most recent open ledger entry, which always has the last known
+state of the record.
+
+---
+
+## Open concerns
+
+- **Always-on vs opt-in** — the ledger currently starts automatically inside
+  `DataManager.init()`. Whether consumers can opt out has not been decided.
+
+- **Bulk write coverage** — `clearCollection` and bulk remove variants do not
+  currently fire hooks. This should be reviewed before shipping.
+
+- **Future database support** — the current wiring in `DataManager.init()` is
+  Mongo-specific. When a second adapter is added, the ledger store factory
+  pattern will need to be introduced. No action needed until then.
