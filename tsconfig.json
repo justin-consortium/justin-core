@@ -4,6 +4,7 @@
     "module": "NodeNext",
     "declaration": true,             // emit .d.ts files
     "declarationMap": true,          // allows editors step from d.ts back to ts
+    "composite": true,
     "rootDir": "./src",
     "outDir": "./dist",
     "strict": true,
