@@ -1,4 +1,4 @@
-const USERS = 'users' as const;
-const PROTECTED_ATTRIBUTES = 'protected_attributes' as const;
+const USERS = 'users';
+const PROTECTED_ATTRIBUTES = 'protected_attributes';
 
 export { PROTECTED_ATTRIBUTES, USERS };
