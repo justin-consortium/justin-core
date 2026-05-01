@@ -62,7 +62,7 @@ describe('user listeners unit tests', () => {
       setupUserChangeListeners();
 
       const [, , callback] = addChangeListener().thirdCall.args;
-      callback('u1');
+      callback({ id: 'u1' });
 
       expect(__testing__usersCache._cache.getById('u1')).toBeNull();
     });
@@ -74,7 +74,7 @@ describe('user listeners unit tests', () => {
       setupUserChangeListeners(hook);
 
       const [, , callback] = addChangeListener().thirdCall.args;
-      callback('u1');
+      callback({ id: 'u1' });
 
       expect(hook.calledWith('alice')).toBe(true);
     });
@@ -84,7 +84,7 @@ describe('user listeners unit tests', () => {
       setupUserChangeListeners(hook);
 
       const [, , callback] = addChangeListener().thirdCall.args;
-      callback('nonexistent-id');
+      callback({ id: 'nonexistent-id' });
 
       expect(hook.called).toBe(false);
     });

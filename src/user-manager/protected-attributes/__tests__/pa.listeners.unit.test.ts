@@ -78,7 +78,7 @@ describe('protected attributes listeners unit tests', () => {
       setupProtectedAttributesChangeListeners();
 
       const [, , callback] = addChangeListener().thirdCall.args;
-      callback('pa1');
+      callback({ id: 'pa1' });
 
       expect(__testing__protectedAttributesCache._cache.getById('pa1')).toBeNull();
     });

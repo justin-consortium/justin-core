@@ -44,11 +44,11 @@ const setupProtectedAttributesChangeListeners = (): void => {
     },
   );
 
-  clm.addChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeTypeEnum.DELETE, (docId: string) => {
+  clm.addChangeListener(PROTECTED_ATTRIBUTES, CollectionChangeTypeEnum.DELETE, (doc: { id: string }) => {
     try {
-      deleteProtectedAttributesByIdFromCache(docId);
+      deleteProtectedAttributesByIdFromCache(doc.id);
     } catch (error) {
-      Log.error('Failed to delete protected attributes from cache on DELETE', { error, docId });
+      Log.error('Failed to delete protected attributes from cache on DELETE', { error, docId: doc.id });
     }
   });
 };

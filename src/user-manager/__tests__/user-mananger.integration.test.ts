@@ -61,6 +61,7 @@ import {
 } from '../protected-attributes/listeners';
 
 import type { JUser, ProtectedAttributesRecord } from '../types';
+import { UserManager } from '../user-manager';
 
 jest.setTimeout(120_000);
 
@@ -364,7 +365,7 @@ describe('setProtectedAttributeKeysByNamespace', () => {
     });
 
     const cached = getAllProtectedAttributes('alice');
-    expect(cached[0].protectedAttributes.daily).toMatchObject({ steps: 10000, calories: 500 });
+    expect(cached[0].protectedAttributes.daily as any).toMatchObject({ steps: 10000, calories: 500 });
   });
 
   it('skips reserved keyPaths — partial failure with valid successes in DB', async () => {
@@ -493,8 +494,8 @@ describe('deleteProtectedAttributeKeysByNamespace', () => {
     await deleteProtectedAttributeKeysByNamespace('alice', 'health', 'daily.calories');
 
     const cached = getAllProtectedAttributes('alice');
-    expect(cached[0].protectedAttributes.daily).not.toHaveProperty('calories');
-    expect(cached[0].protectedAttributes.daily.steps).toBe(8000);
+    expect(cached[0].protectedAttributes.daily as any).not.toHaveProperty('calories');
+    expect((cached[0].protectedAttributes.daily as any).steps).toBe(8000);
   });
 
   it('skips reserved keyPaths — partial failure, valid keys still deleted from DB', async () => {
@@ -530,6 +531,7 @@ describe('change listener pipeline', () => {
   describe('users — INSERT', () => {
     it('writing a user directly to DB updates the cache via change stream', async () => {
       setupUserChangeListeners();
+      await new Promise((r) => setTimeout(r, 500));
 
       const raw = await insertRawUser('alice', { score: 42 });
 
@@ -548,6 +550,7 @@ describe('change listener pipeline', () => {
       upsertUserInCache(raw as unknown as JUser);
 
       setupUserChangeListeners();
+      await new Promise((r) => setTimeout(r, 500));
 
       await dm.updateItemByIdInCollection(USERS, raw.id, { score: 99 });
 
@@ -566,6 +569,7 @@ describe('change listener pipeline', () => {
       upsertUserInCache(raw as unknown as JUser);
 
       setupUserChangeListeners();
+      await new Promise((r) => setTimeout(r, 500));
 
       await dm.removeItemFromCollection(USERS, raw.id);
 
@@ -583,6 +587,7 @@ describe('change listener pipeline', () => {
       setupUserChangeListeners((uid) => {
         deletedUid = uid;
       });
+      await new Promise((r) => setTimeout(r, 500));
 
       await dm.removeItemFromCollection(USERS, raw.id);
 
@@ -595,6 +600,7 @@ describe('change listener pipeline', () => {
   describe('protected attributes — INSERT', () => {
     it('writing a PA record directly to DB updates the cache via change stream', async () => {
       setupProtectedAttributesChangeListeners();
+      await new Promise((r) => setTimeout(r, 500));
 
       await insertRawPA('alice', 'health', { steps: 8000 });
 
@@ -612,6 +618,7 @@ describe('change listener pipeline', () => {
       await refreshProtectedAttributesCache();
 
       setupProtectedAttributesChangeListeners();
+      await new Promise((r) => setTimeout(r, 500));
 
       await dm.updateItemByIdInCollection(PROTECTED_ATTRIBUTES, raw.id, {
         protectedAttributes: { steps: 9999 },
@@ -634,6 +641,7 @@ describe('change listener pipeline', () => {
       await refreshProtectedAttributesCache();
 
       setupProtectedAttributesChangeListeners();
+      await new Promise((r) => setTimeout(r, 500));
 
       await dm.removeItemFromCollection(PROTECTED_ATTRIBUTES, raw.id);
 
@@ -706,8 +714,6 @@ describe('DB / cache consistency', () => {
 
 describe('shutdownCore', () => {
   it('removes all UserManager change listeners and closes DataManager', async () => {
-    // @ts-ignore
-    const { UserManager } = await import('../user-manager');
     await UserManager.init();
 
     const clm = ChangeListenerManager.getInstance();
@@ -728,8 +734,6 @@ describe('shutdownCore', () => {
   });
 
   it('clearManagerRegistry prevents registered managers from being shut down again', async () => {
-    // @ts-ignore
-    const { UserManager } = await import('../user-manager');
     await UserManager.init();
 
     clearManagerRegistry();
