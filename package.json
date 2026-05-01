@@ -3,11 +3,11 @@
   "version": "0.3.0",
   "description": "A TypeScript-first framework for building adaptive digital health interventions.",
   "license": "BSD-3-Clause",
-  "author": "MIACollaborative",
+  "author": "JustIn Consortium",
   "packageManager": "yarn@4.14.1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MIACollaborative/justin-core"
+    "url": "https://github.com/justin-consortium/justin-core"
   },
   "keywords": [
     "jitai",
