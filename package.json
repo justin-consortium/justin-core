@@ -4,7 +4,7 @@
   "description": "A TypeScript-first framework for building adaptive digital health interventions.",
   "license": "BSD-3-Clause",
   "author": "JustIn Consortium",
-  "packageManager": "yarn@4.14.1",
+  "packageManager": "yarn@4.13.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/justin-consortium/justin-core"
