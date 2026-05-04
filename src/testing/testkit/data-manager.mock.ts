@@ -53,6 +53,7 @@ function createDataManagerMock() {
     ensureIndexes: sinon.stub().resolves(),
     close: sinon.stub().resolves(),
     getInitializationStatus: sinon.stub().returns(true),
+    registerLedgerHook: sinon.stub(),
 
     // single-item CRUD
     addItemToCollection: sinon.stub(),

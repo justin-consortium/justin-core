@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2019",
     "module": "NodeNext",
+    "isolatedModules": true,
     "declaration": true,             // emit .d.ts files
     "declarationMap": true,          // allows editors step from d.ts back to ts
     "rootDir": "./src",

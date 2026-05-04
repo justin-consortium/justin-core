@@ -35,15 +35,15 @@ const setupUserChangeListeners = (
     }
   });
 
-  clm.addChangeListener(USERS, CollectionChangeTypeEnum.DELETE, (userId: string) => {
+  clm.addChangeListener(USERS, CollectionChangeTypeEnum.DELETE, (doc: { id: string }) => {
     try {
-      const uniqueIdentifier = deleteUserFromCache(userId);
+      const uniqueIdentifier = deleteUserFromCache(doc.id);
 
       if (uniqueIdentifier && onUserDeletedByUniqueIdentifier) {
         onUserDeletedByUniqueIdentifier(uniqueIdentifier);
       }
     } catch (error) {
-      Log.error('Failed to delete user from cache on DELETE', { error, userId });
+      Log.error('Failed to delete user from cache on DELETE', { error, userId: doc.id });
     }
   });
 };

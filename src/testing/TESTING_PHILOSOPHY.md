@@ -105,6 +105,86 @@ Does it call only the public API and assert only through the public API?
 
 ---
 
+## Test Structure
+
+### Outer describe — path and layer
+
+Every test file opens with a single outer `describe` that names the file path
+and the test layer:
+
+```ts
+describe('module/submodule — unit test', () => { ... });
+describe('module/submodule — integration test', () => { ... });
+describe('module/submodule — e2e test', () => { ... });
+```
+
+Pattern: `'<path/module> — <layer> test'`
+
+The path uses forward slashes and matches the directory structure under `src/`.
+The layer is always one of: `unit`, `integration`, `e2e`.
+
+### Nested describes — group by behavior
+
+Inside the outer describe, group tests by the behavior or method being
+exercised. Each nested describe names what is being tested — a method, a
+feature, or a scenario category:
+
+```ts
+describe('event/queue — unit test', () => {
+  describe('publishEvent', () => { ... });
+  describe('processEventQueue', () => { ... });
+  describe('stopEventQueueProcessing', () => { ... });
+});
+```
+
+Add a third nesting level only when a behavior group has meaningfully different
+sub-scenarios. Do not nest more than three levels deep.
+
+### `it` statements — describe a specific scenario
+
+`it` names read as a complete sentence describing what should happen. If the
+name doesn't explain the behavior and expected outcome, rewrite it.
+
+```ts
+// ✅ good
+it('returns null when identifier is not found', ...);
+it('logs and rethrows the same Error instance', ...);
+it('skips doAction when shouldActivate returns stop', ...);
+it('throws when DataManager returns a non-ok result', ...);
+
+// ❌ bad
+it('works correctly', ...);
+it('test error case', ...);
+it('handles edge case', ...);
+```
+
+**For guard or constraint tests** — lead with the observable result:
+
+```ts
+it('throws on duplicate uniqueIdentifier within the same batch', ...);
+it('logs a warning when no handlers are registered', ...);
+it('returns an empty array for an unknown userId', ...);
+```
+
+**For lifecycle or sequencing tests** — name both the trigger and the result:
+
+```ts
+it('calls beforeExecution once before any user and afterExecution once after all users', ...);
+it('task completes its full user sweep before decision rule starts', ...);
+it('clears idempotency keys on reset — same key can be reused after reset', ...);
+```
+
+**Use an em-dash (`—`) to append a clarifying note** when the primary name
+alone would be ambiguous:
+
+```ts
+it('init is idempotent — calling twice does not throw', ...);
+it('is re-entrant safe — second call returns immediately if processing is in flight', ...);
+it('removes the change listener — does not affect other collections', ...);
+```
+
+---
+
 ## Core Principles
 
 ### 1) Tests Explain Intent
@@ -115,15 +195,15 @@ Test names should read like sentences:
 
 **Good**
 
-- `it(returns null when identifier is invalid, ...)`
-- `it(logs and rethrows the same Error instance, ...)`
-- `it(cache is updated after change stream fires, ...)`
+- `it('returns null when identifier is invalid', ...)`
+- `it('logs and rethrows the same Error instance', ...)`
+- `it('cache is updated after change stream fires', ...)`
 
 **Bad**
 
-- `it(test update, ...)`
-- `it(misc edge case, ...)`
-- `it(works fine, ...)`
+- `it('test update', ...)`
+- `it('misc edge case', ...)`
+- `it('works fine', ...)`
 
 If a test name doesn't explain behavior, rewrite it.
 
@@ -183,7 +263,7 @@ it('returns the created user', async () => {
 ### 4) Structure Tells the Story
 
 ```ts
-describe('<module or public method>', () => {
+describe('<path/module> — <layer> test', () => {
   describe('<behavior group>', () => {
     it('<specific scenario>', async () => {
       // Arrange

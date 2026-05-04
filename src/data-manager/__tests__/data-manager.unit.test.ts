@@ -1,4 +1,5 @@
 import { DataManager, configureDB, getPendingConfig, clearPendingConfig } from '../data-manager';
+import { MongoLedgerStore } from '../../ledger/store';
 import { MongoDBManager as mongoFns } from '../mongo/mongo-data-manager';
 import { DBType } from '../constants';
 import { JustInError, JustinErrorCode } from '../../errors';
@@ -113,6 +114,28 @@ describe('DataManager unit tests', () => {
       t.mongo.init.rejects(new Error('connection refused'));
       const dm = DataManager.getInstance();
       await expect(dm.init()).rejects.toThrow(JustInError);
+    });
+
+    it('wires the ledger when getDb returns a Db instance', async () => {
+      const fakeDb = {} as any;
+      t.mongo.getDb.returns(fakeDb);
+      const ensureStore = t.sb.stub(MongoLedgerStore.prototype, 'ensureStore').resolves();
+
+      const dm = DataManager.getInstance();
+      await dm.init();
+
+      expect(ensureStore.calledOnce).toBe(true);
+    });
+
+    it('skips ledger wiring gracefully when getDb returns null', async () => {
+      t.mongo.getDb.returns(null);
+      const ensureStore = t.sb.stub(MongoLedgerStore.prototype, 'ensureStore').resolves();
+
+      const dm = DataManager.getInstance();
+      await dm.init();
+
+      expect(ensureStore.called).toBe(false);
+      expect(dm.getInitializationStatus()).toBe(true);
     });
   });
 

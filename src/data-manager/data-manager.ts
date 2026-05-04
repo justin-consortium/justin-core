@@ -8,6 +8,10 @@ import type { CoreResult, FailureEntry } from '../types';
 import { handleError, coreSuccess, coreFailure, failureEntryFromError } from '../utils';
 import { JustInError, JustinErrorCode } from '../errors';
 import { createLogger } from '../logger';
+import { makeImplicitCommit } from '../ledger/commit';
+import type { LedgerCommitContext, LedgerWriteHook, LedgerWriteEvent } from '../ledger/types';
+import { MongoLedgerStore } from '../ledger/store';
+import { LedgerManager } from '../ledger';
 
 const Log = createLogger({ context: { package: '@just-in/core', source: 'data-manager' } });
 
@@ -90,6 +94,7 @@ class DataManager extends EventEmitter {
   private db: DataManagerAdapter;
   private changeListenerManager = ChangeListenerManager.getInstance();
   private isInitialized = false;
+  private _hooks: LedgerWriteHook[] = [];
 
   private constructor(adapter: DataManagerAdapter = MongoDBManager) {
     super();
@@ -116,6 +121,50 @@ class DataManager extends EventEmitter {
   /** @internal */
   protected static killInstance(): void {
     if (DataManager.instance) DataManager.instance = null;
+  }
+
+  /**
+   * Registers a {@link LedgerWriteHook} that fires after every successful
+   * write operation.
+   *
+   * Call once at application startup after wiring up {@link LedgerManager}:
+   *
+   * ```ts
+   * const ledger = new LedgerManager(new MongoLedgerStore(db));
+   * DataManager.getInstance().registerLedgerHook(ledger.asWriteHook());
+   * ```
+   *
+   * Multiple hooks may be registered and are called in registration order.
+   * Hook failures are logged and swallowed — they never block a write.
+   *
+   * @param hook - The hook function to register.
+   */
+  public registerLedgerHook(hook: LedgerWriteHook): void {
+    this._hooks.push(hook);
+  }
+
+  /**
+   * Fires all registered write hooks for a given event.
+   *
+   * Called internally after every successful write. Each hook failure is
+   * caught and logged individually so one failing hook never affects others
+   * or the write that triggered them.
+   *
+   * @internal
+   */
+  private async _fireHooks(event: LedgerWriteEvent): Promise<void> {
+    for (const hook of this._hooks) {
+      try {
+        await hook(event);
+      } catch (err) {
+        Log.error('DataManager: write hook threw — audit entry may be missing', {
+          entity: event.entity,
+          recordId: event.recordId,
+          operation: event.operation,
+          err,
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -157,6 +206,15 @@ class DataManager extends EventEmitter {
       await (this.db as typeof MongoDBManager).init(config.uri, config.dbName);
       this.isInitialized = true;
       Log.debug('DataManager initialised', { dbType: config.dbType });
+
+      const db = (this.db as typeof MongoDBManager).getDb();
+      if (db) {
+        const ledgerStore = new MongoLedgerStore(db);
+        await ledgerStore.ensureStore();
+        const ledger = new LedgerManager(ledgerStore);
+        this.registerLedgerHook(ledger.asWriteHook());
+        Log.debug('Ledger initialised');
+      }
     } catch (error) {
       return handleError('Failed to initialise DataManager', 'DataManager.init', { error });
     }
@@ -360,11 +418,20 @@ class DataManager extends EventEmitter {
   public async addItemToCollection<T extends object>(
     collectionName: string,
     item: T,
+    ctx?: LedgerCommitContext,
   ): Promise<CoreResult<T & { id: string }>> {
     try {
       this.checkInitialization();
       const id = await this.db.addItemToCollection(collectionName, item);
-      return coreSuccess([{ id, ...item } as T & { id: string }]);
+      const inserted = { id, ...item } as T & { id: string };
+      await this._fireHooks({
+        entity: collectionName,
+        recordId: id,
+        operation: 'ADD',
+        snapshot: inserted as unknown as Record<string, unknown>,
+        commit: ctx ?? makeImplicitCommit(),
+      });
+      return coreSuccess([inserted]);
     } catch (error) {
       if (!(error instanceof JustInError) || !error.isLogged) {
         Log.error('addItemToCollection failed', { store: collectionName, error });
@@ -386,6 +453,7 @@ class DataManager extends EventEmitter {
   public async addItemsToCollection<T extends object>(
     collectionName: string,
     items: T[],
+    ctx?: LedgerCommitContext,
   ): Promise<CoreResult<T & { id: string }>> {
     if (!Array.isArray(items) || items.length === 0) return coreSuccess([]);
 
@@ -410,16 +478,35 @@ class DataManager extends EventEmitter {
           }
         }
 
+        const commit = ctx ?? makeImplicitCommit();
+        for (const inserted of successes) {
+          await this._fireHooks({
+            entity: collectionName,
+            recordId: inserted.id,
+            operation: 'ADD',
+            snapshot: inserted as unknown as Record<string, unknown>,
+            commit,
+          });
+        }
         return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
       }
 
       const successes: Array<T & { id: string }> = [];
       const failures: FailureEntry[] = [];
+      const commit = ctx ?? makeImplicitCommit();
 
       for (const item of items) {
         try {
           const id = await this.db.addItemToCollection(collectionName, item);
-          successes.push({ id, ...item } as T & { id: string });
+          const inserted = { id, ...item } as T & { id: string };
+          successes.push(inserted);
+          await this._fireHooks({
+            entity: collectionName,
+            recordId: id,
+            operation: 'ADD',
+            snapshot: inserted as unknown as Record<string, unknown>,
+            commit,
+          });
         } catch (err) {
           if (!(err instanceof JustInError) || !err.isLogged) {
             Log.warn('addItemsToCollection: item failed', { store: collectionName, error: err });
@@ -453,6 +540,7 @@ class DataManager extends EventEmitter {
     collectionName: string,
     id: string,
     updateObject: object,
+    ctx?: LedgerCommitContext,
   ): Promise<CoreResult<object>> {
     try {
       this.checkInitialization();
@@ -463,6 +551,13 @@ class DataManager extends EventEmitter {
           { id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` },
         ]);
       }
+      await this._fireHooks({
+        entity: collectionName,
+        recordId: id,
+        operation: 'UPDATE',
+        snapshot: updated as Record<string, unknown>,
+        commit: ctx ?? makeImplicitCommit(),
+      });
       return coreSuccess([updated]);
     } catch (error) {
       if (!(error instanceof JustInError) || !error.isLogged) {
@@ -485,6 +580,7 @@ class DataManager extends EventEmitter {
   public async updateItemsByIdInCollection(
     collectionName: string,
     updates: Array<{ id: string; update: object }>,
+    ctx?: LedgerCommitContext,
   ): Promise<CoreResult<{ id: string }>> {
     if (!Array.isArray(updates) || updates.length === 0) return coreSuccess([]);
 
@@ -509,17 +605,36 @@ class DataManager extends EventEmitter {
           }
         }
 
+        const commit = ctx ?? makeImplicitCommit();
+        for (const { id } of successes) {
+          const snap = await this.db.findItemByIdInCollection(collectionName, id);
+          await this._fireHooks({
+            entity: collectionName,
+            recordId: id,
+            operation: 'UPDATE',
+            ...(snap ? { snapshot: snap as Record<string, unknown> } : {}),
+            commit,
+          });
+        }
         return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
       }
 
       const successes: Array<{ id: string }> = [];
       const failures: FailureEntry[] = [];
+      const commit = ctx ?? makeImplicitCommit();
 
       for (const { id, update } of updates) {
         try {
           const result = await this.db.updateItemInCollection(collectionName, id, update);
           if (result) {
             successes.push({ id });
+            await this._fireHooks({
+              entity: collectionName,
+              recordId: id,
+              operation: 'UPDATE',
+              snapshot: result as Record<string, unknown>,
+              commit,
+            });
           } else {
             failures.push({
               id,
@@ -562,6 +677,7 @@ class DataManager extends EventEmitter {
   public async removeItemFromCollection(
     collectionName: string,
     id: string,
+    ctx?: LedgerCommitContext,
   ): Promise<CoreResult<null>> {
     try {
       this.checkInitialization();
@@ -572,6 +688,13 @@ class DataManager extends EventEmitter {
           { id, code: JustinErrorCode.NOT_FOUND, reason: `Item with id (${id}) not found` },
         ]);
       }
+      await this._fireHooks({
+        entity: collectionName,
+        recordId: id,
+        operation: 'DELETE',
+        // snapshot omitted — LedgerManager sources it from the open ledger entry
+        commit: ctx ?? makeImplicitCommit(),
+      });
       return coreSuccess([null]);
     } catch (error) {
       if (!(error instanceof JustInError) || !error.isLogged) {
@@ -594,6 +717,7 @@ class DataManager extends EventEmitter {
   public async removeItemsFromCollection(
     collectionName: string,
     ids: string[],
+    ctx?: LedgerCommitContext,
   ): Promise<CoreResult<{ id: string }>> {
     if (!Array.isArray(ids) || ids.length === 0) return coreSuccess([]);
 
@@ -618,17 +742,33 @@ class DataManager extends EventEmitter {
           }
         }
 
+        const commit = ctx ?? makeImplicitCommit();
+        for (const { id } of successes) {
+          await this._fireHooks({
+            entity: collectionName,
+            recordId: id,
+            operation: 'DELETE',
+            commit,
+          });
+        }
         return failures.length === 0 ? coreSuccess(successes) : coreFailure(failures, successes);
       }
 
       const successes: Array<{ id: string }> = [];
       const failures: FailureEntry[] = [];
+      const commit = ctx ?? makeImplicitCommit();
 
       for (const id of ids) {
         try {
           const deletedCount = await this.db.removeItemFromCollection(collectionName, id);
           if (deletedCount > 0) {
             successes.push({ id });
+            await this._fireHooks({
+              entity: collectionName,
+              recordId: id,
+              operation: 'DELETE',
+              commit,
+            });
           } else {
             failures.push({
               id,
