@@ -9,7 +9,7 @@ temp/
 *.tsbuildinfo
 
 # Yarn
-.yarnrc.yml
+# .yarnrc.yml
 .yarn/install-state.gz
 
 # Logs
